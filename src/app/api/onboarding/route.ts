@@ -307,7 +307,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ 
       success: false, 
       step: "SYSTEM_ERROR", 
-      message: "We encountered an unexpected error processing your request. Please try again." 
+      message: `System Error: ${error.message || "Unknown error occurred"}`
     }, { status: 500 });
   }
 }
