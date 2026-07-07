@@ -55,16 +55,16 @@ export async function POST(req: Request) {
     const authHeader = headerList.get("authorization") || "";
     const rawBody = await req.text();
 
+    // Allow initial webhook creation ping from Finix dashboard if secret is not set yet
+    if (WEBHOOK_SECRET === "sandbox_webhook_secret") {
+      return NextResponse.json({ message: "Bypassed signature for setup ping" }, { status: 200 });
+    }
+
     if (BEARER_TOKEN) {
       const match = authHeader.match(/^Bearer\s+(.*)$/i);
       if (!match || match[1] !== BEARER_TOKEN) {
         return NextResponse.json({ error: "Unauthorized: Invalid Token" }, { status: 401 });
       }
-    }
-
-    // Allow initial webhook creation ping from Finix dashboard if secret is not set yet
-    if (WEBHOOK_SECRET === "sandbox_webhook_secret") {
-      return NextResponse.json({ message: "Bypassed signature for setup ping" }, { status: 200 });
     }
 
     if (!WEBHOOK_SECRET || !signatureHeader) {
