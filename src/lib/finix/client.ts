@@ -48,25 +48,25 @@ export class FinixClient {
   }
 
   // ==========================================
-  // Onboarding
+  // Onboarding (Direct API)
   // ==========================================
 
-  async createOnboardingForm(payload: any) {
-    return this.fetchApi("/onboarding_forms", {
+  async createAssociatedIdentity(identityId: string, payload: any) {
+    return this.fetchApi(`/identities/${identityId}/associated_identities`, {
       method: "POST",
       body: JSON.stringify(payload)
     });
   }
 
-  async getOnboardingForm(formId: string) {
-    return this.fetchApi(`/onboarding_forms/${formId}`);
+  async createMerchant(identityId: string, processor: string) {
+    return this.fetchApi(`/identities/${identityId}/merchants`, {
+      method: "POST",
+      body: JSON.stringify({ processor })
+    });
   }
 
-  async createOnboardingFormLink(formId: string, payload: any) {
-    return this.fetchApi(`/onboarding_forms/${formId}/links`, {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
+  async getVerification(verificationId: string) {
+    return this.fetchApi(`/verifications/${verificationId}`);
   }
 
   // ==========================================

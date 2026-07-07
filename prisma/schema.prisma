@@ -5,10 +5,12 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model OnboardingApplication {
   id                         String    @id @default(cuid())
+  // Basic organization/contact
   organizationName           String
   organizationType           String
   contactName                String
@@ -16,21 +18,116 @@ model OnboardingApplication {
   contactPhone               String?
   website                    String?
   status                     String
+
+  // Business information
+  legalBusinessName          String?
+  doingBusinessAs            String?
+  businessType               String?
+  businessTaxIdProvided      Boolean   @default(false)
+  businessAddressLine1       String?
+  businessAddressLine2       String?
+  businessCity               String?
+  businessState              String?
+  businessPostalCode         String?
+  businessCountry            String?
+  businessPhone              String?
+  businessDescription        String?
+  mcc                        String?
+  defaultStatementDescriptor String?
+  incorporationYear          Int?
+  incorporationMonth         Int?
+  incorporationDay           Int?
+  ownershipType              String?
+
+  // Control person / principal
+  principalFirstName         String?
+  principalLastName          String?
+  principalTitle             String?
+  principalEmail             String?
+  principalPhone             String?
+  principalDobYear           Int?
+  principalDobMonth          Int?
+  principalDobDay            Int?
+  principalOwnershipPercentage Int?
+  principalAddressLine1      String?
+  principalAddressLine2      String?
+  principalCity              String?
+  principalState             String?
+  principalPostalCode        String?
+  principalCountry           String?
+  principalTaxIdProvided     Boolean   @default(false)
+
+  // Processing information
+  annualCardVolumeCents      Int?
+  annualAchVolumeCents       Int?
+  averageCardTransferAmountCents Int?
+  averageAchTransferAmountCents Int?
+  maxTransactionAmountCents  Int?
+  achMaxTransactionAmountCents Int?
+  ecommercePercentage        Int?
+  cardPresentPercentage      Int?
+  mailOrderTelephoneOrderPercentage Int?
+  businessToBusinessPercentage Int?
+  businessToConsumerPercentage Int?
+  otherVolumePercentage      Int?
+  refundPolicy               String?
+  hasAcceptedCreditCardsPreviously Boolean @default(false)
+
+  // Payout bank (masked)
+  bankAccountType            String?
+  bankName                   String?
+  bankLast4                  String?
+  bankCountry                String?
+  bankCurrency               String?
+  bankInstrumentId           String?
+  bankInstrumentEnabled      Boolean   @default(false)
+
+  // Finix IDs
   finixIdentityId            String?
   finixMerchantId            String?
-  finixOnboardingFormId      String?
-  finixOnboardingUrl         String?
-  finixDashboardUrl          String?
-  finixDashboardInviteStatus String?
+  finixVerificationId        String?
+  finixPaymentInstrumentId   String?
+  finixApplicationId         String?
+  finixProcessor             String?
+  onboardingState            String?
+  processingEnabled          Boolean   @default(false)
+  settlementEnabled          Boolean   @default(false)
+
+  // Timestamps and Relations
+  updateReason               String?
   submittedAt                DateTime?
   approvedAt                 DateTime?
   rejectedAt                 DateTime?
   updateRequestedAt          DateTime?
-  updateReason               String?
-  processingEnabled          Boolean   @default(false)
-  settlementEnabled          Boolean   @default(false)
   createdAt                  DateTime  @default(now())
   updatedAt                  DateTime  @updatedAt
+
+  associatedOwners           AssociatedOwner[]
+}
+
+model AssociatedOwner {
+  id                        String   @id @default(cuid())
+  onboardingApplicationId   String
+  onboardingApplication     OnboardingApplication @relation(fields: [onboardingApplicationId], references: [id])
+  finixAssociatedIdentityId String?
+  firstName                 String
+  lastName                  String
+  title                     String?
+  email                     String
+  phone                     String?
+  dobYear                   Int?
+  dobMonth                  Int?
+  dobDay                    Int?
+  ownershipPercentage       Int?
+  addressLine1              String?
+  addressLine2              String?
+  city                      String?
+  state                     String?
+  postalCode                String?
+  country                   String?
+  taxIdProvided             Boolean  @default(false)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 }
 
 model LegalAcceptance {

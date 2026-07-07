@@ -163,8 +163,13 @@ export async function POST(req: Request) {
             break;
           }
           case "merchant.created":
-          case "merchant.updated": {
+          case "merchant.updated":
+          case "merchant.underwritten": {
             const status = payload.data.status;
+            const onboardingState = payload.data.onboarding_state;
+            const processingEnabled = payload.data.processing_enabled || false;
+            const settlementEnabled = payload.data.settlement_enabled || false;
+
             let newStatus = app.status;
             let approvedAt = app.approvedAt;
             let rejectedAt = app.rejectedAt;
@@ -181,7 +186,7 @@ export async function POST(req: Request) {
                 "WGC Payments account approved",
                 `<p>Hi ${contactName},</p><p>Good news — your WGC Payments account for ${orgName} has been approved.</p><p>You will receive access to your Finix Sub-Merchant Dashboard.</p><p>Finix Dashboard Login:<br/><a href="${process.env.NEXT_PUBLIC_FINIX_DASHBOARD_LOGIN_URL || "#"}">${process.env.NEXT_PUBLIC_FINIX_DASHBOARD_LOGIN_URL || "Finix Dashboard"}</a></p><p>Thank you,<br/>WGC Payments</p>`
               );
-            } else if (status === "REJECTED") {
+            } else if (status === "REJECTED" || status === "FAILED") {
               newStatus = "REJECTED";
               if (!rejectedAt) rejectedAt = new Date();
               // Send rejected email
@@ -192,6 +197,17 @@ export async function POST(req: Request) {
                 "WGC Payments onboarding update",
                 `<p>Hi ${contactName},</p><p>We’re sorry, but your WGC Payments onboarding for ${orgName} could not be approved at this time.</p><p>Please contact WGC Payments support for next steps.</p><p>Support: ${process.env.SUPPORT_EMAIL || "support@wgcpayments.com"}</p><p>Thank you,<br/>WGC Payments</p>`
               );
+            } else if (status === "PROVISIONING" || onboardingState === "PROVISIONING") {
+              if (newStatus !== "APPROVED") {
+                newStatus = "UNDER_REVIEW";
+              }
+            }
+
+            if (processingEnabled && newStatus !== "APPROVED") {
+              newStatus = "PROCESSING_ENABLED";
+            }
+            if (settlementEnabled && newStatus !== "APPROVED") {
+              newStatus = "SETTLEMENT_ENABLED";
             }
 
             await prisma.onboardingApplication.update({
@@ -201,8 +217,9 @@ export async function POST(req: Request) {
                 approvedAt,
                 rejectedAt,
                 finixMerchantId: payload.data.id,
-                processingEnabled: payload.data.processing_enabled || false,
-                settlementEnabled: payload.data.settlement_enabled || false,
+                onboardingState: onboardingState || app.onboardingState,
+                processingEnabled: processingEnabled,
+                settlementEnabled: settlementEnabled,
               },
             });
             break;
@@ -218,7 +235,7 @@ export async function POST(req: Request) {
               });
 
               // Send additional info email
-              const resumeLink = app.finixOnboardingUrl || "your Finix dashboard";
+              const resumeLink = process.env.NEXT_PUBLIC_FINIX_DASHBOARD_LOGIN_URL || "your Finix dashboard";
               await sendWebhookEmail(
                 app.id,
                 "ADDITIONAL_INFO_NEEDED",
