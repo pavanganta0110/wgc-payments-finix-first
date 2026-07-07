@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { sendWgcEmail, sendWgcAdminEmail } from "@/lib/email";
 
-const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SIGNING_KEY;
+const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SECRET || process.env.FINIX_WEBHOOK_SIGNING_KEY;
 const BEARER_TOKEN = process.env.FINIX_WEBHOOK_BEARER_TOKEN;
 
 async function sendWebhookEmail(
