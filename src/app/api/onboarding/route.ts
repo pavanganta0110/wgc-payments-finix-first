@@ -156,10 +156,18 @@ export async function POST(req: Request) {
         url: website, has_accepted_credit_cards_previously: hasAcceptedCreditCardsPreviously
       },
       additional_underwriting_data: {
-        annual_ach_volume: annualAchVolume, average_ach_transfer_amount: averageAchTransferAmount, average_card_transfer_amount: averageCardTransferAmount,
+        annual_ach_volume: Number(annualAchVolume), average_ach_transfer_amount: Number(averageAchTransferAmount), average_card_transfer_amount: Number(averageCardTransferAmount),
         business_description: businessDescription,
-        card_volume_distribution: { card_present_percentage: cardPresentPercentage, mail_order_telephone_order_percentage: mailOrderTelephoneOrderPercentage, ecommerce_percentage: ecommercePercentage },
-        volume_distribution_by_business_type: { business_to_business_percentage: businessToBusinessPercentage, business_to_consumer_percentage: businessToConsumerPercentage, other_volume_percentage: otherVolumePercentage },
+        card_volume_distribution: { 
+          card_present_percentage: Number(cardPresentPercentage || 0), 
+          mail_order_telephone_order_percentage: Number(mailOrderTelephoneOrderPercentage || 0), 
+          ecommerce_percentage: Number(ecommercePercentage || 100) 
+        },
+        volume_distribution_by_business_type: { 
+          business_to_business_percentage: Number(businessToBusinessPercentage || 0), 
+          business_to_consumer_percentage: Number(businessToConsumerPercentage || 100), 
+          other_volume_percentage: Number(otherVolumePercentage || 0) 
+        },
         refund_policy: refundPolicy,
         credit_check_allowed: true, credit_check_ip_address: ipAddress, credit_check_timestamp: new Date().toISOString(), credit_check_user_agent: userAgent,
         merchant_agreement_accepted: true, merchant_agreement_ip_address: ipAddress, merchant_agreement_timestamp: new Date().toISOString(), merchant_agreement_user_agent: userAgent,
