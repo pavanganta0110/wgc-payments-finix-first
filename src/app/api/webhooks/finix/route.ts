@@ -2,9 +2,7 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { Resend } from "resend";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { sendWgcEmail } from "@/lib/email";
 const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SECRET;
 
 async function sendWebhookEmail(
@@ -12,7 +10,12 @@ async function sendWebhookEmail(
   type: string,
   to: string,
   subject: string,
-  html: string
+  title: string,
+  badgeText: string,
+  badgeColor: string,
+  bodyHtml: string,
+  ctaText: string,
+  ctaUrl: string
 ) {
   // Check if we already sent this type of email to prevent duplicates
   const existingLog = await prisma.emailLog.findFirst({
@@ -28,12 +31,19 @@ async function sendWebhookEmail(
   }
 
   try {
-    const { data, error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM || "WGC Payments <no-reply@wgcpayments.com>",
-      to: [to],
-      subject: subject,
-      html: html,
+    const response = await sendWgcEmail({
+      to,
+      subject,
+      title,
+      badgeText,
+      badgeColor,
+      bodyHtml,
+      ctaText,
+      ctaUrl
     });
+
+    const error = response.success ? null : response.error;
+    const data = response.data;
 
     await prisma.emailLog.create({
       data: {
@@ -42,7 +52,7 @@ async function sendWebhookEmail(
         to: to,
         subject: subject,
         status: error ? "ERROR" : "SENT",
-        providerMessageId: data?.id || null,
+        providerMessageId: (data as any)?.data?.id || (data as any)?.id || null,
         error: error ? JSON.stringify(error) : null,
         sentAt: error ? null : new Date(),
       },
@@ -150,13 +160,20 @@ export async function POST(req: Request) {
                    where: { id: app.id },
                    data: { status: "SUBMITTED", submittedAt: new Date() }
                  });
-                 // Send submitted email
+                 const safeOrgName = orgName || "your organization";
                  await sendWebhookEmail(
                    app.id,
                    "ONBOARDING_SUBMITTED",
                    contactEmail,
                    "WGC Payments onboarding submitted",
-                   `<p>Hi ${contactName},</p><p>Thank you for submitting your WGC Payments onboarding form for ${orgName}.</p><p>Your application is now under review. Most reviews are completed within 24–48 hours.</p><p>We will notify you once your account is approved or if Finix requires additional information.</p><p>Thank you,<br/>WGC Payments</p>`
+                   "Your onboarding has been submitted",
+                   "Under Review",
+                   "#0B5DBC",
+                   `<p>Thank you for submitting your WGC Payments onboarding for <strong>${safeOrgName}</strong>.</p>
+                    <p>Your application is now under review. Most reviews are completed within 24–48 hours.</p>
+                    <p>We will notify you once your account is approved or if additional information is required.</p>`,
+                   "View Merchant Login",
+                   "https://wgcpayments.com/merchant-login"
                  );
               }
             }
@@ -178,24 +195,37 @@ export async function POST(req: Request) {
             if (status === "APPROVED") {
               newStatus = "APPROVED";
               if (!approvedAt) approvedAt = new Date();
-              // Send approved email
+              const safeOrgName = orgName || "your organization";
               await sendWebhookEmail(
                 app.id,
                 "APPROVED",
                 contactEmail,
-                "WGC Payments account approved",
-                `<p>Hi ${contactName},</p><p>Good news — your WGC Payments account for ${orgName} has been approved.</p><p>You will receive access to your Finix Sub-Merchant Dashboard.</p><p>Finix Dashboard Login:<br/><a href="${process.env.NEXT_PUBLIC_FINIX_DASHBOARD_LOGIN_URL || "#"}">${process.env.NEXT_PUBLIC_FINIX_DASHBOARD_LOGIN_URL || "Finix Dashboard"}</a></p><p>Thank you,<br/>WGC Payments</p>`
+                "Your WGC Payments account has been approved",
+                "Your account has been approved",
+                "Approved",
+                "#10B981", // Green
+                `<p>Good news — your WGC Payments account for <strong>${safeOrgName}</strong> has been approved.</p>
+                 <p>You can now access your merchant dashboard to view payments, create payment links, and manage account activity.</p>`,
+                "Log in to Merchant Dashboard",
+                "https://wgcpayments.com/merchant-login"
               );
             } else if (status === "REJECTED" || status === "FAILED") {
               newStatus = "REJECTED";
               if (!rejectedAt) rejectedAt = new Date();
-              // Send rejected email
+              const safeOrgName = orgName || "your organization";
               await sendWebhookEmail(
                 app.id,
                 "REJECTED",
                 contactEmail,
-                "WGC Payments onboarding update",
-                `<p>Hi ${contactName},</p><p>We’re sorry, but your WGC Payments onboarding for ${orgName} could not be approved at this time.</p><p>Please contact WGC Payments support for next steps.</p><p>Support: ${process.env.SUPPORT_EMAIL || "support@wgcpayments.com"}</p><p>Thank you,<br/>WGC Payments</p>`
+                "Update on your WGC Payments application",
+                "Update on your application",
+                "Not Approved",
+                "#EF4444", // Red
+                `<p>Thank you for your interest in WGC Payments.</p>
+                 <p>After review, we are unable to approve the onboarding application for <strong>${safeOrgName}</strong> at this time.</p>
+                 <p>If you believe this was a mistake or would like more information, please contact WGC Payments Support.</p>`,
+                "Contact Support",
+                "mailto:support@wgcpayments.com"
               );
             } else if (status === "PROVISIONING" || onboardingState === "PROVISIONING") {
               if (newStatus !== "APPROVED") {
@@ -234,14 +264,19 @@ export async function POST(req: Request) {
                 },
               });
 
-              // Send additional info email
-              const resumeLink = process.env.NEXT_PUBLIC_FINIX_DASHBOARD_LOGIN_URL || "your Finix dashboard";
+              const safeOrgName = orgName || "your organization";
               await sendWebhookEmail(
                 app.id,
                 "ADDITIONAL_INFO_NEEDED",
                 contactEmail,
-                "Additional information needed for WGC Payments onboarding",
-                `<p>Hi ${contactName},</p><p>Finix requires additional information before your WGC Payments account can be approved.</p><p>Please continue the secure onboarding update process here:</p><p><a href="${resumeLink}">${resumeLink}</a></p><p>Once the updated information is submitted, Finix will continue the review.</p><p>Thank you,<br/>WGC Payments</p>`
+                "Additional information needed for your WGC Payments account",
+                "Additional information is required",
+                "Action Required",
+                "#F59E0B", // Orange/Gold
+                `<p>We need a little more information to continue reviewing your WGC Payments account for <strong>${safeOrgName}</strong>.</p>
+                 <p>Please log in to your merchant dashboard or contact WGC Payments Support so we can help you complete the required updates.</p>`,
+                "Contact Support",
+                "mailto:support@wgcpayments.com"
               );
             }
             break;

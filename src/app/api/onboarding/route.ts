@@ -2,9 +2,7 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
-import { Resend } from "resend";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { sendWgcEmail } from "@/lib/email";
 
 export async function POST(req: Request) {
   try {
@@ -328,11 +326,21 @@ export async function POST(req: Request) {
 
     if (!existingLog && contactEmail) {
       try {
-        await resend.emails.send({
-          from: process.env.EMAIL_FROM || "WGC Payments <no-reply@wgcpayments.com>",
+        const safeBusinessName = organizationName || "your organization";
+        await sendWgcEmail({
           to: contactEmail,
           subject: "WGC Payments onboarding submitted",
-          text: `Hi ${contactName},\n\nThank you for submitting your WGC Payments onboarding for ${organizationName}.\n\nYour application is now under review. Most reviews are completed within 24–48 hours.\n\nWe will notify you once your account is approved or if Finix requires additional information.\n\nThank you,\nWGC Payments`,
+          title: "Your onboarding has been submitted",
+          previewText: "Your application is now under review. Most reviews are completed within 24–48 hours.",
+          badgeText: "Under Review",
+          badgeColor: "#0B5DBC",
+          bodyHtml: `
+            <p>Thank you for submitting your WGC Payments onboarding for <strong>${safeBusinessName}</strong>.</p>
+            <p>Your application is now under review. Most reviews are completed within 24–48 hours.</p>
+            <p>We will notify you once your account is approved or if additional information is required.</p>
+          `,
+          ctaText: "View Merchant Login",
+          ctaUrl: "https://wgcpayments.com/merchant-login"
         });
 
         await prisma.emailLog.create({
