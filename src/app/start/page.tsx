@@ -34,6 +34,9 @@ export default function StartOnboardingPage() {
     businessDescription: "",
     mcc: "8398",
     defaultStatementDescriptor: "",
+    incorporationYear: "",
+    incorporationMonth: "",
+    incorporationDay: "",
 
     // Processing
     annualCardVolume: "",
@@ -146,6 +149,9 @@ export default function StartOnboardingPage() {
         averageAchTransferAmount: Number(formData.averageAchTransferAmount || 0),
         maxTransactionAmount: Number(formData.maxTransactionAmount || 0),
         achMaxTransactionAmount: Number(formData.achMaxTransactionAmount || 0),
+        incorporationYear: Number(formData.incorporationYear),
+        incorporationMonth: Number(formData.incorporationMonth),
+        incorporationDay: Number(formData.incorporationDay),
         dobYear: Number(formData.dobYear),
         dobMonth: Number(formData.dobMonth),
         dobDay: Number(formData.dobDay),
@@ -227,6 +233,11 @@ export default function StartOnboardingPage() {
                   <div><label className="block text-sm font-semibold mb-2">ZIP Code</label><input required value={formData.businessPostalCode} onChange={(e) => updateField("businessPostalCode", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div><label className="block text-sm font-semibold mb-2">MCC</label><input required value={formData.mcc} onChange={(e) => updateField("mcc", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div className="md:col-span-2"><label className="block text-sm font-semibold mb-2">Statement Descriptor (Bank statement text)</label><input required value={formData.defaultStatementDescriptor} onChange={(e) => updateField("defaultStatementDescriptor", e.target.value)} maxLength={20} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
+                  <div><label className="block text-sm font-semibold mb-2">Incorporation Year</label><input required type="number" placeholder="YYYY" value={formData.incorporationYear} onChange={(e) => updateField("incorporationYear", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
+                  <div className="flex gap-4">
+                    <div className="w-1/2"><label className="block text-sm font-semibold mb-2">Month</label><input required type="number" placeholder="MM" value={formData.incorporationMonth} onChange={(e) => updateField("incorporationMonth", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
+                    <div className="w-1/2"><label className="block text-sm font-semibold mb-2">Day</label><input required type="number" placeholder="DD" value={formData.incorporationDay} onChange={(e) => updateField("incorporationDay", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
+                  </div>
                   <div className="md:col-span-2"><label className="block text-sm font-semibold mb-2">Organization Description</label><textarea required value={formData.businessDescription} onChange={(e) => updateField("businessDescription", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" rows={3} /></div>
                 </div>
               </div>

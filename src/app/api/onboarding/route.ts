@@ -18,12 +18,13 @@ export async function POST(req: Request) {
       annualCardVolume, annualAchVolume, averageCardTransferAmount, averageAchTransferAmount, maxTransactionAmount, achMaxTransactionAmount, ecommercePercentage, cardPresentPercentage, mailOrderTelephoneOrderPercentage, businessToBusinessPercentage, businessToConsumerPercentage, otherVolumePercentage, refundPolicy, hasAcceptedCreditCardsPreviously,
       // Principal
       firstName, lastName, title, email, phone, dobYear, dobMonth, dobDay, ownershipPercentage, personalAddressLine1, personalAddressLine2, personalCity, personalState, personalPostalCode, personalCountry, taxId,
+      // Incorporation
+      incorporationYear, incorporationMonth, incorporationDay,
       // Beneficial Owners
       associatedOwners,
       // Payout Bank
       accountHolderName, accountType, routingNumber, accountNumber, bankCountry, currency,
-      // Legal
-      legal,
+      legal
     } = body;
 
     const reqHeaders = await headers();
@@ -59,6 +60,7 @@ export async function POST(req: Request) {
           principalDobYear: dobYear, principalDobMonth: dobMonth, principalDobDay: dobDay, principalOwnershipPercentage: ownershipPercentage,
           principalAddressLine1: personalAddressLine1, principalAddressLine2: personalAddressLine2, principalCity: personalCity, principalState: personalState, principalPostalCode: personalPostalCode, principalCountry: personalCountry,
           principalTaxIdProvided: !!taxId,
+          incorporationYear, incorporationMonth, incorporationDay,
 
           annualCardVolumeCents: annualCardVolume, annualAchVolumeCents: annualAchVolume, averageCardTransferAmountCents: averageCardTransferAmount, averageAchTransferAmountCents: averageAchTransferAmount,
           maxTransactionAmountCents: maxTransactionAmount, achMaxTransactionAmountCents: achMaxTransactionAmount, ecommercePercentage, cardPresentPercentage, mailOrderTelephoneOrderPercentage, businessToBusinessPercentage, businessToConsumerPercentage, otherVolumePercentage,
@@ -145,6 +147,7 @@ export async function POST(req: Request) {
         business_name: legalBusinessName, doing_business_as: doingBusinessAs, business_type: businessTypeEnum,
         business_tax_id: businessTaxId, business_phone: businessPhone, default_statement_descriptor: defaultStatementDescriptor,
         business_address: { line1: businessAddressLine1, line2: businessAddressLine2, city: businessCity, region: businessState, postal_code: businessPostalCode, country: businessCountry },
+        incorporation_date: incorporationYear ? { year: incorporationYear, month: incorporationMonth, day: incorporationDay } : undefined,
         first_name: firstName, last_name: lastName, title: title, email: email, phone: phone,
         dob: { year: dobYear, month: dobMonth, day: dobDay },
         personal_address: { line1: personalAddressLine1, line2: personalAddressLine2, city: personalCity, region: personalState, postal_code: personalPostalCode, country: personalCountry },
