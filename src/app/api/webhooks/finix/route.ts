@@ -153,7 +153,7 @@ export async function POST(req: Request) {
 
       if (app) {
         const contactEmail = app.contactEmail;
-        const orgName = app.organizationName;
+        const orgName = app.legalBusinessName || app.organizationName;
         const safeOrgName = orgName || "your organization";
 
         const updateData: any = {

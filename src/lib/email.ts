@@ -35,7 +35,7 @@ export function generateWgcEmailHtml(options: WgcEmailOptions) {
               <!-- Header with Logo -->
               <tr>
                 <td style="padding: 40px 40px 20px 40px; text-align: center; border-bottom: 1px solid #F0F4F8;">
-                  <img src="${logoUrl}" alt="WGC Payments" style="width: 200px; height: auto; max-width: 100%;" />
+                  <img src="${logoUrl}" alt="WGC Payments" style="width: 250px; height: auto; max-width: 100%; display: block; margin: 0 auto; border: 0;" />
                 </td>
               </tr>
               

@@ -344,14 +344,14 @@ export async function POST(req: Request) {
 
     if (!existingLog && contactEmail) {
       try {
-        const safeBusinessName = organizationName || "your organization";
+        const safeBusinessName = legalBusinessName || "your organization";
+
         await sendWgcEmail({
           to: contactEmail,
-          subject: "WGC Payments onboarding submitted",
+          subject: "WGC Payments Onboarding Submitted",
           title: "Your onboarding has been submitted",
-          previewText: "Your application is now under review. Most reviews are completed within 24–48 hours.",
-          badgeText: "Under Review",
-          badgeColor: "#0B5DBC",
+          badgeText: "UNDER REVIEW",
+          badgeColor: "blue",
           bodyHtml: `
             <p>Thank you for submitting your WGC Payments onboarding for <strong>${safeBusinessName}</strong>.</p>
             <p>Your application is now under review. Most reviews are completed within 24–48 hours.</p>
