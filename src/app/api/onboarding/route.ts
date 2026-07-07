@@ -138,13 +138,18 @@ export async function POST(req: Request) {
     // ==========================================
 
     // Finix expects dates as objects with integers: { year, month, day }
-    const formatFinixDate = (y: any, m: any, d: any) => {
+    const formatFinixDate = (y: any, m: any, d: any, fieldName: string) => {
       if (!y || !m || !d) return undefined;
-      return { 
-        year: Number(y), 
-        month: Number(m), 
-        day: Number(d) 
-      };
+      const year = Number(y);
+      const month = Number(m);
+      const day = Number(d);
+      
+      const currentYear = new Date().getFullYear();
+      if (year < 1800 || year > currentYear) throw new Error(`Invalid ${fieldName}: Year must be between 1800 and ${currentYear}`);
+      if (month < 1 || month > 12) throw new Error(`Invalid ${fieldName}: Month must be between 1 and 12`);
+      if (day < 1 || day > 31) throw new Error(`Invalid ${fieldName}: Day must be between 1 and 31`);
+      
+      return { year, month, day };
     };
 
     const identityPayload = {
@@ -154,9 +159,9 @@ export async function POST(req: Request) {
         business_name: legalBusinessName, doing_business_as: doingBusinessAs, business_type: businessTypeEnum,
         business_tax_id: businessTaxId, business_phone: businessPhone, default_statement_descriptor: defaultStatementDescriptor,
         business_address: { line1: businessAddressLine1, line2: businessAddressLine2, city: businessCity, region: businessState, postal_code: businessPostalCode, country: businessCountry },
-        incorporation_date: incorporationYear ? formatFinixDate(incorporationYear, incorporationMonth, incorporationDay) : undefined,
+        incorporation_date: incorporationYear ? formatFinixDate(incorporationYear, incorporationMonth, incorporationDay, "Incorporation Date") : undefined,
         first_name: firstName, last_name: lastName, title: title, email: email, phone: phone,
-        dob: formatFinixDate(dobYear, dobMonth, dobDay),
+        dob: formatFinixDate(dobYear, dobMonth, dobDay, "Date of Birth"),
         personal_address: { line1: personalAddressLine1, line2: personalAddressLine2, city: personalCity, region: personalState, postal_code: personalPostalCode, country: personalCountry },
         tax_id: taxId, principal_percentage_ownership: ownershipPercentage,
         annual_card_volume: annualCardVolume, max_transaction_amount: maxTransactionAmount, ach_max_transaction_amount: achMaxTransactionAmount, mcc,
@@ -189,11 +194,14 @@ export async function POST(req: Request) {
       finixIdentity = await finixClient.createSellerIdentity(identityPayload);
       console.log("ONBOARDING_STEP", "FINIX_IDENTITY_SUCCESS", finixIdentity.id);
     } catch (err: any) {
-      let finixErrorStr = err.message;
-      if (err.response && err.response.data) {
-        finixErrorStr = JSON.stringify(err.response.data);
-      } else if (err.details) {
-        finixErrorStr = JSON.stringify(err.details);
+      let finixErrorStr = err.message || "Unknown error";
+      const errData = err.details || (err.response && err.response.data);
+      if (errData) {
+        if (errData._embedded && errData._embedded.errors && errData._embedded.errors.length > 0) {
+          finixErrorStr = errData._embedded.errors.map((e: any) => e.message).join(", ");
+        } else {
+          finixErrorStr = JSON.stringify(errData);
+        }
       }
       
       console.error("ONBOARDING_FAILED", {
@@ -205,7 +213,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ 
         success: false, 
         step: "FINIX_IDENTITY_CREATE_FAILED", 
-        message: "We could not verify your business identity. Please review your information.",
+        message: "We could not verify your business identity.",
         finixError: finixErrorStr
       }, { status: 400 });
     }
@@ -223,7 +231,7 @@ export async function POST(req: Request) {
           const assocPayload = {
             entity: {
               first_name: owner.firstName, last_name: owner.lastName, title: owner.title, email: owner.email, phone: owner.phone,
-              dob: formatFinixDate(owner.dobYear, owner.dobMonth, owner.dobDay),
+              dob: formatFinixDate(owner.dobYear, owner.dobMonth, owner.dobDay, `Owner (${owner.firstName}) Date of Birth`),
               principal_percentage_ownership: owner.ownershipPercentage,
               personal_address: { line1: owner.addressLine1, line2: owner.addressLine2, city: owner.city, region: owner.state, postal_code: owner.postalCode, country: owner.country },
               tax_id: owner.taxId
