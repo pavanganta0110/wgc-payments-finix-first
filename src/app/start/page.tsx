@@ -12,6 +12,7 @@ export default function StartOnboardingPage() {
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasBeneficialOwners, setHasBeneficialOwners] = useState<boolean | null>(null);
+  const [attemptedNext, setAttemptedNext] = useState(false);
 
   const [formData, setFormData] = useState({
     // Basic / Organization
@@ -214,7 +215,7 @@ export default function StartOnboardingPage() {
             ))}
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} onInvalidCapture={() => setAttemptedNext(true)} className={`space-y-6 ${attemptedNext ? "show-errors" : ""}`}>
             {step === 1 && (
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <h2 className="text-xl font-bold text-slate-900 mb-6">1. Organization Information</h2>
@@ -241,8 +242,8 @@ export default function StartOnboardingPage() {
                   <div className="md:col-span-2"><label className="block text-sm font-semibold mb-2">Statement Descriptor (Bank statement text)</label><input required value={formData.defaultStatementDescriptor} onChange={(e) => updateField("defaultStatementDescriptor", e.target.value)} maxLength={20} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div><label className="block text-sm font-semibold mb-2">Incorporation Year</label><input required type="number" placeholder="YYYY" min="1800" max={new Date().getFullYear()} value={formData.incorporationYear} onChange={(e) => updateField("incorporationYear", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div className="flex gap-4">
-                    <div className="w-1/2"><label className="block text-sm font-semibold mb-2">Month</label><input required type="number" placeholder="MM" value={formData.incorporationMonth} onChange={(e) => updateField("incorporationMonth", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
-                    <div className="w-1/2"><label className="block text-sm font-semibold mb-2">Day</label><input required type="number" placeholder="DD" value={formData.incorporationDay} onChange={(e) => updateField("incorporationDay", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
+                    <div className="w-1/2"><label className="block text-sm font-semibold mb-2">Month</label><input required type="number" placeholder="MM" min="1" max="12" value={formData.incorporationMonth} onChange={(e) => updateField("incorporationMonth", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
+                    <div className="w-1/2"><label className="block text-sm font-semibold mb-2">Day</label><input required type="number" placeholder="DD" min="1" max="31" value={formData.incorporationDay} onChange={(e) => updateField("incorporationDay", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   </div>
                   <div className="md:col-span-2"><label className="block text-sm font-semibold mb-2">Organization Description</label><textarea required value={formData.businessDescription} onChange={(e) => updateField("businessDescription", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" rows={3} /></div>
                 </div>
@@ -288,10 +289,10 @@ export default function StartOnboardingPage() {
                   <div><label className="block text-sm font-semibold mb-2">Email</label><input required type="email" value={formData.email} onChange={(e) => updateField("email", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
                   <div><label className="block text-sm font-semibold mb-2">Phone</label><input required type="tel" value={formData.phone} onChange={(e) => updateField("phone", e.target.value)} pattern="\d{10}" maxLength={10} title="Phone number must be exactly 10 digits" className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
                   <div><label className="block text-sm font-semibold mb-2">SSN / Tax ID</label><input required type="password" value={formData.taxId} onChange={(e) => updateField("taxId", e.target.value)} pattern="\d{9}" maxLength={9} title="Tax ID must be exactly 9 digits" className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
-                  <div><label className="block text-sm font-semibold mb-2">DOB Year</label><input required type="number" placeholder="YYYY" max={new Date().getFullYear() - 18} title="Must be at least 18 years old" value={formData.dobYear} onChange={(e) => updateField("dobYear", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
+                  <div><label className="block text-sm font-semibold mb-2">DOB Year</label><input required type="number" placeholder="YYYY" min="1900" max={new Date().getFullYear() - 18} title="Must be at least 18 years old" value={formData.dobYear} onChange={(e) => updateField("dobYear", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
                   <div className="flex gap-4">
-                    <div className="w-1/2"><label className="block text-sm font-semibold mb-2">Month</label><input required type="number" placeholder="MM" value={formData.dobMonth} onChange={(e) => updateField("dobMonth", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
-                    <div className="w-1/2"><label className="block text-sm font-semibold mb-2">Day</label><input required type="number" placeholder="DD" value={formData.dobDay} onChange={(e) => updateField("dobDay", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
+                    <div className="w-1/2"><label className="block text-sm font-semibold mb-2">Month</label><input required type="number" placeholder="MM" min="1" max="12" value={formData.dobMonth} onChange={(e) => updateField("dobMonth", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
+                    <div className="w-1/2"><label className="block text-sm font-semibold mb-2">Day</label><input required type="number" placeholder="DD" min="1" max="31" value={formData.dobDay} onChange={(e) => updateField("dobDay", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
                   </div>
                   <div><label className="block text-sm font-semibold mb-2">Ownership Percentage (%)</label><input required type="number" max="100" value={formData.ownershipPercentage} onChange={(e) => updateField("ownershipPercentage", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
                   <div className="md:col-span-2"><label className="block text-sm font-semibold mb-2">Personal Address Line 1</label><input required value={formData.personalAddressLine1} onChange={(e) => updateField("personalAddressLine1", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
@@ -325,10 +326,10 @@ export default function StartOnboardingPage() {
                           <div><label className="block text-sm font-semibold mb-2">Email</label><input required type="email" value={owner.email} onChange={(e) => updateAssociatedOwner(index, "email", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
                           <div><label className="block text-sm font-semibold mb-2">Ownership %</label><input required type="number" min="25" max="100" value={owner.ownershipPercentage} onChange={(e) => updateAssociatedOwner(index, "ownershipPercentage", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
                           <div><label className="block text-sm font-semibold mb-2">SSN / Tax ID</label><input required type="password" value={owner.taxId} onChange={(e) => updateAssociatedOwner(index, "taxId", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
-                          <div className="flex gap-2">
-                            <input required type="number" placeholder="YYYY" value={owner.dobYear} onChange={(e) => updateAssociatedOwner(index, "dobYear", e.target.value)} className="w-1/3 px-4 py-2 rounded-lg border outline-none" />
-                            <input required type="number" placeholder="MM" value={owner.dobMonth} onChange={(e) => updateAssociatedOwner(index, "dobMonth", e.target.value)} className="w-1/3 px-4 py-2 rounded-lg border outline-none" />
-                            <input required type="number" placeholder="DD" value={owner.dobDay} onChange={(e) => updateAssociatedOwner(index, "dobDay", e.target.value)} className="w-1/3 px-4 py-2 rounded-lg border outline-none" />
+                          <div className="flex gap-2 mt-1">
+                            <input required type="number" placeholder="YYYY" min="1900" max={new Date().getFullYear() - 18} title="Must be at least 18 years old" value={owner.dobYear} onChange={(e) => updateAssociatedOwner(index, "dobYear", e.target.value)} className="w-1/3 px-4 py-2 rounded-lg border outline-none" />
+                            <input required type="number" placeholder="MM" min="1" max="12" value={owner.dobMonth} onChange={(e) => updateAssociatedOwner(index, "dobMonth", e.target.value)} className="w-1/3 px-4 py-2 rounded-lg border outline-none" />
+                            <input required type="number" placeholder="DD" min="1" max="31" value={owner.dobDay} onChange={(e) => updateAssociatedOwner(index, "dobDay", e.target.value)} className="w-1/3 px-4 py-2 rounded-lg border outline-none" />
                           </div>
                           <div className="md:col-span-2"><label className="block text-sm font-semibold mb-2">Address Line 1</label><input required value={owner.addressLine1} onChange={(e) => updateAssociatedOwner(index, "addressLine1", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
                           <div><label className="block text-sm font-semibold mb-2">City</label><input required value={owner.city} onChange={(e) => updateAssociatedOwner(index, "city", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
@@ -409,11 +410,11 @@ export default function StartOnboardingPage() {
               ) : <div></div>}
 
               {step < 6 ? (
-                <button type="submit" disabled={step === 4 && hasBeneficialOwners === null} className="px-8 py-3 rounded-xl font-bold text-slate-900 metallic-gold shadow-lg transition-all flex items-center gap-2 disabled:opacity-50">
+                <button type="submit" onClick={() => setAttemptedNext(true)} disabled={step === 4 && hasBeneficialOwners === null} className="px-8 py-3 rounded-xl font-bold text-slate-900 metallic-gold shadow-lg transition-all flex items-center gap-2 disabled:opacity-50">
                   Next <ArrowRight className="w-4 h-4" />
                 </button>
               ) : (
-                <button type="submit" disabled={isSubmitting || !Object.values(legal).every(Boolean)} className="px-8 py-3 rounded-xl font-bold text-slate-900 metallic-gold shadow-lg transition-all flex items-center gap-2 disabled:opacity-50">
+                <button type="submit" onClick={() => setAttemptedNext(true)} disabled={isSubmitting || !Object.values(legal).every(Boolean)} className="px-8 py-3 rounded-xl font-bold text-slate-900 metallic-gold shadow-lg transition-all flex items-center gap-2 disabled:opacity-50">
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "Submit Secure Onboarding"}
                 </button>
               )}

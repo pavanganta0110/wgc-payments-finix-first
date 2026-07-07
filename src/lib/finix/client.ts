@@ -96,6 +96,59 @@ export class FinixClient {
   }
 
   // ==========================================
+  // Files and Evidence
+  // ==========================================
+
+  async createFileResource(payload: { display_name: string; linked_to: string; type: string }) {
+    return this.fetchApi("/files", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async uploadFileContent(fileId: string, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const url = `${this.baseUrl}/files/${fileId}/upload`;
+    
+    const headers = {
+      "Authorization": this.authHeader,
+      "Accept": "application/hal+json",
+      "Finix-Version": this.version,
+    };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: formData
+    });
+
+    let data;
+    const text = await res.text();
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (e) {
+      data = text;
+    }
+
+    if (!res.ok) {
+      const errorStr = typeof data === 'object' ? JSON.stringify(data) : data;
+      console.error(`Finix API Error [${res.status}] on ${url}: ${errorStr}`);
+      throw new Error(`Finix Error: ${errorStr}`);
+    }
+
+    return data;
+  }
+
+  async createVerification(identityId: string) {
+    return this.fetchApi(`/identities/${identityId}/verifications`, {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+  }
+
+  // ==========================================
   // Merchants
   // ==========================================
 

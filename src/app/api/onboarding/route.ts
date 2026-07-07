@@ -137,6 +137,16 @@ export async function POST(req: Request) {
     // Finix Orchestration
     // ==========================================
 
+    // Finix expects dates as objects with integers: { year, month, day }
+    const formatFinixDate = (y: any, m: any, d: any) => {
+      if (!y || !m || !d) return undefined;
+      return { 
+        year: Number(y), 
+        month: Number(m), 
+        day: Number(d) 
+      };
+    };
+
     const identityPayload = {
       type: "BUSINESS",
       identity_roles: ["SELLER"],
@@ -144,9 +154,9 @@ export async function POST(req: Request) {
         business_name: legalBusinessName, doing_business_as: doingBusinessAs, business_type: businessTypeEnum,
         business_tax_id: businessTaxId, business_phone: businessPhone, default_statement_descriptor: defaultStatementDescriptor,
         business_address: { line1: businessAddressLine1, line2: businessAddressLine2, city: businessCity, region: businessState, postal_code: businessPostalCode, country: businessCountry },
-        incorporation_date: incorporationYear ? { year: incorporationYear, month: incorporationMonth, day: incorporationDay } : undefined,
+        incorporation_date: incorporationYear ? formatFinixDate(incorporationYear, incorporationMonth, incorporationDay) : undefined,
         first_name: firstName, last_name: lastName, title: title, email: email, phone: phone,
-        dob: { year: dobYear, month: dobMonth, day: dobDay },
+        dob: formatFinixDate(dobYear, dobMonth, dobDay),
         personal_address: { line1: personalAddressLine1, line2: personalAddressLine2, city: personalCity, region: personalState, postal_code: personalPostalCode, country: personalCountry },
         tax_id: taxId, principal_percentage_ownership: ownershipPercentage,
         annual_card_volume: annualCardVolume, max_transaction_amount: maxTransactionAmount, ach_max_transaction_amount: achMaxTransactionAmount, mcc,
@@ -213,7 +223,7 @@ export async function POST(req: Request) {
           const assocPayload = {
             entity: {
               first_name: owner.firstName, last_name: owner.lastName, title: owner.title, email: owner.email, phone: owner.phone,
-              dob: { year: owner.dobYear, month: owner.dobMonth, day: owner.dobDay },
+              dob: formatFinixDate(owner.dobYear, owner.dobMonth, owner.dobDay),
               principal_percentage_ownership: owner.ownershipPercentage,
               personal_address: { line1: owner.addressLine1, line2: owner.addressLine2, city: owner.city, region: owner.state, postal_code: owner.postalCode, country: owner.country },
               tax_id: owner.taxId
@@ -338,9 +348,7 @@ export async function POST(req: Request) {
             <p>Thank you for submitting your WGC Payments onboarding for <strong>${safeBusinessName}</strong>.</p>
             <p>Your application is now under review. Most reviews are completed within 24–48 hours.</p>
             <p>We will notify you once your account is approved or if additional information is required.</p>
-          `,
-          ctaText: "View Merchant Login",
-          ctaUrl: "https://wgcpayments.com/merchant-login"
+          `
         });
 
         await prisma.emailLog.create({

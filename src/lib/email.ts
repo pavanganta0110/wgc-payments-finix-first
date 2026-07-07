@@ -10,30 +10,14 @@ interface WgcEmailOptions {
   badgeText?: string;
   badgeColor?: string; // e.g. "#C99A2E" or "#10B981"
   bodyHtml: string;
-  ctaText?: string;
-  ctaUrl?: string;
 }
 
-export async function sendWgcEmail({
-  to,
-  subject,
-  previewText,
-  title,
-  badgeText,
-  badgeColor = "#0B5DBC",
-  bodyHtml,
-  ctaText,
-  ctaUrl
-}: WgcEmailOptions) {
-  if (!process.env.RESEND_API_KEY) {
-    console.warn("RESEND_API_KEY is not set. Email not sent.");
-    return { success: false, error: "Missing API Key" };
-  }
-
-  const logoUrl = "https://wgcpayments.com/wgc-logo.png";
+export function generateWgcEmailHtml(options: WgcEmailOptions) {
+  const { title, previewText, bodyHtml, badgeText, badgeColor = "#0B5DBC" } = options;
+  const baseUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : 'https://wgcpayments.com';
+  const logoUrl = `${baseUrl}/wgc-logo.svg`;
   
-  // HTML Template
-  const html = `
+  return `
     <!DOCTYPE html>
     <html>
     <head>
@@ -51,7 +35,7 @@ export async function sendWgcEmail({
               <!-- Header with Logo -->
               <tr>
                 <td style="padding: 40px 40px 20px 40px; text-align: center; border-bottom: 1px solid #F0F4F8;">
-                  <img src="${logoUrl}" alt="WGC Payments" style="height: 40px; max-width: 100%;" />
+                  <img src="${logoUrl}" alt="WGC Payments" style="width: 200px; height: auto; max-width: 100%;" />
                 </td>
               </tr>
               
@@ -74,14 +58,6 @@ export async function sendWgcEmail({
                   <div style="color: #4A5568; font-size: 16px; line-height: 1.6; margin-bottom: 30px;">
                     ${bodyHtml}
                   </div>
-
-                  ${ctaText && ctaUrl ? `
-                  <div style="text-align: center; margin-bottom: 30px;">
-                    <a href="${ctaUrl}" style="display: inline-block; padding: 14px 28px; background-color: #0B5DBC; color: #FFFFFF; font-size: 16px; font-weight: 600; text-decoration: none; border-radius: 8px;">
-                      ${ctaText}
-                    </a>
-                  </div>
-                  ` : ''}
 
                   <!-- Support Box -->
                   <div style="background-color: #F8FBFF; border-left: 4px solid #C99A2E; padding: 20px; border-radius: 4px; margin-top: 40px;">
@@ -112,22 +88,29 @@ export async function sendWgcEmail({
     </body>
     </html>
   `;
+}
+
+export async function sendWgcEmail(options: WgcEmailOptions) {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn("RESEND_API_KEY is not set. Email not sent.");
+    return { success: false, error: "Missing API Key" };
+  }
+
+  const html = generateWgcEmailHtml(options);
 
   // Plain Text Fallback
   // Strip simple HTML tags from bodyHtml for the text version
-  const cleanBody = bodyHtml
+  const cleanBody = options.bodyHtml
     .replace(/<br\s*[\/]?>/gi, '\\n')
     .replace(/<\/p>/gi, '\\n\\n')
     .replace(/<[^>]+>/g, '')
     .trim();
 
   const text = `
-${title}
-${badgeText ? `[Status: ${badgeText}]` : ''}
+${options.title}
+${options.badgeText ? `[Status: ${options.badgeText}]` : ''}
 
 ${cleanBody}
-
-${ctaText && ctaUrl ? `${ctaText}: ${ctaUrl}\n` : ''}
 
 Need help? Contact WGC Payments Support at support@wgcpayments.com
 
@@ -140,8 +123,8 @@ support@wgcpayments.com
     const data = await resend.emails.send({
       from: "WGC Payments <no-reply@wgcpayments.com>",
       replyTo: "support@wgcpayments.com",
-      to,
-      subject,
+      to: options.to,
+      subject: options.subject,
       html,
       text,
     });
@@ -152,4 +135,65 @@ support@wgcpayments.com
     console.error("Failed to send WGC email:", error);
     return { success: false, error };
   }
+}
+
+interface WgcAdminEmailOptions {
+  merchantName: string;
+  contactEmail: string;
+  finixMerchantId?: string;
+  finixIdentityId?: string;
+  newStatus: string;
+  verificationState?: string;
+  documentsUploaded?: string;
+  whatHappened: string;
+  actionNeeded: string;
+  adminDashboardLink: string;
+  customSubject?: string;
+}
+
+export async function sendWgcAdminEmail(options: WgcAdminEmailOptions) {
+  const {
+    merchantName,
+    contactEmail,
+    finixMerchantId,
+    finixIdentityId,
+    newStatus,
+    verificationState,
+    documentsUploaded,
+    whatHappened,
+    actionNeeded,
+    adminDashboardLink,
+    customSubject
+  } = options;
+
+  const adminEmail = process.env.SUPPORT_EMAIL || "support@wgcpayments.com";
+
+  let statusBadgeColor = "#0B5DBC";
+  if (newStatus === "APPROVED") statusBadgeColor = "#10B981"; // Green
+  else if (newStatus === "MORE_INFORMATION_REQUIRED" || newStatus === "ADDITIONAL_INFO_NEEDED") statusBadgeColor = "#F59E0B"; // Orange
+  else if (newStatus === "REJECTED" || newStatus === "FAILED") statusBadgeColor = "#EF4444"; // Red
+
+  const bodyHtml = `
+    <p><strong>Business Name:</strong> ${merchantName}</p>
+    <p><strong>Contact Email:</strong> ${contactEmail}</p>
+    ${finixMerchantId ? `<p><strong>Finix Merchant ID:</strong> ${finixMerchantId}</p>` : ''}
+    ${finixIdentityId ? `<p><strong>Finix Identity ID:</strong> ${finixIdentityId}</p>` : ''}
+    ${documentsUploaded ? `<p><strong>Documents Uploaded:</strong> ${documentsUploaded}</p>` : ''}
+    <p><strong>New Status:</strong> ${newStatus}</p>
+    ${verificationState ? `<p><strong>Verification State:</strong> ${verificationState}</p>` : ''}
+    
+    <div style="margin-top: 20px; padding: 15px; background-color: #F0F4F8; border-radius: 8px;">
+      <p style="margin-top: 0;"><strong>What happened:</strong><br/>${whatHappened}</p>
+      <p style="margin-bottom: 0;"><strong>What action is needed:</strong><br/>${actionNeeded}</p>
+    </div>
+  `;
+
+  return await sendWgcEmail({
+    to: adminEmail,
+    subject: customSubject || `[WGC Admin] Merchant Status Update: ${merchantName} - ${newStatus}`,
+    title: "Merchant Application Update",
+    badgeText: newStatus,
+    badgeColor: statusBadgeColor,
+    bodyHtml: bodyHtml + `<p><a href="${adminDashboardLink}">View in Admin Dashboard</a></p>`,
+  });
 }

@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { sendWgcEmail } from "@/lib/email";
-const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SECRET;
+import { sendWgcEmail, sendWgcAdminEmail } from "@/lib/email";
+
+const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SIGNING_KEY;
+const BEARER_TOKEN = process.env.FINIX_WEBHOOK_BEARER_TOKEN;
 
 async function sendWebhookEmail(
   applicationId: string,
@@ -13,16 +15,10 @@ async function sendWebhookEmail(
   title: string,
   badgeText: string,
   badgeColor: string,
-  bodyHtml: string,
-  ctaText: string,
-  ctaUrl: string
+  bodyHtml: string
 ) {
-  // Check if we already sent this type of email to prevent duplicates
   const existingLog = await prisma.emailLog.findFirst({
-    where: {
-      onboardingApplicationId: applicationId,
-      type: type,
-    },
+    where: { onboardingApplicationId: applicationId, type: type },
   });
 
   if (existingLog) {
@@ -31,17 +27,7 @@ async function sendWebhookEmail(
   }
 
   try {
-    const response = await sendWgcEmail({
-      to,
-      subject,
-      title,
-      badgeText,
-      badgeColor,
-      bodyHtml,
-      ctaText,
-      ctaUrl
-    });
-
+    const response = await sendWgcEmail({ to, subject, title, badgeText, badgeColor, bodyHtml });
     const error = response.success ? null : response.error;
     const data = response.data;
 
@@ -65,137 +51,140 @@ async function sendWebhookEmail(
 export async function POST(req: Request) {
   try {
     const headerList = await headers();
+    const signatureHeader = headerList.get("finix-signature");
     const authHeader = headerList.get("authorization") || "";
-    const signature = headerList.get("finix-signature");
     const rawBody = await req.text();
 
-    const basicAuthUser = process.env.FINIX_WEBHOOK_BASIC_USERNAME || "wgc_finix_webhook";
-    const basicAuthPass = process.env.FINIX_WEBHOOK_BASIC_PASSWORD || "Pavankumarreddy145@";
-
-    let isAuthenticated = false;
-
-    // Check Basic Auth
-    const match = authHeader.match(/^Basic\s+(.*)$/i);
-    if (match) {
-      const credentials = Buffer.from(match[1], "base64").toString("utf-8");
-      const [username, password] = credentials.split(":");
-      if (username === basicAuthUser && password === basicAuthPass) {
-        isAuthenticated = true;
+    if (BEARER_TOKEN) {
+      const match = authHeader.match(/^Bearer\s+(.*)$/i);
+      if (!match || match[1] !== BEARER_TOKEN) {
+        return NextResponse.json({ error: "Unauthorized: Invalid Token" }, { status: 401 });
       }
     }
 
-    // Check HMAC Signature if Basic Auth failed but secret is present
-    if (!isAuthenticated && WEBHOOK_SECRET && signature) {
-      const expectedSignature = crypto
-        .createHmac("sha256", WEBHOOK_SECRET)
-        .update(rawBody)
-        .digest("hex");
-
-      if (signature === expectedSignature) {
-        isAuthenticated = true;
-      }
+    if (!WEBHOOK_SECRET || !signatureHeader) {
+      return NextResponse.json({ error: "Unauthorized: Missing Signature" }, { status: 401 });
     }
 
-    if (!isAuthenticated) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Parse Finix-Signature header: t=123,v1=signature
+    const sigParts = signatureHeader.split(",");
+    let timestamp = "";
+    let signature = "";
+    for (const part of sigParts) {
+      const [key, value] = part.split("=");
+      if (key === "t") timestamp = value;
+      if (key === "v1") signature = value;
+    }
+
+    if (!timestamp || !signature) {
+      return NextResponse.json({ error: "Unauthorized: Invalid Signature Format" }, { status: 401 });
+    }
+
+    const payloadToSign = `${timestamp}:${rawBody}`;
+    const expectedSignature = crypto
+      .createHmac("sha256", WEBHOOK_SECRET)
+      .update(payloadToSign, "utf-8")
+      .digest("hex");
+
+    if (signature.length !== expectedSignature.length) {
+      return NextResponse.json({ error: "Unauthorized: Invalid Signature" }, { status: 401 });
+    }
+    const signatureValid = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+    if (!signatureValid) {
+      return NextResponse.json({ error: "Unauthorized: Invalid Signature" }, { status: 401 });
+    }
+
+    const eventTime = parseInt(timestamp, 10);
+    const currentTime = Math.floor(Date.now() / 1000);
+    if (Math.abs(currentTime - eventTime) > 300) {
+      return NextResponse.json({ error: "Unauthorized: Timestamp too old" }, { status: 401 });
     }
 
     const payload = JSON.parse(rawBody);
     const eventType = payload.type;
     const eventId = payload.id;
-    let relatedFinixId = null;
+    const occurredAt = payload.created_at ? new Date(payload.created_at) : new Date();
 
-    // Determine related ID
-    if (payload.data?.id) {
-      relatedFinixId = payload.data.id;
-    }
+    const entity = payload.data?.resource_type || "UNKNOWN";
+    
+    let identityId = payload.data?.identity;
+    let merchantId = payload.data?.merchant;
+    if (!merchantId && entity === "MERCHANT") { merchantId = payload.data?.id; }
+    if (!identityId && entity === "IDENTITY") { identityId = payload.data?.id; }
+    
+    const verificationId = entity === "VERIFICATION" ? payload.data?.id : undefined;
 
-    // Save webhook event (idempotency check)
-    const existingEvent = await prisma.webhookEvent.findUnique({
-      where: { providerEventId: eventId },
+    const existingEvent = await prisma.finixWebhookEvent.findUnique({
+      where: { finixEventId: eventId },
     });
 
     if (existingEvent) {
       return NextResponse.json({ message: "Already processed" }, { status: 200 });
     }
 
-    const webhookEvent = await prisma.webhookEvent.create({
+    const webhookEvent = await prisma.finixWebhookEvent.create({
       data: {
-        provider: "FINIX",
-        eventType,
-        providerEventId: eventId,
-        relatedFinixId,
-        payload,
+        finixEventId: eventId,
+        entity,
+        type: eventType,
+        occurredAt,
+        merchantId: merchantId || null,
+        identityId: identityId || null,
+        verificationId: verificationId || null,
+        rawPayloadJson: payload,
       },
     });
 
     try {
-      // Process event based on type
       let app = null;
-
       if (payload.data?.id) {
-        // Find application by Identity ID, Merchant ID, or Form ID
         app = await prisma.onboardingApplication.findFirst({
           where: {
             OR: [
               { finixIdentityId: payload.data.id },
               { finixMerchantId: payload.data.id },
-              { finixMerchantId: payload.data.merchant }, // sometimes related via merchant field
+              { finixMerchantId: payload.data.merchant },
               { finixIdentityId: payload.data.identity },
-            ],
-          },
+              { finixVerificationId: payload.data.id },
+            ]
+          }
         });
       }
 
       if (app) {
         const contactEmail = app.contactEmail;
-        const contactName = app.contactName;
         const orgName = app.organizationName;
+        const safeOrgName = orgName || "your organization";
 
-        switch (eventType) {
-          case "onboarding_form.updated": {
-            if (payload.data.status === "COMPLETED" || payload.data.status === "SUBMITTED") {
-              if (app.status === "DRAFT" || app.status === "ONBOARDING_LINK_CREATED") {
-                 await prisma.onboardingApplication.update({
-                   where: { id: app.id },
-                   data: { status: "SUBMITTED", submittedAt: new Date() }
-                 });
-                 const safeOrgName = orgName || "your organization";
-                 await sendWebhookEmail(
-                   app.id,
-                   "ONBOARDING_SUBMITTED",
-                   contactEmail,
-                   "WGC Payments onboarding submitted",
-                   "Your onboarding has been submitted",
-                   "Under Review",
-                   "#0B5DBC",
-                   `<p>Thank you for submitting your WGC Payments onboarding for <strong>${safeOrgName}</strong>.</p>
-                    <p>Your application is now under review. Most reviews are completed within 24–48 hours.</p>
-                    <p>We will notify you once your account is approved or if additional information is required.</p>`,
-                   "View Merchant Login",
-                   "https://wgcpayments.com/merchant-login"
-                 );
-              }
-            }
-            break;
+        const updateData: any = {
+          lastFinixEventId: eventId,
+          lastFinixEventType: eventType,
+          lastWebhookPayloadSummary: { type: eventType, entity, status: payload.data?.status, state: payload.data?.state, onboarding_state: payload.data?.onboarding_state }
+        };
+
+        if (eventType === "merchant.created") {
+          const onboardingState = payload.data?.onboarding_state;
+          if (onboardingState === "PROVISIONING") {
+             if (app.onboardingStatus !== "APPROVED" && app.onboardingStatus !== "REJECTED") {
+               updateData.onboardingStatus = "UNDER_REVIEW";
+               updateData.finixMerchantId = payload.data.id;
+               updateData.lastStatusChangedAt = new Date();
+             }
           }
-          case "merchant.created":
-          case "merchant.updated":
-          case "merchant.underwritten": {
-            const status = payload.data.status;
-            const onboardingState = payload.data.onboarding_state;
-            const processingEnabled = payload.data.processing_enabled || false;
-            const settlementEnabled = payload.data.settlement_enabled || false;
+        } 
+        else if (eventType === "merchant.underwritten" || eventType === "merchant.updated") {
+          const onboardingState = payload.data?.onboarding_state;
+          const status = payload.data?.status;
+          
+          if (onboardingState === "APPROVED" || status === "APPROVED") {
+            if (app.onboardingStatus !== "APPROVED") {
+              updateData.onboardingStatus = "APPROVED";
+              updateData.onboardingState = "APPROVED";
+              updateData.processingEnabled = payload.data?.processing_enabled || false;
+              updateData.settlementEnabled = payload.data?.settlement_enabled || false;
+              updateData.lastStatusChangedAt = new Date();
+              updateData.approvedAt = new Date();
 
-            let newStatus = app.status;
-            let approvedAt = app.approvedAt;
-            let rejectedAt = app.rejectedAt;
-            let updateRequestedAt = app.updateRequestedAt;
-
-            if (status === "APPROVED") {
-              newStatus = "APPROVED";
-              if (!approvedAt) approvedAt = new Date();
-              const safeOrgName = orgName || "your organization";
               await sendWebhookEmail(
                 app.id,
                 "APPROVED",
@@ -203,16 +192,87 @@ export async function POST(req: Request) {
                 "Your WGC Payments account has been approved",
                 "Your account has been approved",
                 "Approved",
-                "#10B981", // Green
-                `<p>Good news — your WGC Payments account for <strong>${safeOrgName}</strong> has been approved.</p>
-                 <p>You can now access your merchant dashboard to view payments, create payment links, and manage account activity.</p>`,
-                "Log in to Merchant Dashboard",
-                "https://wgcpayments.com/merchant-login"
+                "#10B981",
+                `<p>Good news — your WGC Payments account for <strong>${safeOrgName}</strong> has been approved.</p><p>You can now access your merchant dashboard to view payments, create payment links, and manage account activity.</p>`
               );
-            } else if (status === "REJECTED" || status === "FAILED") {
-              newStatus = "REJECTED";
-              if (!rejectedAt) rejectedAt = new Date();
-              const safeOrgName = orgName || "your organization";
+
+              await sendWgcAdminEmail({
+                merchantName: safeOrgName,
+                contactEmail,
+                finixMerchantId: app.finixMerchantId || payload.data.id,
+                finixIdentityId: app.finixIdentityId || undefined,
+                newStatus: "APPROVED",
+                whatHappened: "Finix approved the merchant onboarding application.",
+                actionNeeded: "None.",
+                adminDashboardLink: "https://wgcpayments.com/admin/merchant-applications"
+              });
+            }
+          } else if (onboardingState === "UPDATE_REQUESTED") {
+            if (app.onboardingStatus !== "MORE_INFORMATION_REQUIRED" && app.onboardingStatus !== "APPROVED") {
+              updateData.onboardingStatus = "MORE_INFORMATION_REQUIRED";
+              updateData.onboardingState = "UPDATE_REQUESTED";
+              updateData.lastStatusChangedAt = new Date();
+              updateData.updateRequestedAt = new Date();
+              
+              const crypto = require("crypto");
+              const rawToken = crypto.randomBytes(32).toString("hex");
+              const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+              
+              const expiresAt = new Date();
+              expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
+
+              updateData.updateTokenHash = tokenHash;
+              updateData.updateTokenExpiresAt = expiresAt;
+
+              let requestedItemsStr = "Additional documentation is required to verify your business and identity.";
+              if (payload.data?.messages) {
+                updateData.updateRequestedCodes = payload.data.messages;
+                // Attempt to parse human readable items if messages is an array of objects
+                try {
+                  const msgs = Array.isArray(payload.data.messages) ? payload.data.messages : [payload.data.messages];
+                  const items = msgs.map((m: any) => typeof m === 'object' ? (m.message || m.code || JSON.stringify(m)) : m);
+                  if (items.length > 0) {
+                    requestedItemsStr = items.map((i: string) => `• ${i}`).join("<br/>");
+                    updateData.updateRequestedItems = requestedItemsStr;
+                  }
+                } catch (e) {
+                  console.error("Failed to parse requested items:", e);
+                }
+              }
+
+              const secureLink = `https://wgcpayments.com/onboarding/update/${rawToken}`;
+
+              await sendWebhookEmail(
+                app.id,
+                "MORE_INFORMATION_REQUIRED",
+                contactEmail,
+                "Additional information needed for your WGC Payments account",
+                "Additional information is required",
+                "Action Required",
+                "#F59E0B",
+                `<p>We need additional information to continue reviewing your WGC Payments account for <strong>${safeOrgName}</strong>.</p>
+                 <p><strong>Requested items:</strong><br/>${requestedItemsStr}</p>
+                 <p>Please use the secure link below to submit the requested information.</p>
+                 <p><a href="${secureLink}">Submit Required Information</a></p>`
+              );
+              
+              await sendWgcAdminEmail({
+                merchantName: safeOrgName,
+                contactEmail,
+                finixMerchantId: app.finixMerchantId || payload.data.id,
+                newStatus: "MORE_INFORMATION_REQUIRED",
+                whatHappened: "Finix requested additional information or documents for the merchant.",
+                actionNeeded: "Merchant has been sent a secure upload link.",
+                adminDashboardLink: "https://wgcpayments.com/admin/merchant-applications"
+              });
+            }
+          } else if (onboardingState === "REJECTED" || status === "REJECTED" || status === "FAILED") {
+            if (app.onboardingStatus !== "REJECTED") {
+              updateData.onboardingStatus = "REJECTED";
+              updateData.onboardingState = "REJECTED";
+              updateData.lastStatusChangedAt = new Date();
+              updateData.rejectedAt = new Date();
+
               await sendWebhookEmail(
                 app.id,
                 "REJECTED",
@@ -220,82 +280,74 @@ export async function POST(req: Request) {
                 "Update on your WGC Payments application",
                 "Update on your application",
                 "Not Approved",
-                "#EF4444", // Red
-                `<p>Thank you for your interest in WGC Payments.</p>
-                 <p>After review, we are unable to approve the onboarding application for <strong>${safeOrgName}</strong> at this time.</p>
-                 <p>If you believe this was a mistake or would like more information, please contact WGC Payments Support.</p>`,
-                "Contact Support",
-                "mailto:support@wgcpayments.com"
+                "#EF4444",
+                `<p>Thank you for your interest in WGC Payments.</p><p>After review, we are unable to approve the onboarding application for <strong>${safeOrgName}</strong> at this time.</p><p>If you believe this was a mistake or would like more information, please contact WGC Payments Support.</p>`
               );
-            } else if (status === "PROVISIONING" || onboardingState === "PROVISIONING") {
-              if (newStatus !== "APPROVED") {
-                newStatus = "UNDER_REVIEW";
-              }
-            }
 
-            if (processingEnabled && newStatus !== "APPROVED") {
-              newStatus = "PROCESSING_ENABLED";
-            }
-            if (settlementEnabled && newStatus !== "APPROVED") {
-              newStatus = "SETTLEMENT_ENABLED";
-            }
-
-            await prisma.onboardingApplication.update({
-              where: { id: app.id },
-              data: {
-                status: newStatus,
-                approvedAt,
-                rejectedAt,
-                finixMerchantId: payload.data.id,
-                onboardingState: onboardingState || app.onboardingState,
-                processingEnabled: processingEnabled,
-                settlementEnabled: settlementEnabled,
-              },
-            });
-            break;
-          }
-          case "identity.updated": {
-            if (payload.data.status === "UPDATE_REQUESTED") {
-              await prisma.onboardingApplication.update({
-                where: { id: app.id },
-                data: {
-                  status: "ADDITIONAL_INFO_NEEDED",
-                  updateRequestedAt: new Date(),
-                },
-              });
-
-              const safeOrgName = orgName || "your organization";
-              await sendWebhookEmail(
-                app.id,
-                "ADDITIONAL_INFO_NEEDED",
+              await sendWgcAdminEmail({
+                merchantName: safeOrgName,
                 contactEmail,
-                "Additional information needed for your WGC Payments account",
-                "Additional information is required",
-                "Action Required",
-                "#F59E0B", // Orange/Gold
-                `<p>We need a little more information to continue reviewing your WGC Payments account for <strong>${safeOrgName}</strong>.</p>
-                 <p>Please log in to your merchant dashboard or contact WGC Payments Support so we can help you complete the required updates.</p>`,
-                "Contact Support",
-                "mailto:support@wgcpayments.com"
-              );
+                finixMerchantId: app.finixMerchantId || payload.data.id,
+                newStatus: "REJECTED",
+                whatHappened: "Finix rejected the merchant onboarding application.",
+                actionNeeded: "Review rejection reason in Finix. Contact merchant if needed.",
+                adminDashboardLink: "https://wgcpayments.com/admin/merchant-applications"
+              });
             }
-            break;
           }
         }
+        else if (eventType === "verification.created") {
+          const state = payload.data?.state;
+          if (state === "PENDING") {
+            updateData.finixVerificationId = payload.data.id;
+            updateData.verificationState = "PENDING";
+            if (app.onboardingStatus !== "APPROVED" && app.onboardingStatus !== "REJECTED") {
+               updateData.onboardingStatus = "UNDER_REVIEW";
+            }
+          }
+        }
+        else if (eventType === "verification.updated") {
+          const state = payload.data?.state;
+          updateData.verificationState = state;
+          
+          if (state === "SUCCEEDED") {
+            if (app.onboardingStatus === "UNDER_REVIEW") {
+              updateData.onboardingStatus = "UNDER_REVIEW";
+            }
+          } else if (state === "FAILED") {
+             // Save but don't transition merchant status to failed immediately, rely on merchant.updated
+          }
+        }
+
+        await prisma.onboardingApplication.update({
+          where: { id: app.id },
+          data: updateData
+        });
       }
 
-      await prisma.webhookEvent.update({
+      await prisma.finixWebhookEvent.update({
         where: { id: webhookEvent.id },
-        data: { processedAt: new Date() },
+        data: { processedAt: new Date(), processingStatus: "COMPLETED" },
       });
 
       return NextResponse.json({ success: true });
-    } catch (processError) {
-      await prisma.webhookEvent.update({
+    } catch (processError: any) {
+      await prisma.finixWebhookEvent.update({
         where: { id: webhookEvent.id },
-        data: { processingError: (processError as Error).message },
+        data: { processingStatus: "ERROR", errorMessage: processError.message },
       });
-      throw processError; // Re-throw to return 500
+      
+      // Send admin alert for failed webhook processing
+      await sendWgcAdminEmail({
+        merchantName: "System Alert",
+        contactEmail: "N/A",
+        newStatus: "WEBHOOK_FAILED",
+        whatHappened: `Failed to process webhook event: ${eventType} (${eventId})`,
+        actionNeeded: `Check logs. Error: ${processError.message}`,
+        adminDashboardLink: "https://wgcpayments.com/admin/merchant-applications"
+      });
+
+      throw processError;
     }
   } catch (error) {
     console.error("Webhook error:", error);

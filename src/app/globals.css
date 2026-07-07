@@ -104,3 +104,22 @@ h1, h2, h3, h4, h5, h6 {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
+
+.show-errors input:invalid,
+.show-errors select:invalid,
+.show-errors textarea:invalid,
+input:not(:placeholder-shown):invalid,
+textarea:not(:placeholder-shown):invalid {
+  border-color: var(--color-wgc-error) !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2) !important;
+  color: #7f1d1d !important;
+}
+
+.show-errors input:invalid:focus,
+.show-errors select:invalid:focus,
+.show-errors textarea:invalid:focus,
+input:not(:placeholder-shown):invalid:focus,
+textarea:not(:placeholder-shown):invalid:focus {
+  outline: none;
+  border-color: var(--color-wgc-error) !important;
+}

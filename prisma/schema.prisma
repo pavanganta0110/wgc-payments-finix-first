@@ -23,6 +23,20 @@ model OnboardingApplication {
   rejectedAt                        DateTime?
   updateRequestedAt                 DateTime?
   updateReason                      String?
+  finixOnboardingFormId             String?
+  onboardingStatus                  String?
+  verificationState                 String?
+  lastFinixEventId                  String?
+  lastFinixEventType                String?
+  lastStatusChangedAt               DateTime?
+  updateRequestedReason             String?
+  updateRequestedItems              String?
+  updateRequestedCodes              Json?
+  rejectionReasonInternal           String?
+  lastWebhookPayloadSummary         Json?
+  updateTokenHash                   String?
+  updateTokenExpiresAt              DateTime?
+  lastUpdateSubmittedAt             DateTime?
   processingEnabled                 Boolean           @default(false)
   settlementEnabled                 Boolean           @default(false)
   createdAt                         DateTime          @default(now())
@@ -88,6 +102,7 @@ model OnboardingApplication {
   principalTitle                    String?
   refundPolicy                      String?
   associatedOwners                  AssociatedOwner[]
+  documents                         MerchantDocument[]
 }
 
 model AssociatedOwner {
@@ -136,16 +151,36 @@ model LegalAcceptance {
   createdAt               DateTime  @default(now())
 }
 
-model WebhookEvent {
-  id              String    @id @default(cuid())
-  provider        String
-  eventType       String
-  providerEventId String?   @unique
-  relatedFinixId  String?
-  payload         Json
-  processedAt     DateTime?
-  processingError String?
-  createdAt       DateTime  @default(now())
+model FinixWebhookEvent {
+  id               String    @id @default(cuid())
+  finixEventId     String    @unique
+  entity           String?
+  type             String
+  occurredAt       DateTime?
+  merchantId       String?
+  identityId       String?
+  verificationId   String?
+  onboardingState  String?
+  verificationState String?
+  rawPayloadJson   Json
+  processedAt      DateTime?
+  processingStatus String    @default("PENDING")
+  errorMessage     String?
+  createdAt        DateTime  @default(now())
+}
+
+model MerchantDocument {
+  id                      String                @id @default(cuid())
+  onboardingApplicationId String
+  documentType            String
+  fileName                String
+  fileSize                Int
+  mimeType                String
+  uploadStatus            String
+  finixFileId             String?
+  uploadedBy              String
+  createdAt               DateTime              @default(now())
+  onboardingApplication   OnboardingApplication @relation(fields: [onboardingApplicationId], references: [id], onDelete: Cascade)
 }
 
 model EmailLog {
