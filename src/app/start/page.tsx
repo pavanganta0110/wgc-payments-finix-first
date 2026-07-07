@@ -171,6 +171,7 @@ export default function StartOnboardingPage() {
         let errorMsg = data.step ? `Failed to submit: ${data.step}` : data.message || data.error || "Failed to submit onboarding application.";
         if (data.prismaCode) errorMsg += ` | Prisma Code: ${data.prismaCode}`;
         if (data.prismaMessage) errorMsg += ` | Msg: ${data.prismaMessage}`;
+        if (data.finixError) errorMsg += ` | Finix Error: ${data.finixError}`;
         throw new Error(errorMsg);
       }
 

@@ -173,7 +173,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ 
         success: false, 
         step: "FINIX_IDENTITY_CREATE_FAILED", 
-        message: "We could not verify your business identity. Please review your information." 
+        message: "We could not verify your business identity. Please review your information.",
+        finixError: err.message
       }, { status: 400 });
     }
 
