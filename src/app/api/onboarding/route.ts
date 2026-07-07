@@ -34,6 +34,11 @@ export async function POST(req: Request) {
     console.log("ONBOARDING_STEP", "REQUEST_RECEIVED");
     console.log("ONBOARDING_STEP", "VALIDATION_PASSED");
     
+    // Prepare database fields
+    const businessTypeEnum = (organizationType === "Nonprofit" || organizationType === "Church") 
+      ? "TAX_EXEMPT_ORGANIZATION" 
+      : "CORPORATION";
+
     let application;
     try {
       application = await prisma.onboardingApplication.create({
@@ -46,7 +51,7 @@ export async function POST(req: Request) {
           website,
           status: "DRAFT",
 
-          legalBusinessName, doingBusinessAs, businessType: organizationType === "Nonprofit" || organizationType === "Church" ? "NON_PROFIT_CORPORATION" : "CORPORATION",
+          legalBusinessName, doingBusinessAs, businessType: businessTypeEnum,
           businessTaxIdProvided: !!businessTaxId, businessAddressLine1, businessAddressLine2, businessCity, businessState, businessPostalCode, businessCountry,
           businessPhone, businessDescription, mcc, defaultStatementDescriptor,
 
@@ -137,7 +142,7 @@ export async function POST(req: Request) {
       type: "BUSINESS",
       identity_roles: ["SELLER"],
       entity: {
-        business_name: legalBusinessName, doing_business_as: doingBusinessAs, business_type: organizationType === "Nonprofit" || organizationType === "Church" ? "NON_PROFIT_CORPORATION" : "CORPORATION",
+        business_name: legalBusinessName, doing_business_as: doingBusinessAs, business_type: businessTypeEnum,
         business_tax_id: businessTaxId, business_phone: businessPhone, default_statement_descriptor: defaultStatementDescriptor,
         business_address: { line1: businessAddressLine1, line2: businessAddressLine2, city: businessCity, region: businessState, postal_code: businessPostalCode, country: businessCountry },
         first_name: firstName, last_name: lastName, title: title, email: email, phone: phone,
