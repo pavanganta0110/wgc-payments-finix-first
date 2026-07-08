@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
+import { runSyncJob } from "@/lib/finix/sync/runSyncJob";
 
-/**
- * Stub — fee sync is not implemented yet. See TODO in
- * src/lib/finix/sync/syncFees.ts (FinixClient has no listFees() method,
- * and the exact Finix fee API shape is unconfirmed).
- */
-export async function POST() {
-  return NextResponse.json(
-    { error: "Fee sync not implemented yet — see src/lib/finix/sync/syncFees.ts" },
-    { status: 501 }
-  );
+export async function POST(req: Request) {
+  try {
+    const { finixMerchantId, churchId } = await req.json();
+
+    if (!finixMerchantId) {
+      return NextResponse.json({ error: "Missing finixMerchantId" }, { status: 400 });
+    }
+
+    const result = await runSyncJob({ jobType: "fees", finixMerchantId, churchId });
+    return NextResponse.json({ success: true, result });
+  } catch (error: any) {
+    console.error("Fees sync failed:", error);
+    return NextResponse.json({ error: error?.message ?? "Sync failed" }, { status: 500 });
+  }
 }

@@ -1,13 +1,24 @@
 import { NextResponse } from "next/server";
+import { runSyncJob } from "@/lib/finix/sync/runSyncJob";
 
 /**
- * Stub — payout sync is not implemented yet. See TODO in
- * src/lib/finix/sync/syncPayouts.ts (FinixClient has no funding transfer
- * attempt methods, and the exact Finix payout API shape is unconfirmed).
+ * Note: finixSettlementId on the synced FinixFundingTransferAttempt rows
+ * will be null for now — the exact field linking a payout transfer back to
+ * its parent Settlement is unconfirmed. See TODO in
+ * src/lib/finix/sync/syncPayouts.ts.
  */
-export async function POST() {
-  return NextResponse.json(
-    { error: "Payout sync not implemented yet — see src/lib/finix/sync/syncPayouts.ts" },
-    { status: 501 }
-  );
+export async function POST(req: Request) {
+  try {
+    const { finixMerchantId, churchId } = await req.json();
+
+    if (!finixMerchantId) {
+      return NextResponse.json({ error: "Missing finixMerchantId" }, { status: 400 });
+    }
+
+    const result = await runSyncJob({ jobType: "payouts", finixMerchantId, churchId });
+    return NextResponse.json({ success: true, result });
+  } catch (error: any) {
+    console.error("Payouts sync failed:", error);
+    return NextResponse.json({ error: error?.message ?? "Sync failed" }, { status: 500 });
+  }
 }

@@ -98,6 +98,16 @@ export class FinixClient {
     return this.fetchApi(`/identities/${identityId}/merchants`);
   }
 
+  async listIdentityPaymentInstruments(identityId: string) {
+    return this.fetchApi(`/identities/${identityId}/payment_instruments`);
+  }
+
+  // Confirmed via Finix docs (docs.finix.com/api): GET /fees, filtered by
+  // the Transfer or Authorization ID it's linked to.
+  async listFeesForTransfer(transferId: string) {
+    return this.fetchApi(`/fees?transfer=${transferId}`);
+  }
+
   // ==========================================
   // Files and Evidence
   // ==========================================

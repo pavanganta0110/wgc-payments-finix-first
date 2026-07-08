@@ -45,3 +45,35 @@ export async function syncPaymentInstrument(
     },
   });
 }
+
+/**
+ * Backfills every payment instrument linked to a Finix identity. Uses the
+ * confirmed GET /identities/{id}/payment_instruments endpoint (same
+ * sub-resource pattern already proven by listIdentityMerchants).
+ * instrumentUse is left null here — it's a WGC-only classification
+ * (donor_payment_method / payout_bank / subscription_billing) that must be
+ * set by the caller based on which flow the instrument came from.
+ */
+export async function syncPaymentInstrumentsForIdentity(
+  finixIdentityId: string,
+  opts?: { churchId?: string }
+) {
+  const response = await finixClient.listIdentityPaymentInstruments(finixIdentityId);
+  const instruments: any[] = response?._embedded?.payment_instruments ?? [];
+
+  let created = 0;
+  let updated = 0;
+
+  for (const instrument of instruments) {
+    const existing = await prisma.finixPaymentInstrumentSnapshot.findUnique({
+      where: { finixPaymentInstrumentId: instrument.id },
+    });
+
+    await syncPaymentInstrument(instrument.id, { churchId: opts?.churchId });
+
+    if (existing) updated++;
+    else created++;
+  }
+
+  return { processed: instruments.length, created, updated };
+}
