@@ -7,6 +7,22 @@ import { Loader2, ArrowRight, ArrowLeft } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 
+const US_STATES = [
+  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+  "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+  "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+  "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+  "DC",
+];
+
+const normalizeWebsiteUrl = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+};
+
 export default function StartOnboardingPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
@@ -144,6 +160,7 @@ export default function StartOnboardingPage() {
     try {
       const payload = {
         ...formData,
+        website: normalizeWebsiteUrl(formData.website),
         annualCardVolume: Number(formData.annualCardVolume || 0),
         annualAchVolume: Number(formData.annualAchVolume || 0),
         averageCardTransferAmount: Number(formData.averageCardTransferAmount || 0),
@@ -204,7 +221,7 @@ export default function StartOnboardingPage() {
         <div className="text-center mb-10">
           <h1 className="text-3xl font-bold text-slate-900 mb-4">Start accepting donations with WGC Payments</h1>
           <p className="text-slate-600 bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm inline-block">
-            The information you provide will be used to verify your identity securely via API. Additional information may be requested.
+            The information you provide will be used to verify your identity securely via API. Additional information may be requested. Reviews are typically completed within 48 hours, often quicker.
           </p>
         </div>
 
@@ -233,13 +250,29 @@ export default function StartOnboardingPage() {
                   <div><label className="block text-sm font-semibold mb-2">Primary Contact Name</label><input required value={formData.contactName} onChange={(e) => updateField("contactName", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div><label className="block text-sm font-semibold mb-2">Primary Contact Email</label><input required type="email" value={formData.contactEmail} onChange={(e) => updateField("contactEmail", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div><label className="block text-sm font-semibold mb-2">Business Phone</label><input required type="tel" value={formData.businessPhone} onChange={(e) => updateField("businessPhone", e.target.value)} pattern="\d{10}" maxLength={10} title="Phone number must be exactly 10 digits" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
-                  <div><label className="block text-sm font-semibold mb-2">Website</label><input required type="url" value={formData.website} onChange={(e) => updateField("website", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" placeholder="https://" /></div>
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Website</label>
+                    <input required type="text" value={formData.website} onChange={(e) => updateField("website", e.target.value)} onBlur={(e) => updateField("website", normalizeWebsiteUrl(e.target.value))} placeholder="yourorganization.org" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" />
+                    <p className="text-xs text-slate-500 mt-1">No need to type https:// — we&apos;ll add it automatically.</p>
+                  </div>
                   <div className="md:col-span-2"><label className="block text-sm font-semibold mb-2">Address Line 1</label><input required value={formData.businessAddressLine1} onChange={(e) => updateField("businessAddressLine1", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div><label className="block text-sm font-semibold mb-2">City</label><input required value={formData.businessCity} onChange={(e) => updateField("businessCity", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
-                  <div><label className="block text-sm font-semibold mb-2">State</label><input required value={formData.businessState} onChange={(e) => updateField("businessState", e.target.value.toUpperCase())} pattern="[A-Za-z]{2}" maxLength={2} title="Must be a 2-letter state abbreviation (e.g. CA)" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">State</label>
+                    <select required value={formData.businessState} onChange={(e) => updateField("businessState", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308] bg-white">
+                      <option value="">Select a state</option>
+                      {US_STATES.map((abbr) => (
+                        <option key={abbr} value={abbr}>{abbr}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div><label className="block text-sm font-semibold mb-2">ZIP Code</label><input required value={formData.businessPostalCode} onChange={(e) => updateField("businessPostalCode", e.target.value)} pattern="\d{5}" maxLength={5} title="Must be a 5-digit ZIP code" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div><label className="block text-sm font-semibold mb-2">MCC</label><input required value={formData.mcc} onChange={(e) => updateField("mcc", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
-                  <div className="md:col-span-2"><label className="block text-sm font-semibold mb-2">Statement Descriptor (Bank statement text)</label><input required value={formData.defaultStatementDescriptor} onChange={(e) => updateField("defaultStatementDescriptor", e.target.value)} maxLength={20} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold mb-2">Statement Descriptor (Bank statement text)</label>
+                    <input required value={formData.defaultStatementDescriptor} onChange={(e) => updateField("defaultStatementDescriptor", e.target.value)} maxLength={20} placeholder="e.g. GRACE CHURCH DONATE" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" />
+                    <p className="text-xs text-slate-500 mt-1">This is exactly what your donors will see on their bank/card statement for each transaction — max 20 characters, letters and numbers only. Choose something donors will recognize (e.g. your organization&apos;s name).</p>
+                  </div>
                   <div><label className="block text-sm font-semibold mb-2">Incorporation Year</label><input required type="number" placeholder="YYYY" min="1800" max={new Date().getFullYear()} value={formData.incorporationYear} onChange={(e) => updateField("incorporationYear", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div className="flex gap-4">
                     <div className="w-1/2"><label className="block text-sm font-semibold mb-2">Month</label><input required type="number" placeholder="MM" min="1" max="12" value={formData.incorporationMonth} onChange={(e) => updateField("incorporationMonth", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
@@ -298,7 +331,15 @@ export default function StartOnboardingPage() {
                   <div><label className="block text-sm font-semibold mb-2">Ownership Percentage (%)</label><input required type="number" max="100" value={formData.ownershipPercentage} onChange={(e) => updateField("ownershipPercentage", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
                   <div className="md:col-span-2"><label className="block text-sm font-semibold mb-2">Personal Address Line 1</label><input required value={formData.personalAddressLine1} onChange={(e) => updateField("personalAddressLine1", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
                   <div><label className="block text-sm font-semibold mb-2">City</label><input required value={formData.personalCity} onChange={(e) => updateField("personalCity", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
-                  <div><label className="block text-sm font-semibold mb-2">State</label><input required value={formData.personalState} onChange={(e) => updateField("personalState", e.target.value.toUpperCase())} pattern="[A-Za-z]{2}" maxLength={2} title="Must be a 2-letter state abbreviation (e.g. CA)" className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">State</label>
+                    <select required value={formData.personalState} onChange={(e) => updateField("personalState", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none bg-white">
+                      <option value="">Select a state</option>
+                      {US_STATES.map((abbr) => (
+                        <option key={abbr} value={abbr}>{abbr}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div><label className="block text-sm font-semibold mb-2">ZIP Code</label><input required value={formData.personalPostalCode} onChange={(e) => updateField("personalPostalCode", e.target.value)} pattern="\d{5}" maxLength={5} title="Must be a 5-digit ZIP code" className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
                 </div>
               </div>
@@ -334,7 +375,15 @@ export default function StartOnboardingPage() {
                           </div>
                           <div className="md:col-span-2"><label className="block text-sm font-semibold mb-2">Address Line 1</label><input required value={owner.addressLine1} onChange={(e) => updateAssociatedOwner(index, "addressLine1", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
                           <div><label className="block text-sm font-semibold mb-2">City</label><input required value={owner.city} onChange={(e) => updateAssociatedOwner(index, "city", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
-                          <div><label className="block text-sm font-semibold mb-2">State</label><input required value={owner.state} onChange={(e) => updateAssociatedOwner(index, "state", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
+                          <div>
+                            <label className="block text-sm font-semibold mb-2">State</label>
+                            <select required value={owner.state} onChange={(e) => updateAssociatedOwner(index, "state", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none bg-white">
+                              <option value="">Select a state</option>
+                              {US_STATES.map((abbr) => (
+                                <option key={abbr} value={abbr}>{abbr}</option>
+                              ))}
+                            </select>
+                          </div>
                           <div><label className="block text-sm font-semibold mb-2">ZIP</label><input required value={owner.postalCode} onChange={(e) => updateAssociatedOwner(index, "postalCode", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
                         </div>
                       </div>
@@ -378,6 +427,24 @@ export default function StartOnboardingPage() {
                   </p>
                   
                   <div className="space-y-3">
+                    <label className="flex items-start gap-3 cursor-pointer pb-3 mb-1 border-b border-slate-100">
+                      <input
+                        type="checkbox"
+                        checked={Object.values(legal).every(Boolean)}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setLegal({
+                            wgcTerms: checked,
+                            wgcFees: checked,
+                            wgcPrivacy: checked,
+                            finixTerms: checked,
+                            finixPrivacy: checked,
+                          });
+                        }}
+                        className="mt-1 w-4 h-4 text-[#eab308] rounded"
+                      />
+                      <span className="text-sm font-semibold text-slate-900">Select all</span>
+                    </label>
                     <label className="flex items-start gap-3 cursor-pointer">
                       <input type="checkbox" required checked={legal.wgcTerms} onChange={(e) => updateLegal("wgcTerms", e.target.checked)} className="mt-1 w-4 h-4 text-[#eab308] rounded" />
                       <span className="text-sm text-slate-700">WGC Payments <a href="/legal/terms" target="_blank" className="text-blue-600 hover:underline">Terms of Service</a></span>

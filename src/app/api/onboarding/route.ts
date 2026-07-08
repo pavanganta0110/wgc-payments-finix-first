@@ -354,8 +354,8 @@ export async function POST(req: Request) {
           badgeColor: "blue",
           bodyHtml: `
             <p>Thank you for submitting your WGC Payments onboarding for <strong>${safeBusinessName}</strong>.</p>
-            <p>Your application is now under review. Most reviews are completed within 24–48 hours.</p>
-            <p>We will notify you once your account is approved or if additional information is required.</p>
+            <p>Your application is now under review. Reviews are completed within 48 hours, often quicker.</p>
+            <p>We will notify you once your account is approved or if we require more information.</p>
           `
         });
 

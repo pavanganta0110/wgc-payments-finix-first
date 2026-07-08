@@ -19,7 +19,7 @@ export default async function OnboardingSuccessPage({
         </div>
         <h1 className="text-3xl font-bold text-slate-900 mb-4">Application Submitted!</h1>
         <p className="text-lg text-slate-600 max-w-2xl mb-10">
-          Your onboarding application has been submitted. Most reviews are completed within 24–48 hours. We will email you once your account is approved or if Finix requires more information.
+          Your onboarding application has been submitted. Reviews are completed within 48 hours, often quicker. We will email you once your account is approved or if we require more information.
         </p>
         <Link 
           href="/"

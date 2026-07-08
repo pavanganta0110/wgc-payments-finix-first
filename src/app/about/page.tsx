@@ -61,7 +61,7 @@ export default function AboutPage() {
                 Why WGC <span className="text-wgc-gold-500">exists</span>
               </h1>
               <p className="text-xl font-medium leading-relaxed max-w-2xl mx-auto text-wgc-navy-500 tracking-tight">
-                Empowering software companies that serve churches and nonprofits with faith-aligned, white-label payment infrastructure.
+                Empowering churches, nonprofits, and their software with faith-aligned, white-label payment infrastructure.
               </p>
             </ScrollFade>
           </div>
@@ -81,7 +81,7 @@ export default function AboutPage() {
               <div className="bg-wgc-off rounded-3xl p-10 text-left relative overflow-hidden border border-wgc-gold-500/20">
                 <div className="absolute -bottom-4 -right-4 opacity-[0.05] pointer-events-none select-none text-[10rem] font-bold text-wgc-gold-500 leading-none">✝</div>
                 <div className="w-10 h-1 rounded-full mb-6 bg-gradient-to-r from-wgc-gold-500 to-amber-600"></div>
-                <p className="text-2xl font-bold italic leading-snug relative z-10 text-slate-50">
+                <p className="text-2xl font-bold italic leading-snug relative z-10 text-wgc-navy-900">
                   &quot;We handle the infrastructure. You build the experience. Together, we move more resources toward the Kingdom.&quot;
                 </p>
                 <div className="mt-6 flex items-center gap-3">
