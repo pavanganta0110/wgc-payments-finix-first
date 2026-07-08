@@ -3,13 +3,13 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
 model OnboardingApplication {
-  id                                String            @id @default(cuid())
+  id                                String             @id @default(cuid())
   organizationName                  String
   organizationType                  String
   contactName                       String
@@ -38,10 +38,10 @@ model OnboardingApplication {
   updateTokenHash                   String?
   updateTokenExpiresAt              DateTime?
   lastUpdateSubmittedAt             DateTime?
-  processingEnabled                 Boolean           @default(false)
-  settlementEnabled                 Boolean           @default(false)
-  createdAt                         DateTime          @default(now())
-  updatedAt                         DateTime          @updatedAt
+  processingEnabled                 Boolean            @default(false)
+  settlementEnabled                 Boolean            @default(false)
+  createdAt                         DateTime           @default(now())
+  updatedAt                         DateTime           @updatedAt
   achMaxTransactionAmountCents      Int?
   annualAchVolumeCents              Int?
   annualCardVolumeCents             Int?
@@ -50,7 +50,7 @@ model OnboardingApplication {
   bankAccountType                   String?
   bankCountry                       String?
   bankCurrency                      String?
-  bankInstrumentEnabled             Boolean           @default(false)
+  bankInstrumentEnabled             Boolean            @default(false)
   bankInstrumentId                  String?
   bankLast4                         String?
   bankName                          String?
@@ -62,7 +62,7 @@ model OnboardingApplication {
   businessPhone                     String?
   businessPostalCode                String?
   businessState                     String?
-  businessTaxIdProvided             Boolean           @default(false)
+  businessTaxIdProvided             Boolean            @default(false)
   businessToBusinessPercentage      Int?
   businessToConsumerPercentage      Int?
   businessType                      String?
@@ -74,7 +74,7 @@ model OnboardingApplication {
   finixPaymentInstrumentId          String?
   finixProcessor                    String?
   finixVerificationId               String?
-  hasAcceptedCreditCardsPreviously  Boolean           @default(false)
+  hasAcceptedCreditCardsPreviously  Boolean            @default(false)
   incorporationDay                  Int?
   incorporationMonth                Int?
   incorporationYear                 Int?
@@ -99,9 +99,16 @@ model OnboardingApplication {
   principalPhone                    String?
   principalPostalCode               String?
   principalState                    String?
-  principalTaxIdProvided            Boolean           @default(false)
+  principalTaxIdProvided            Boolean            @default(false)
   principalTitle                    String?
   refundPolicy                      String?
+  // TODO: Confirm exact Finix termination/suspension API and webhook event with Finix.
+  // Placeholder fields only — no behavior implemented yet.
+  terminationStatus                 String?
+  terminatedAt                      DateTime?
+  terminationReason                 String?
+  suspendedAt                       DateTime?
+  suspensionReason                  String?
   associatedOwners                  AssociatedOwner[]
   documents                         MerchantDocument[]
 }
@@ -153,21 +160,21 @@ model LegalAcceptance {
 }
 
 model FinixWebhookEvent {
-  id               String    @id @default(cuid())
-  finixEventId     String    @unique
-  entity           String?
-  type             String
-  occurredAt       DateTime?
-  merchantId       String?
-  identityId       String?
-  verificationId   String?
-  onboardingState  String?
+  id                String    @id @default(cuid())
+  finixEventId      String    @unique
+  entity            String?
+  type              String
+  occurredAt        DateTime?
+  merchantId        String?
+  identityId        String?
+  verificationId    String?
+  onboardingState   String?
   verificationState String?
-  rawPayloadJson   Json
-  processedAt      DateTime?
-  processingStatus String    @default("PENDING")
-  errorMessage     String?
-  createdAt        DateTime  @default(now())
+  rawPayloadJson    Json
+  processedAt       DateTime?
+  processingStatus  String    @default("PENDING")
+  errorMessage      String?
+  createdAt         DateTime  @default(now())
 }
 
 model MerchantDocument {
@@ -216,6 +223,7 @@ model Church {
   onboardingApplicationId String?
   finixMerchantId         String?
   finixIdentityId         String?
+  finixApplicationId      String?
   status                  String
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
@@ -308,4 +316,319 @@ model SubscriptionCharge {
   failureMessage       String?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
+}
+
+// =========================================================================
+// Finix data sync layer (additive only — see /docs or PR description for plan)
+// TODO: Confirm exact Finix termination/suspension API and webhook event with Finix.
+// =========================================================================
+
+model FinixMerchantSnapshot {
+  id                 String    @id @default(cuid())
+  churchId           String?
+  finixIdentityId    String?
+  finixMerchantId    String    @unique
+  finixApplicationId String?
+  finixProcessor     String?
+  onboardingState    String?
+  merchantState      String?
+  processingEnabled  Boolean   @default(false)
+  settlementEnabled  Boolean   @default(false)
+  verificationState  String?
+  riskState          String?
+  payoutProfileId    String?
+  merchantProfileId  String?
+  feeProfileId       String?
+  terminationStatus  String?
+  terminatedAt       DateTime?
+  terminationReason  String?
+  suspendedAt        DateTime?
+  suspensionReason   String?
+  rawStateRedacted   Json?
+  lastSyncedAt       DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+model FinixTransfer {
+  id                       String    @id @default(cuid())
+  churchId                 String?
+  paymentId                String?
+  finixTransferId          String    @unique
+  finixMerchantId          String?
+  finixBuyerIdentityId     String?
+  finixPaymentInstrumentId String?
+  type                     String?
+  subtype                  String?
+  state                    String?
+  amountCents              Int?
+  currency                 String?
+  feeCents                 Int?
+  applicationFeeCents      Int?
+  failureCode              String?
+  failureMessage           String?
+  traceId                  String?
+  statementDescriptor      String?
+  source                   String? // "wgc_giving_page" | "finix_dashboard" | "unknown"
+  tagsJson                 Json?
+  rawJsonRedacted          Json?
+  createdAtFinix           DateTime?
+  updatedAtFinix           DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  lastSyncedAt             DateTime?
+}
+
+model FinixRefundOrReversal {
+  id                      String    @id @default(cuid())
+  churchId                String?
+  refundRequestId         String?
+  originalPaymentId       String?
+  finixReversalId         String    @unique
+  finixOriginalTransferId String?
+  finixMerchantId         String?
+  amountCents             Int?
+  currency                String?
+  state                   String?
+  reason                  String?
+  failureCode             String?
+  failureMessage          String?
+  type                    String?
+  subtype                 String?
+  source                  String?
+  rawJsonRedacted         Json?
+  createdAtFinix          DateTime?
+  updatedAtFinix          DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  lastSyncedAt            DateTime?
+}
+
+model FinixFee {
+  id              String    @id @default(cuid())
+  churchId        String?
+  finixFeeId      String?   @unique
+  linkedToId      String?
+  linkedToType    String?
+  feeType         String?
+  amountCents     Int?
+  currency        String?
+  state           String?
+  description     String?
+  rawJsonRedacted Json?
+  createdAtFinix  DateTime?
+  updatedAtFinix  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model FinixSettlement {
+  id                 String    @id @default(cuid())
+  churchId           String?
+  finixSettlementId  String    @unique
+  finixMerchantId    String?
+  state              String?
+  totalAmountCents   Int?
+  netAmountCents     Int?
+  feeAmountCents     Int?
+  refundAmountCents  Int?
+  disputeAmountCents Int?
+  currency           String?
+  accruedAt          DateTime?
+  settledAt          DateTime?
+  createdAtFinix     DateTime?
+  updatedAtFinix     DateTime?
+  rawJsonRedacted    Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  lastSyncedAt       DateTime?
+}
+
+model FinixFundingTransferAttempt {
+  id                            String    @id @default(cuid())
+  churchId                      String?
+  finixFundingTransferAttemptId String    @unique
+  finixSettlementId             String?
+  finixMerchantId               String?
+  state                         String?
+  amountCents                   Int?
+  currency                      String?
+  bankAccountLast4              String?
+  bankAccountType               String?
+  failureCode                   String?
+  failureMessage                String?
+  estimatedArrivalDate          DateTime?
+  sentAt                        DateTime?
+  arrivedAt                     DateTime?
+  rawJsonRedacted               Json?
+  createdAtFinix                DateTime?
+  updatedAtFinix                DateTime?
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
+  lastSyncedAt                  DateTime?
+}
+
+model FinixDispute {
+  id              String    @id @default(cuid())
+  churchId        String?
+  finixDisputeId  String    @unique
+  finixTransferId String?
+  paymentId       String?
+  finixMerchantId String?
+  state           String?
+  reason          String?
+  amountCents     Int?
+  currency        String?
+  evidenceDueAt   DateTime?
+  respondedAt     DateTime?
+  resolvedAt      DateTime?
+  outcome         String?
+  rawJsonRedacted Json?
+  createdAtFinix  DateTime?
+  updatedAtFinix  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastSyncedAt    DateTime?
+}
+
+model FinixPaymentInstrumentSnapshot {
+  id                       String    @id @default(cuid())
+  churchId                 String?
+  donorId                  String?
+  finixPaymentInstrumentId String    @unique
+  finixIdentityId          String?
+  instrumentType           String?
+  paymentMethodType        String?
+  cardBrand                String?
+  cardLast4                String?
+  cardExpirationMonth      Int?
+  cardExpirationYear       Int?
+  bankLast4                String?
+  bankAccountType          String?
+  accountHolderName        String?
+  state                    String?
+  enabled                  Boolean?
+  instrumentUse            String?
+  rawJsonRedacted          Json?
+  createdAtFinix           DateTime?
+  updatedAtFinix           DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  lastSyncedAt             DateTime?
+}
+
+model FinixSubscription {
+  id                       String    @id @default(cuid())
+  churchId                 String?
+  churchSubscriptionId     String?
+  finixSubscriptionId      String    @unique
+  finixMerchantId          String?
+  finixBuyerIdentityId     String?
+  finixPaymentInstrumentId String?
+  state                    String?
+  amountCents              Int?
+  currency                 String?
+  billingInterval          String?
+  collectionMethod         String?
+  nextBillingDate          DateTime?
+  startedAt                DateTime?
+  canceledAt               DateTime?
+  rawJsonRedacted          Json?
+  createdAtFinix           DateTime?
+  updatedAtFinix           DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  lastSyncedAt             DateTime?
+}
+
+model FinixSyncJob {
+  id               String    @id @default(cuid())
+  jobType          String
+  churchId         String?
+  finixMerchantId  String?
+  status           String    @default("PENDING")
+  startedAt        DateTime?
+  completedAt      DateTime?
+  failedAt         DateTime?
+  errorMessage     String?
+  recordsProcessed Int       @default(0)
+  recordsCreated   Int       @default(0)
+  recordsUpdated   Int       @default(0)
+  cursor           String?
+  dateFrom         DateTime?
+  dateTo           DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model FinixRawEventArchive {
+  id                  String    @id @default(cuid())
+  finixEventId        String?   @unique
+  entity              String?
+  eventType           String?
+  resourceId          String?
+  churchId            String?
+  finixMerchantId     String?
+  payloadRedactedJson Json
+  processedAt         DateTime?
+  processingStatus    String    @default("PENDING")
+  errorMessage        String?
+  createdAt           DateTime  @default(now())
+}
+
+model MerchantStatusHistory {
+  id             String   @id @default(cuid())
+  churchId       String?
+  previousStatus String?
+  newStatus      String
+  source         String?
+  finixEventId   String?
+  changedAt      DateTime @default(now())
+  emailTriggered Boolean  @default(false)
+  emailLogId     String?
+  createdAt      DateTime @default(now())
+}
+
+model ReportSnapshot {
+  id                     String   @id @default(cuid())
+  churchId               String?
+  reportType             String
+  periodStart            DateTime
+  periodEnd              DateTime
+  grossVolumeCents       Int?
+  netVolumeCents         Int?
+  refundAmountCents      Int?
+  feeAmountCents         Int?
+  disputeAmountCents     Int?
+  payoutAmountCents      Int?
+  donorCount             Int?
+  transactionCount       Int?
+  failedTransactionCount Int?
+  payloadJson            Json?
+  generatedAt            DateTime @default(now())
+  createdAt              DateTime @default(now())
+}
+
+// Minimal additive tables — not yet wired into existing refund/pricing business logic
+model RefundRequest {
+  id                String   @id @default(cuid())
+  churchId          String?
+  originalPaymentId String?
+  requestedByEmail  String?
+  amountCents       Int?
+  reason            String?
+  status            String   @default("PENDING")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model ChurchPricing {
+  id                String   @id @default(cuid())
+  churchId          String   @unique
+  pricingPlanName   String?
+  cardPercentageFee Float?
+  cardFixedFeeCents Int?
+  achFixedFeeCents  Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }

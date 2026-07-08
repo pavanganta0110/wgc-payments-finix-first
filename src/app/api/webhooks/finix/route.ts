@@ -3,6 +3,8 @@ import { headers } from "next/headers";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { sendWgcEmail, sendWgcAdminEmail } from "@/lib/email";
+import { redactFinixPayload } from "@/lib/finix/redact";
+import { mapFinixDisputeStateToWgcStatus } from "@/lib/finix/statusMapping";
 
 const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SECRET || process.env.FINIX_WEBHOOK_SIGNING_KEY;
 const BEARER_TOKEN = process.env.FINIX_WEBHOOK_BEARER_TOKEN;
@@ -93,6 +95,171 @@ async function findOnboardingApplicationForFinixEvent(data: any) {
           { finixApplicationId: id },
         ]),
       ],
+    },
+  });
+}
+
+/**
+ * Additive Finix data sync layer. Routes transfer/dispute/settlement events
+ * into their own tables (FinixTransfer, FinixDispute, FinixSettlement) for
+ * future reporting/admin dashboard use. Does not touch OnboardingApplication
+ * or trigger any emails — that logic lives entirely in the existing
+ * merchant/verification handling below and is untouched.
+ *
+ * TODO: fee.*, funding_transfer_attempt.*, and subscription.* events are not
+ * yet routed here — see src/lib/finix/sync/{syncFees,syncPayouts,syncSubscriptions}.ts
+ * for why (unconfirmed Finix API shapes).
+ */
+async function syncFinixDataFromWebhookEvent(
+  entity: string,
+  eventType: string,
+  data: any,
+  finixEventId: string,
+  occurredAt: Date
+) {
+  if (entity === "TRANSFER" && data?.id) {
+    const tags = data.tags ?? {};
+    const source = tags.source === "wgc_giving_page" ? "wgc_giving_page" : "finix_dashboard";
+
+    await prisma.finixTransfer.upsert({
+      where: { finixTransferId: data.id },
+      create: {
+        finixTransferId: data.id,
+        finixMerchantId: data.merchant ?? null,
+        finixBuyerIdentityId: data.merchant_identity ?? null,
+        finixPaymentInstrumentId: data.source ?? null,
+        type: data.type ?? null,
+        subtype: data.subtype ?? null,
+        state: data.state ?? null,
+        amountCents: data.amount ?? null,
+        currency: data.currency ?? null,
+        feeCents: data.fee ?? null,
+        failureCode: data.failure_code ?? null,
+        failureMessage: data.failure_message ?? null,
+        traceId: data.trace_id ?? null,
+        statementDescriptor: data.statement_descriptor ?? null,
+        source,
+        tagsJson: tags,
+        rawJsonRedacted: redactFinixPayload(data),
+        createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+        lastSyncedAt: new Date(),
+      },
+      update: {
+        state: data.state ?? null,
+        failureCode: data.failure_code ?? null,
+        failureMessage: data.failure_message ?? null,
+        rawJsonRedacted: redactFinixPayload(data),
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+        lastSyncedAt: new Date(),
+      },
+    });
+
+    // A transfer of subtype REVERSAL/RETURN represents a refund/ACH return —
+    // also record it in FinixRefundOrReversal, keyed by the reversal's own id.
+    if (data.subtype === "REVERSAL" || data.type === "REVERSAL" || eventType.includes("reversal")) {
+      await prisma.finixRefundOrReversal.upsert({
+        where: { finixReversalId: data.id },
+        create: {
+          finixReversalId: data.id,
+          finixOriginalTransferId: data.parent_transfer ?? null,
+          finixMerchantId: data.merchant ?? null,
+          amountCents: data.amount ?? null,
+          currency: data.currency ?? null,
+          state: data.state ?? null,
+          failureCode: data.failure_code ?? null,
+          failureMessage: data.failure_message ?? null,
+          type: data.type ?? null,
+          subtype: data.subtype ?? null,
+          source,
+          rawJsonRedacted: redactFinixPayload(data),
+          createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,
+          updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+          lastSyncedAt: new Date(),
+        },
+        update: {
+          state: data.state ?? null,
+          failureCode: data.failure_code ?? null,
+          failureMessage: data.failure_message ?? null,
+          rawJsonRedacted: redactFinixPayload(data),
+          updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+          lastSyncedAt: new Date(),
+        },
+      });
+    }
+    return;
+  }
+
+  if (entity === "DISPUTE" && data?.id) {
+    await prisma.finixDispute.upsert({
+      where: { finixDisputeId: data.id },
+      create: {
+        finixDisputeId: data.id,
+        finixMerchantId: data.merchant ?? null,
+        finixTransferId: data.transfer ?? null,
+        state: mapFinixDisputeStateToWgcStatus(data.state),
+        reason: data.reason ?? null,
+        amountCents: data.amount ?? null,
+        currency: data.currency ?? null,
+        rawJsonRedacted: redactFinixPayload(data),
+        createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+        lastSyncedAt: new Date(),
+      },
+      update: {
+        state: mapFinixDisputeStateToWgcStatus(data.state),
+        rawJsonRedacted: redactFinixPayload(data),
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+        lastSyncedAt: new Date(),
+      },
+    });
+    return;
+  }
+
+  if (entity === "SETTLEMENT" && data?.id) {
+    await prisma.finixSettlement.upsert({
+      where: { finixSettlementId: data.id },
+      create: {
+        finixSettlementId: data.id,
+        finixMerchantId: data.merchant ?? null,
+        state: data.state ?? null,
+        totalAmountCents: data.total_amount ?? null,
+        currency: data.currency ?? null,
+        rawJsonRedacted: redactFinixPayload(data),
+        createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+        lastSyncedAt: new Date(),
+      },
+      update: {
+        state: data.state ?? null,
+        totalAmountCents: data.total_amount ?? null,
+        rawJsonRedacted: redactFinixPayload(data),
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+        lastSyncedAt: new Date(),
+      },
+    });
+    return;
+  }
+
+  // Everything else (merchant, identity, verification, instrument, and any
+  // event type not yet wired into the additive sync layer) is archived as-is
+  // for future backfill/debugging, redacted for safety.
+  await prisma.finixRawEventArchive.upsert({
+    where: { finixEventId },
+    create: {
+      finixEventId,
+      entity,
+      eventType,
+      resourceId: data?.id ?? null,
+      finixMerchantId: data?.merchant ?? (entity === "MERCHANT" ? data?.id : null),
+      payloadRedactedJson: redactFinixPayload(data ?? {}),
+      processedAt: new Date(),
+      processingStatus: "COMPLETED",
+    },
+    update: {
+      payloadRedactedJson: redactFinixPayload(data ?? {}),
+      processedAt: new Date(),
+      processingStatus: "COMPLETED",
     },
   });
 }
@@ -247,6 +414,16 @@ export async function POST(req: Request) {
         rawPayloadJson: payload,
       },
     });
+
+    // Additive Finix data sync layer — stores transfers/disputes/settlements
+    // into their own tables for future reporting/admin dashboard use. This
+    // is independent of and does not affect the onboarding status logic
+    // below. Wrapped so a sync failure never breaks the existing flow.
+    try {
+      await syncFinixDataFromWebhookEvent(entity, eventType, data, eventId, occurredAt);
+    } catch (syncError) {
+      console.error("Finix data sync (additive layer) failed:", syncError);
+    }
 
     try {
       const app = await findOnboardingApplicationForFinixEvent(data);
