@@ -188,10 +188,35 @@ export class FinixClient {
   // Transfers (Payments)
   // ==========================================
 
-  async createTransfer(payload: any) {
+  /**
+   * Per Finix's request (docs.finix.com/guides/online-payments/idempotency
+   * and .../fraud-and-risk/fraud-detection): every /transfers call must
+   * include idempotency_id (a fresh UUID per request, protects against
+   * duplicate charges on retry) and fraud_session_id (the session key
+   * returned by Finix.js Auth on the buyer's checkout page — see
+   * src/lib/finix/fraudSession.ts on the client side for how to obtain it).
+   *
+   * idempotency_id is auto-generated here if the caller doesn't supply one.
+   * fraud_session_id is NOT auto-generated (it can only come from a real
+   * buyer session) — this throws rather than silently omitting it, so a
+   * future checkout integration can't accidentally ship without it.
+   */
+  async createTransfer(payload: { fraud_session_id: string; idempotency_id?: string; [key: string]: any }) {
+    if (!payload.fraud_session_id) {
+      throw new Error(
+        "createTransfer requires fraud_session_id (from Finix.js Auth's getSessionKey() " +
+          "on the buyer's checkout page). See src/lib/finix/fraudSession.ts."
+      );
+    }
+
+    const body = {
+      ...payload,
+      idempotency_id: payload.idempotency_id ?? crypto.randomUUID(),
+    };
+
     return this.fetchApi("/transfers", {
       method: "POST",
-      body: JSON.stringify(payload)
+      body: JSON.stringify(body)
     });
   }
 
