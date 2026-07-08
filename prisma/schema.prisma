@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  TEAM_MEMBER
+  CLIENT_OWNER
+  CLIENT_STAFF
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  ONBOARDING
+}
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  name         String?
+  role         UserRole       @default(TEAM_MEMBER)
+  clientId     String?
+  createdAt    DateTime       @default(now())
+  client       Client?        @relation(fields: [clientId], references: [id])
+  teamMembers  TeamMember[]
+  notifications Notification[]
+}
+
+model Client {
+  id               String       @id @default(cuid())
+  name             String
+  email            String       @unique
+  phone            String?
+  companyName      String
+  status           ClientStatus @default(ONBOARDING)
+  contractStart    DateTime?
+  renewalDate      DateTime?
+  monthlyRetainer  Float?
+  stripeCustomerId String?
+  createdAt        DateTime     @default(now())
+  users            User[]
+  teamMembers      TeamMember[]
+}
+
+model TeamMember {
+  id       String @id @default(cuid())
+  userId   String
+  clientId String
+  role     String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
