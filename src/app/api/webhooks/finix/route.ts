@@ -6,8 +6,14 @@ import { sendWgcEmail, sendWgcAdminEmail } from "@/lib/email";
 
 const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SECRET || process.env.FINIX_WEBHOOK_SIGNING_KEY;
 const BEARER_TOKEN = process.env.FINIX_WEBHOOK_BEARER_TOKEN;
-const BASIC_AUTH_USERNAME = process.env.FINIX_WEBHOOK_USERNAME || process.env.FINIX_WEBHOOK_BASIC_AUTH_USERNAME;
-const BASIC_AUTH_PASSWORD = process.env.FINIX_WEBHOOK_PASSWORD || process.env.FINIX_WEBHOOK_BASIC_AUTH_PASSWORD;
+const BASIC_AUTH_USERNAME =
+  process.env.FINIX_WEBHOOK_BASIC_USERNAME ||
+  process.env.FINIX_WEBHOOK_USERNAME ||
+  process.env.FINIX_WEBHOOK_BASIC_AUTH_USERNAME;
+const BASIC_AUTH_PASSWORD =
+  process.env.FINIX_WEBHOOK_BASIC_PASSWORD ||
+  process.env.FINIX_WEBHOOK_PASSWORD ||
+  process.env.FINIX_WEBHOOK_BASIC_AUTH_PASSWORD;
 
 async function sendWebhookEmail(
   applicationId: string,
@@ -99,6 +105,13 @@ export async function POST(req: Request) {
     const rawBody = await req.text();
     const authConfigured = Boolean(BEARER_TOKEN || BASIC_AUTH_USERNAME || BASIC_AUTH_PASSWORD);
 
+    if (!authConfigured && !WEBHOOK_SECRET) {
+      return NextResponse.json(
+        { error: "Unauthorized: No authentication configured" },
+        { status: 401 }
+      );
+    }
+
     if (authConfigured) {
       const authChecks: { name: string; valid: boolean }[] = [];
 
@@ -141,59 +154,61 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!WEBHOOK_SECRET || !signatureHeader) {
-      return NextResponse.json(
-        { error: "Unauthorized: Missing Signature" },
-        { status: 401 }
-      );
-    }
+    if (WEBHOOK_SECRET) {
+      if (!signatureHeader) {
+        return NextResponse.json(
+          { error: "Unauthorized: Missing Signature" },
+          { status: 401 }
+        );
+      }
 
-    const sigParts = signatureHeader.split(",");
-    let timestamp = "";
-    let signature = "";
-    for (const part of sigParts) {
-      const [key, value] = part.trim().split("=");
-      if (key === "timestamp") timestamp = value;
-      if (key === "sig") signature = value;
-    }
+      const sigParts = signatureHeader.split(",");
+      let timestamp = "";
+      let signature = "";
+      for (const part of sigParts) {
+        const [key, value] = part.trim().split("=");
+        if (key === "timestamp") timestamp = value;
+        if (key === "sig") signature = value;
+      }
 
-    if (!timestamp || !signature) {
-      return NextResponse.json(
-        { error: "Unauthorized: Invalid Signature Format" },
-        { status: 401 }
-      );
-    }
+      if (!timestamp || !signature) {
+        return NextResponse.json(
+          { error: "Unauthorized: Invalid Signature Format" },
+          { status: 401 }
+        );
+      }
 
-    const payloadToSign = `${timestamp}:${rawBody}`;
-    const expectedSignature = crypto
-      .createHmac("sha256", WEBHOOK_SECRET)
-      .update(payloadToSign, "utf-8")
-      .digest("hex");
+      const payloadToSign = `${timestamp}:${rawBody}`;
+      const expectedSignature = crypto
+        .createHmac("sha256", WEBHOOK_SECRET)
+        .update(payloadToSign, "utf-8")
+        .digest("hex");
 
-    if (signature.length !== expectedSignature.length) {
-      return NextResponse.json(
-        { error: "Unauthorized: Invalid Signature" },
-        { status: 401 }
-      );
-    }
+      if (signature.length !== expectedSignature.length) {
+        return NextResponse.json(
+          { error: "Unauthorized: Invalid Signature" },
+          { status: 401 }
+        );
+      }
 
-    if (
-      !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))
-    ) {
-      return NextResponse.json(
-        { error: "Unauthorized: Invalid Signature" },
-        { status: 401 }
-      );
-    }
+      if (
+        !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))
+      ) {
+        return NextResponse.json(
+          { error: "Unauthorized: Invalid Signature" },
+          { status: 401 }
+        );
+      }
 
-    const eventTime = parseInt(timestamp, 10);
-    const now = Math.floor(Date.now() / 1000);
+      const eventTime = parseInt(timestamp, 10);
+      const now = Math.floor(Date.now() / 1000);
 
-    if (Number.isNaN(eventTime) || Math.abs(now - eventTime) > 300) {
-      return NextResponse.json(
-        { error: "Unauthorized: Timestamp too old" },
-        { status: 401 }
-      );
+      if (Number.isNaN(eventTime) || Math.abs(now - eventTime) > 300) {
+        return NextResponse.json(
+          { error: "Unauthorized: Timestamp too old" },
+          { status: 401 }
+        );
+      }
     }
 
     const payload = JSON.parse(rawBody);
