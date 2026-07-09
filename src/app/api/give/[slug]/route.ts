@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
 import { calculateFeeCoveredTotal } from "@/lib/giving/feeCalculator";
+import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { sendWgcEmail } from "@/lib/email";
 
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -125,13 +126,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
           currency: "USD",
           billingInterval: interval,
           collectionMethod: "BILL_AUTOMATICALLY",
-          nextBillingDate: subscription.next_billing_date ? new Date(subscription.next_billing_date) : null,
+          nextBillingDate: parseFinixDate(subscription.next_billing_date),
           startedAt: new Date(),
           lastSyncedAt: new Date(),
         },
         update: {
           state: subscription.state ?? undefined,
-          nextBillingDate: subscription.next_billing_date ? new Date(subscription.next_billing_date) : undefined,
+          nextBillingDate: parseFinixDate(subscription.next_billing_date) ?? undefined,
           lastSyncedAt: new Date(),
         },
       });

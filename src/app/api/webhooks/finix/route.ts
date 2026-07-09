@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { sendWgcEmail, sendWgcAdminEmail } from "@/lib/email";
 import { redactFinixPayload } from "@/lib/finix/redact";
+import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { mapFinixDisputeStateToWgcStatus } from "@/lib/finix/statusMapping";
 import { provisionChurchAccount } from "@/lib/auth/provisionChurchAccount";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
@@ -352,23 +353,27 @@ async function syncFinixDataFromWebhookEvent(
   }
 
   if (entity === "SUBSCRIPTION" && data?.id) {
-    const churchId = await resolveChurchIdForMerchant(data.merchant);
+    // Confirmed against a real GET /subscriptions/{id} response: the
+    // merchant is under linked_to (not merchant), buyer identity/instrument
+    // are nested under buyer_details, and the field is billing_interval
+    // (not interval).
+    const churchId = await resolveChurchIdForMerchant(data.linked_to);
 
     await prisma.finixSubscription.upsert({
       where: { finixSubscriptionId: data.id },
       create: {
         finixSubscriptionId: data.id,
         churchId,
-        finixMerchantId: data.merchant ?? null,
-        finixBuyerIdentityId: data.buyer_identity ?? null,
-        finixPaymentInstrumentId: data.payment_instrument ?? null,
+        finixMerchantId: data.linked_to ?? null,
+        finixBuyerIdentityId: data.buyer_details?.identity_id ?? null,
+        finixPaymentInstrumentId: data.buyer_details?.instrument_id ?? null,
         state: data.state ?? null,
         amountCents: data.amount ?? null,
         currency: data.currency ?? null,
-        billingInterval: data.interval ?? null,
-        collectionMethod: data.collection_method ?? null,
-        nextBillingDate: data.next_billing_date ? new Date(data.next_billing_date) : null,
-        startedAt: data.started_at ? new Date(data.started_at) : occurredAt,
+        billingInterval: data.billing_interval ?? null,
+        collectionMethod: data.subscription_details?.collection_method ?? null,
+        nextBillingDate: parseFinixDate(data.next_billing_date),
+        startedAt: data.start_subscription_at ? new Date(data.start_subscription_at) : occurredAt,
         canceledAt: data.canceled_at ? new Date(data.canceled_at) : null,
         rawJsonRedacted: redactFinixPayload(data),
         createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,
@@ -378,7 +383,7 @@ async function syncFinixDataFromWebhookEvent(
       update: {
         churchId: churchId ?? undefined,
         state: data.state ?? null,
-        nextBillingDate: data.next_billing_date ? new Date(data.next_billing_date) : undefined,
+        nextBillingDate: parseFinixDate(data.next_billing_date) ?? undefined,
         canceledAt: data.canceled_at ? new Date(data.canceled_at) : undefined,
         rawJsonRedacted: redactFinixPayload(data),
         updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
