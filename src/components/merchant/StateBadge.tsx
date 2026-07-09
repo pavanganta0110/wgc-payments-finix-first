@@ -3,6 +3,9 @@ const STATE_STYLES: Record<string, string> = {
   FAILED: "bg-red-50 text-red-700",
   PENDING: "bg-amber-50 text-amber-700",
   CANCELED: "bg-slate-100 text-slate-600",
+  REFUNDED: "bg-amber-50 text-amber-700",
+  PARTIALLY_REFUNDED: "bg-amber-50 text-amber-700",
+  REFUND_PENDING: "bg-amber-50 text-amber-700",
 };
 
 export default function StateBadge({ state }: { state: string | null | undefined }) {
@@ -13,7 +16,7 @@ export default function StateBadge({ state }: { state: string | null | undefined
         STATE_STYLES[s] || "bg-slate-100 text-slate-600"
       }`}
     >
-      {s}
+      {s.replace(/_/g, " ")}
     </span>
   );
 }

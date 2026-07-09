@@ -7,7 +7,16 @@ import { Download, ListFilter, Bookmark, ChevronDown } from "lucide-react";
 import DateRangePicker from "@/components/merchant/DateRangePicker";
 import PillFilterInput from "@/components/merchant/PillFilterInput";
 
-const STATES = ["SUCCEEDED", "FAILED", "PENDING", "CANCELED", "RETURNED"];
+const STATES = [
+  "SUCCEEDED",
+  "FAILED",
+  "PENDING",
+  "CANCELED",
+  "RETURNED",
+  "REFUNDED",
+  "PARTIALLY_REFUNDED",
+  "REFUND_PENDING",
+];
 
 export default function PaymentsFilterBar() {
   const router = useRouter();
@@ -24,7 +33,12 @@ export default function PaymentsFilterBar() {
     router.push(`?${params.toString()}`);
   };
 
-  const stateLabel = state ? state.charAt(0) + state.slice(1).toLowerCase() : "State";
+  const titleCaseState = (s: string) =>
+    s
+      .split("_")
+      .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+      .join(" ");
+  const stateLabel = state ? titleCaseState(state) : "State";
 
   return (
     <div className="flex items-center gap-3 mb-4 flex-wrap">
@@ -45,7 +59,7 @@ export default function PaymentsFilterBar() {
         {isStateOpen && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setIsStateOpen(false)} />
-            <div className="absolute left-0 mt-2 z-50 bg-white rounded-2xl border border-slate-200 shadow-xl py-2 w-40">
+            <div className="absolute left-0 mt-2 z-50 bg-white rounded-2xl border border-slate-200 shadow-xl py-2 w-52">
               <button
                 onClick={() => {
                   setParam("state", "");
@@ -64,7 +78,7 @@ export default function PaymentsFilterBar() {
                   }}
                   className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                 >
-                  {s.charAt(0) + s.slice(1).toLowerCase()}
+                  {titleCaseState(s)}
                 </button>
               ))}
             </div>

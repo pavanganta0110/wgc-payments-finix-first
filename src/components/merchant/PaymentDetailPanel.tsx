@@ -12,6 +12,8 @@ import {
 import ViewAllDetailsLink from "@/components/merchant/ViewAllDetailsLink";
 import IssueRefundButton from "@/components/merchant/IssueRefundButton";
 import CreateReceiptButton from "@/components/merchant/CreateReceiptButton";
+import StateBadge from "@/components/merchant/StateBadge";
+import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
 
 function formatDateTime(date: Date | null | undefined) {
   if (!date) return "—";
@@ -30,26 +32,6 @@ function titleCaseFromSnake(value: string | null | undefined) {
     .split("_")
     .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
     .join(" ");
-}
-
-const STATE_STYLES: Record<string, string> = {
-  SUCCEEDED: "bg-green-50 text-green-700",
-  FAILED: "bg-red-50 text-red-700",
-  PENDING: "bg-amber-50 text-amber-700",
-  CANCELED: "bg-slate-100 text-slate-600",
-};
-
-function StateBadge({ state }: { state: string | null | undefined }) {
-  const s = (state || "UNKNOWN").toUpperCase();
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
-        STATE_STYLES[s] || "bg-slate-100 text-slate-600"
-      }`}
-    >
-      {s}
-    </span>
-  );
 }
 
 function sourceLabel(source: string | null | undefined) {
@@ -105,11 +87,10 @@ export default async function PaymentDetailPanel({
 
   const feesTotal = fees.reduce((sum, f) => sum + (f.amountCents || 0), 0);
 
-  const refundedCents = refunds
-    .filter((r) => (r.state || "").toUpperCase() === "SUCCEEDED")
-    .reduce((sum, r) => sum + (r.amountCents ?? 0), 0);
+  const refund = computeRefundStatus(transfer, refunds);
+  const displayStatus = resolveDisplayStatus(transfer.state, refund);
   const remainingRefundableCents =
-    (transfer.state || "").toUpperCase() === "SUCCEEDED" ? Math.max(0, (transfer.amountCents ?? 0) - refundedCents) : 0;
+    (transfer.state || "").toUpperCase() === "SUCCEEDED" ? refund.netAmountCents : 0;
 
   const settlementIds = Array.from(
     new Set(
@@ -210,10 +191,35 @@ export default async function PaymentDetailPanel({
               {transfer.currency || "USD"}
             </span>
           </div>
-          <StateBadge state={transfer.state} />
+          <StateBadge state={displayStatus} />
         </div>
         <PaymentMoreMenu />
         <div className="mt-3 space-y-1.5 text-sm">
+          {refund.refundStatus !== "NONE" && (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Payment Status</span>
+                <span className="font-semibold text-slate-700">
+                  {(transfer.state || "").charAt(0)}
+                  {(transfer.state || "").slice(1).toLowerCase()}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Refund Status</span>
+                <span className="font-semibold text-amber-700">
+                  {refund.refundStatus === "FULL"
+                    ? "Refunded"
+                    : refund.refundStatus === "PARTIAL"
+                      ? "Partially Refunded"
+                      : "Refund Pending"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Net Amount</span>
+                <span className="font-semibold text-slate-700">{formatCents(refund.netAmountCents)}</span>
+              </div>
+            </>
+          )}
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Donor</span>
             <span className="font-semibold text-slate-700">

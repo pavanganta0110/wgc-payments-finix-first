@@ -7,6 +7,7 @@ import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import StateBadge from "@/components/merchant/StateBadge";
 import IssueRefundButton from "@/components/merchant/IssueRefundButton";
 import CreateReceiptButton from "@/components/merchant/CreateReceiptButton";
+import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
 
 function formatDateTime(date: Date | null | undefined) {
   if (!date) return "—";
@@ -89,11 +90,10 @@ export default async function PaymentFullDetailPage({
     : null;
 
   const feesTotal = fees.reduce((sum, f) => sum + (f.amountCents || 0), 0);
-  const refundedCents = refunds
-    .filter((r) => (r.state || "").toUpperCase() === "SUCCEEDED")
-    .reduce((sum, r) => sum + (r.amountCents ?? 0), 0);
+  const refund = computeRefundStatus(transfer, refunds);
+  const displayStatus = resolveDisplayStatus(transfer.state, refund);
   const remainingRefundableCents =
-    (transfer.state || "").toUpperCase() === "SUCCEEDED" ? Math.max(0, (transfer.amountCents ?? 0) - refundedCents) : 0;
+    (transfer.state || "").toUpperCase() === "SUCCEEDED" ? refund.netAmountCents : 0;
 
   type FlowEvent = { label: string; sublabel?: string; date: Date };
   const flowEvents: { label: string; sublabel?: string; date: Date | null }[] = [
@@ -153,8 +153,33 @@ export default async function PaymentFullDetailPage({
                 <span className="text-3xl font-bold text-slate-900">{formatCents(transfer.amountCents ?? 0)}</span>
                 <span className="text-sm font-semibold text-slate-400">{transfer.currency || "USD"}</span>
               </div>
-              <StateBadge state={transfer.state} />
+              <StateBadge state={displayStatus} />
             </div>
+            {refund.refundStatus !== "NONE" && (
+              <div className="grid grid-cols-3 gap-4 mb-3 text-sm">
+                <div>
+                  <p className="text-xs text-slate-500">Payment Status</p>
+                  <p className="font-semibold text-slate-900">
+                    {(transfer.state || "").charAt(0)}
+                    {(transfer.state || "").slice(1).toLowerCase()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Refund Status</p>
+                  <p className="font-semibold text-amber-700">
+                    {refund.refundStatus === "FULL"
+                      ? "Refunded"
+                      : refund.refundStatus === "PARTIAL"
+                        ? "Partially Refunded"
+                        : "Refund Pending"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Net Amount</p>
+                  <p className="font-semibold text-slate-900">{formatCents(refund.netAmountCents)}</p>
+                </div>
+              </div>
+            )}
             <p className="text-sm text-slate-600">
               Buyer: <span className="font-semibold text-slate-900">{donor?.name || instrument?.accountHolderName || "—"}</span>
               {" · "}

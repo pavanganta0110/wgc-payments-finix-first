@@ -4,6 +4,7 @@ import { formatCents } from "@/lib/format";
 import DonorsFilterBar from "@/components/merchant/DonorsFilterBar";
 import ClickableTableRow from "@/components/merchant/ClickableTableRow";
 import DonorDetailPanel from "@/components/merchant/DonorDetailPanel";
+import { computeRefundStatus } from "@/lib/finix/refundStatus";
 
 export default async function DonorsPage({
   searchParams,
@@ -63,10 +64,29 @@ export default async function DonorsPage({
     transfersByInstrument.set(t.finixPaymentInstrumentId, list);
   }
 
+  const allTransferIds = transfers.map((t) => t.finixTransferId);
+  const refunds = allTransferIds.length
+    ? await prisma.finixRefundOrReversal.findMany({
+        where: { finixOriginalTransferId: { in: allTransferIds } },
+      })
+    : [];
+  const refundsByTransfer = new Map<string, typeof refunds>();
+  for (const r of refunds) {
+    if (!r.finixOriginalTransferId) continue;
+    const list = refundsByTransfer.get(r.finixOriginalTransferId) ?? [];
+    list.push(r);
+    refundsByTransfer.set(r.finixOriginalTransferId, list);
+  }
+
   const rows = donors.map((donor) => {
     const instrumentIds = instrumentIdsByDonor.get(donor.id) ?? [];
     const donorTransfers = instrumentIds.flatMap((iid) => transfersByInstrument.get(iid) ?? []);
-    const totalGivenCents = donorTransfers.reduce((sum, t) => sum + (t.amountCents ?? 0), 0);
+    // Net given — a fully refunded gift shouldn't count, a partially
+    // refunded one counts for its remaining net amount.
+    const totalGivenCents = donorTransfers.reduce(
+      (sum, t) => sum + computeRefundStatus(t, refundsByTransfer.get(t.finixTransferId) ?? []).netAmountCents,
+      0
+    );
     const lastGiftAt = donorTransfers.reduce<Date | null>((latest, t) => {
       if (!t.createdAtFinix) return latest;
       if (!latest || t.createdAtFinix > latest) return t.createdAtFinix;

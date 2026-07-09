@@ -6,7 +6,11 @@ import PaymentsHeaderActions from "@/components/merchant/PaymentsHeaderActions";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import ClickableTableRow from "@/components/merchant/ClickableTableRow";
 import PaymentDetailPanel from "@/components/merchant/PaymentDetailPanel";
+import StateBadge from "@/components/merchant/StateBadge";
 import { resolveDateRange } from "@/lib/dateRangePresets";
+import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
+
+const REFUND_DERIVED_STATES = new Set(["REFUNDED", "PARTIALLY_REFUNDED", "REFUND_PENDING"]);
 
 export default async function PaymentsListPage({
   searchParams,
@@ -27,6 +31,12 @@ export default async function PaymentsListPage({
   const { from: startDate, to: endDate } = resolveDateRange(range, from, to);
   const dateFilter = startDate ? { gte: startDate, ...(endDate ? { lte: endDate } : {}) } : undefined;
 
+  // Refund-derived states (REFUNDED, etc.) aren't a real value of the
+  // transfer's own `state` column — the underlying charge state stays
+  // SUCCEEDED even after a full refund. Those get filtered in-memory below
+  // instead of at the DB level.
+  const isRefundDerivedFilter = state ? REFUND_DERIVED_STATES.has(state) : false;
+
   const transfers = await prisma.finixTransfer.findMany({
     where: {
       churchId,
@@ -35,7 +45,7 @@ export default async function PaymentsListPage({
       // exclude every null-subtype row too, since SQL's NOT NULL is NULL,
       // not TRUE. OR-ing in the null case keeps the exclusion working.
       OR: [{ subtype: null }, { NOT: { subtype: { contains: "RETURN" } } }],
-      ...(state ? { state } : {}),
+      ...(state && !isRefundDerivedFilter ? { state } : {}),
       ...(dateFilter ? { createdAtFinix: dateFilter } : {}),
     },
     orderBy: { createdAtFinix: "desc" },
@@ -61,25 +71,26 @@ export default async function PaymentsListPage({
   const transferIds = transfers.map((t) => t.finixTransferId);
   const refunds = transferIds.length
     ? await prisma.finixRefundOrReversal.findMany({
-        where: { finixOriginalTransferId: { in: transferIds }, state: "SUCCEEDED" },
+        where: { finixOriginalTransferId: { in: transferIds } },
       })
     : [];
-  const refundedCentsByTransfer = new Map<string, number>();
+  const refundsByTransfer = new Map<string, typeof refunds>();
   for (const r of refunds) {
     if (!r.finixOriginalTransferId) continue;
-    refundedCentsByTransfer.set(
-      r.finixOriginalTransferId,
-      (refundedCentsByTransfer.get(r.finixOriginalTransferId) ?? 0) + (r.amountCents ?? 0)
-    );
+    const list = refundsByTransfer.get(r.finixOriginalTransferId) ?? [];
+    list.push(r);
+    refundsByTransfer.set(r.finixOriginalTransferId, list);
   }
 
   const rows = transfers
     .map((t) => {
       const instrument = instrumentMap.get(t.finixPaymentInstrumentId ?? "");
       const donor = instrument?.donorId ? donorMap.get(instrument.donorId) : undefined;
-      return { transfer: t, instrument, donor };
+      const refund = computeRefundStatus(t, refundsByTransfer.get(t.finixTransferId) ?? []);
+      const displayStatus = resolveDisplayStatus(t.state, refund);
+      return { transfer: t, instrument, donor, refund, displayStatus };
     })
-    .filter(({ instrument, donor }) => {
+    .filter(({ instrument, donor, displayStatus }) => {
       if (last4) {
         const l4 = instrument?.cardLast4 || instrument?.bankLast4;
         if (l4 !== last4) return false;
@@ -88,6 +99,7 @@ export default async function PaymentsListPage({
         const name = donor?.name || instrument?.accountHolderName || "";
         if (!name.toLowerCase().includes(buyer.toLowerCase())) return false;
       }
+      if (isRefundDerivedFilter && displayStatus !== state) return false;
       return true;
     });
 
@@ -120,14 +132,10 @@ export default async function PaymentsListPage({
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ transfer: t, instrument, donor }) => {
+              {rows.map(({ transfer: t, instrument, donor, refund, displayStatus }) => {
                 const last4Value = instrument?.cardLast4 || instrument?.bankLast4;
                 const instrumentLabel = instrument?.cardBrand || (instrument?.bankLast4 ? "Bank Account" : null);
-                const isSucceeded = (t.state || "").toUpperCase() === "SUCCEEDED";
                 const isFailed = (t.state || "").toUpperCase() === "FAILED";
-                const refundedCents = refundedCentsByTransfer.get(t.finixTransferId) ?? 0;
-                const isFullyRefunded = refundedCents > 0 && refundedCents >= (t.amountCents ?? 0);
-                const isPartiallyRefunded = refundedCents > 0 && !isFullyRefunded;
 
                 return (
                   <ClickableTableRow
@@ -156,24 +164,14 @@ export default async function PaymentsListPage({
                     </td>
                     <td className="px-6 py-3 text-right font-semibold text-slate-900">
                       {formatCents(t.amountCents ?? 0)}
+                      {refund.refundStatus !== "NONE" && refund.refundStatus !== "PENDING" && (
+                        <p className="text-xs font-normal text-slate-400">
+                          Net {formatCents(refund.netAmountCents)}
+                        </p>
+                      )}
                     </td>
                     <td className="px-6 py-3">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                          isSucceeded
-                            ? "bg-green-50 text-green-700"
-                            : isFailed
-                              ? "bg-red-50 text-red-700"
-                              : "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {t.state || "UNKNOWN"}
-                      </span>
-                      {(isFullyRefunded || isPartiallyRefunded) && (
-                        <span className="ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700">
-                          {isFullyRefunded ? "Refunded" : "Partially Refunded"}
-                        </span>
-                      )}
+                      <StateBadge state={displayStatus} />
                       {isFailed && t.failureCode && (
                         <p className="text-xs text-slate-400 mt-0.5">{t.failureCode}</p>
                       )}

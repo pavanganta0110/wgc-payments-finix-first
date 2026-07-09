@@ -5,6 +5,7 @@ import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import StateBadge from "@/components/merchant/StateBadge";
 import ClosePanelButton from "@/components/merchant/ClosePanelButton";
 import { PanelNavArrows, ViewAllDetailsButton, PaymentMoreMenu, PinButton } from "@/components/merchant/PaymentDetailActions";
+import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
 
 function formatDateTime(date: Date | null | undefined) {
   if (!date) return "—";
@@ -53,6 +54,24 @@ export default async function SettlementDetailPanel({
     }),
   ]);
 
+  // Refunds against these transfers may have landed in a different
+  // settlement than the original charge (a refund issued after this
+  // settlement already closed) — need all refunds for these transfer IDs,
+  // not just the ones scoped to this settlement, to show accurate status.
+  const transferIds = transfers.map((t) => t.finixTransferId);
+  const allRefundsForTheseTransfers = transferIds.length
+    ? await prisma.finixRefundOrReversal.findMany({
+        where: { finixOriginalTransferId: { in: transferIds } },
+      })
+    : [];
+  const refundsByTransfer = new Map<string, typeof allRefundsForTheseTransfers>();
+  for (const r of allRefundsForTheseTransfers) {
+    if (!r.finixOriginalTransferId) continue;
+    const list = refundsByTransfer.get(r.finixOriginalTransferId) ?? [];
+    list.push(r);
+    refundsByTransfer.set(r.finixOriginalTransferId, list);
+  }
+
   return (
     <div className="w-full lg:w-[420px] shrink-0 bg-white border border-slate-100 rounded-2xl shadow-sm h-fit lg:sticky lg:top-6">
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
@@ -96,12 +115,20 @@ export default async function SettlementDetailPanel({
           <p className="text-sm text-slate-500">No payments linked yet.</p>
         ) : (
           <div className="space-y-2">
-            {transfers.map((t) => (
-              <div key={t.id} className="flex items-center justify-between text-sm">
-                <CopyableIdBadge id={t.finixTransferId} label={t.finixTransferId} variant="link" />
-                <span className="font-semibold text-slate-700">{formatCents(t.amountCents ?? 0)}</span>
-              </div>
-            ))}
+            {transfers.map((t) => {
+              const refund = computeRefundStatus(t, refundsByTransfer.get(t.finixTransferId) ?? []);
+              return (
+                <div key={t.id} className="flex items-center justify-between text-sm">
+                  <CopyableIdBadge id={t.finixTransferId} label={t.finixTransferId} variant="link" />
+                  <div className="text-right">
+                    {refund.refundStatus !== "NONE" && (
+                      <StateBadge state={resolveDisplayStatus(t.state, refund)} />
+                    )}
+                    <p className="font-semibold text-slate-700">{formatCents(t.amountCents ?? 0)}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </Section>

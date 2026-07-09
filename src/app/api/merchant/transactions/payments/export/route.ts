@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import { resolveDateRange } from "@/lib/dateRangePresets";
+import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
+
+const REFUND_DERIVED_STATES = new Set(["REFUNDED", "PARTIALLY_REFUNDED", "REFUND_PENDING"]);
 
 function csvEscape(value: string) {
   if (value.includes(",") || value.includes('"') || value.includes("\n")) {
@@ -27,6 +30,7 @@ export async function GET(req: Request) {
   const to = searchParams.get("to") || undefined;
   const { from: startDate, to: endDate } = resolveDateRange(range, from, to);
   const dateFilter = startDate ? { gte: startDate, ...(endDate ? { lte: endDate } : {}) } : undefined;
+  const isRefundDerivedFilter = state ? REFUND_DERIVED_STATES.has(state) : false;
 
   const transfers = await prisma.finixTransfer.findMany({
     where: {
@@ -35,7 +39,7 @@ export async function GET(req: Request) {
       // NOT: { subtype: { contains: "RETURN" } } alone excludes every
       // null-subtype row too under SQL's three-valued logic.
       OR: [{ subtype: null }, { NOT: { subtype: { contains: "RETURN" } } }],
-      ...(state ? { state } : {}),
+      ...(state && !isRefundDerivedFilter ? { state } : {}),
       ...(dateFilter ? { createdAtFinix: dateFilter } : {}),
     },
     orderBy: { createdAtFinix: "desc" },
@@ -57,24 +61,57 @@ export async function GET(req: Request) {
     : [];
   const donorMap = new Map(donors.map((d) => [d.id, d]));
 
-  const rows = transfers.filter((t) => {
-    const instrument = instrumentMap.get(t.finixPaymentInstrumentId ?? "");
-    const donor = instrument?.donorId ? donorMap.get(instrument.donorId) : undefined;
-    if (last4) {
-      const l4 = instrument?.cardLast4 || instrument?.bankLast4;
-      if (l4 !== last4) return false;
-    }
-    if (buyer) {
-      const name = donor?.name || instrument?.accountHolderName || "";
-      if (!name.toLowerCase().includes(buyer.toLowerCase())) return false;
-    }
-    return true;
-  });
+  const transferIds = transfers.map((t) => t.finixTransferId);
+  const refunds = transferIds.length
+    ? await prisma.finixRefundOrReversal.findMany({
+        where: { finixOriginalTransferId: { in: transferIds } },
+      })
+    : [];
+  const refundsByTransfer = new Map<string, typeof refunds>();
+  for (const r of refunds) {
+    if (!r.finixOriginalTransferId) continue;
+    const list = refundsByTransfer.get(r.finixOriginalTransferId) ?? [];
+    list.push(r);
+    refundsByTransfer.set(r.finixOriginalTransferId, list);
+  }
 
-  const header = ["ID", "Created", "Donor", "Email", "Phone", "Amount", "State", "Instrument Type", "Last Four"];
+  const rows = transfers
+    .map((t) => ({
+      transfer: t,
+      refund: computeRefundStatus(t, refundsByTransfer.get(t.finixTransferId) ?? []),
+    }))
+    .filter(({ transfer: t, refund }) => {
+      const instrument = instrumentMap.get(t.finixPaymentInstrumentId ?? "");
+      const donor = instrument?.donorId ? donorMap.get(instrument.donorId) : undefined;
+      if (last4) {
+        const l4 = instrument?.cardLast4 || instrument?.bankLast4;
+        if (l4 !== last4) return false;
+      }
+      if (buyer) {
+        const name = donor?.name || instrument?.accountHolderName || "";
+        if (!name.toLowerCase().includes(buyer.toLowerCase())) return false;
+      }
+      if (isRefundDerivedFilter && resolveDisplayStatus(t.state, refund) !== state) return false;
+      return true;
+    });
+
+  const header = [
+    "ID",
+    "Created",
+    "Donor",
+    "Email",
+    "Phone",
+    "Amount",
+    "State",
+    "Refund Status",
+    "Net Amount",
+    "Display Status",
+    "Instrument Type",
+    "Last Four",
+  ];
   const lines = [header.join(",")];
 
-  for (const t of rows) {
+  for (const { transfer: t, refund } of rows) {
     const instrument = instrumentMap.get(t.finixPaymentInstrumentId ?? "");
     const donor = instrument?.donorId ? donorMap.get(instrument.donorId) : undefined;
     lines.push(
@@ -86,6 +123,9 @@ export async function GET(req: Request) {
         csvEscape(donor?.phone || ""),
         csvEscape(formatCents(t.amountCents ?? 0)),
         csvEscape(t.state || "UNKNOWN"),
+        csvEscape(refund.refundStatus),
+        csvEscape(formatCents(refund.netAmountCents)),
+        csvEscape(resolveDisplayStatus(t.state, refund)),
         csvEscape(instrument?.cardBrand || (instrument?.bankLast4 ? "Bank Account" : "Unknown")),
         csvEscape(instrument?.cardLast4 || instrument?.bankLast4 || ""),
       ].join(",")

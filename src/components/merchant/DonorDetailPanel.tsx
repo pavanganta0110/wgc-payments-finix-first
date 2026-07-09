@@ -3,6 +3,7 @@ import { formatCents } from "@/lib/format";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import StateBadge from "@/components/merchant/StateBadge";
 import ClosePanelButton from "@/components/merchant/ClosePanelButton";
+import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
 
 function formatDateTime(date: Date | null | undefined) {
   if (!date) return "—";
@@ -51,8 +52,30 @@ export default async function DonorDetailPanel({
       })
     : [];
 
+  const transferIds = transfers.map((t) => t.finixTransferId);
+  const refunds = transferIds.length
+    ? await prisma.finixRefundOrReversal.findMany({
+        where: { finixOriginalTransferId: { in: transferIds } },
+      })
+    : [];
+  const refundsByTransfer = new Map<string, typeof refunds>();
+  for (const r of refunds) {
+    if (!r.finixOriginalTransferId) continue;
+    const list = refundsByTransfer.get(r.finixOriginalTransferId) ?? [];
+    list.push(r);
+    refundsByTransfer.set(r.finixOriginalTransferId, list);
+  }
+  const transfersWithRefund = transfers.map((t) => ({
+    transfer: t,
+    refund: computeRefundStatus(t, refundsByTransfer.get(t.finixTransferId) ?? []),
+  }));
+
   const succeeded = transfers.filter((t) => (t.state || "").toUpperCase() === "SUCCEEDED");
-  const totalGiven = succeeded.reduce((sum, t) => sum + (t.amountCents ?? 0), 0);
+  // Net given — a fully refunded gift shouldn't count toward what the donor
+  // actually gave, a partially refunded one should count for its net amount.
+  const totalGiven = transfersWithRefund
+    .filter(({ transfer: t }) => (t.state || "").toUpperCase() === "SUCCEEDED")
+    .reduce((sum, { refund }) => sum + refund.netAmountCents, 0);
 
   return (
     <div className="w-full lg:w-[420px] shrink-0 bg-white border border-slate-100 rounded-2xl shadow-sm h-fit lg:sticky lg:top-6">
@@ -87,15 +110,18 @@ export default async function DonorDetailPanel({
           <p className="text-sm text-slate-500">No gifts recorded yet.</p>
         ) : (
           <div className="space-y-3">
-            {transfers.map((t) => (
+            {transfersWithRefund.map(({ transfer: t, refund }) => (
               <div key={t.id} className="flex items-center justify-between text-sm">
                 <div>
                   <CopyableIdBadge id={t.finixTransferId} label={t.finixTransferId} variant="link" />
                   <p className="text-xs text-slate-400 mt-0.5">{formatDateTime(t.createdAtFinix)}</p>
                 </div>
                 <div className="text-right">
-                  <StateBadge state={t.state} />
+                  <StateBadge state={resolveDisplayStatus(t.state, refund)} />
                   <p className="font-semibold text-slate-900 mt-0.5">{formatCents(t.amountCents ?? 0)}</p>
+                  {refund.refundStatus !== "NONE" && refund.refundStatus !== "PENDING" && (
+                    <p className="text-xs text-slate-400">Net {formatCents(refund.netAmountCents)}</p>
+                  )}
                 </div>
               </div>
             ))}
