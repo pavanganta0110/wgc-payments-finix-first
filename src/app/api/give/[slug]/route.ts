@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
 import { calculateFeeCoveredTotal } from "@/lib/giving/feeCalculator";
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
+import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { sendWgcEmail } from "@/lib/email";
 
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -97,6 +98,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         phone: donor.phone || undefined,
       },
     });
+
+    // The dashboard's Donor columns everywhere (Payments, Recurring Donors,
+    // detail panels) join through FinixPaymentInstrumentSnapshot, not
+    // straight off the identity — without this the gift shows up but the
+    // donor name never does. donorId is passed directly since we already
+    // resolved it above.
+    try {
+      await syncPaymentInstrument(instrumentId, { churchId: church.id, donorId: donorRecord.id });
+    } catch (err) {
+      console.error("Failed to snapshot payment instrument for giving-page donation:", err);
+    }
 
     if (isRecurring) {
       const interval = ["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"].includes(billingInterval)
