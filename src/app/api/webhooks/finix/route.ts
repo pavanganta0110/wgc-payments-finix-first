@@ -433,6 +433,41 @@ async function syncFinixDataFromWebhookEvent(
     return;
   }
 
+  if (entity === "FEE" && data?.id) {
+    // Confirmed against a real GET /fees response: linked_id/linked_to
+    // identify what the fee is attached to, merchant is the flat merchant
+    // id. Handling this directly from the webhook payload avoids the race
+    // condition in re-querying GET /fees?linked_to= right when
+    // transfer.created fires — Finix doesn't always have the fee records
+    // computed and queryable that fast yet.
+    const churchId = await resolveChurchIdForMerchant(data.merchant);
+
+    await prisma.finixFee.upsert({
+      where: { finixFeeId: data.id },
+      create: {
+        finixFeeId: data.id,
+        churchId,
+        linkedToId: data.linked_id ?? null,
+        linkedToType: data.linked_to ?? null,
+        feeType: data.fee_type ?? data.category ?? null,
+        amountCents: data.amount ?? null,
+        currency: data.currency ?? null,
+        description: data.display_name ?? data.label ?? null,
+        rawJsonRedacted: redactFinixPayload(data),
+        createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+      },
+      update: {
+        churchId: churchId ?? undefined,
+        feeType: data.fee_type ?? data.category ?? null,
+        amountCents: data.amount ?? null,
+        rawJsonRedacted: redactFinixPayload(data),
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+      },
+    });
+    return;
+  }
+
   if (entity === "FEE_PROFILE" && data?.id) {
     // Fee profiles don't say which merchants use them, so a rate change on
     // the shared/default profile can affect any church — refresh them all.
