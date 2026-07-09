@@ -45,6 +45,14 @@ export default function DonationForm({
     if (!APPLICATION_ID) return;
     let cancelled = false;
 
+    // Finix.PaymentForm injects fields into the container without clearing
+    // it first — remounting on a payment-method switch would otherwise
+    // stack the new fields on top of the old ones instead of replacing them.
+    const container = document.getElementById("finix-payment-form");
+    if (container) container.innerHTML = "";
+    formInstanceRef.current = null;
+    setFormReady(false);
+
     mountFinixPaymentForm(
       "finix-payment-form",
       APPLICATION_ID,
