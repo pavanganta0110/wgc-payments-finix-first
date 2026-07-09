@@ -67,12 +67,30 @@ async function sendWebhookEmail(
 function getFinixEventData(payload: any) {
   const entity = String(payload.entity || payload.data?.resource_type || "UNKNOWN").toUpperCase();
   const type = String(payload.type || "").toLowerCase();
+  // Confirmed against real captured payloads: fee.*, fee_profile.*, and
+  // merchant_profile.* events nest the resource under _embedded (e.g.
+  // _embedded.fees[0]) instead of a flat "data" key — the entities that
+  // were already confirmed working this session (transfer, settlement,
+  // dispute, subscription, authorization) do use payload.data directly.
+  // This silently broke every FEE/FEE_PROFILE/MERCHANT_PROFILE webhook
+  // handler (data.id was always undefined, so they fell through to the
+  // generic archive with no error) until caught by comparing archived
+  // events against their raw payloads.
   const data =
     payload.data ||
     payload._embedded?.merchants?.[0] ||
     payload._embedded?.identities?.[0] ||
     payload._embedded?.verifications?.[0] ||
     payload._embedded?.onboarding_forms?.[0] ||
+    payload._embedded?.fees?.[0] ||
+    payload._embedded?.fee_profiles?.[0] ||
+    payload._embedded?.merchant_profiles?.[0] ||
+    payload._embedded?.settlements?.[0] ||
+    payload._embedded?.transfers?.[0] ||
+    payload._embedded?.disputes?.[0] ||
+    payload._embedded?.subscriptions?.[0] ||
+    payload._embedded?.authorizations?.[0] ||
+    payload._embedded?.funding_transfer_attempts?.[0] ||
     {};
 
   return { entity, type, data, eventType: `${entity.toLowerCase()}.${type}` };
