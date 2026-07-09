@@ -143,10 +143,15 @@ export default async function PaymentDetailPanel({
   });
 
   if (paymentSettlement) {
+    // Finix doesn't expose a per-transfer "joined this settlement at"
+    // timestamp — only the settlement batch's own window_start_time,
+    // which is when the batch first opened (possibly well before this
+    // specific transfer joined it). Using the transfer's own timestamp
+    // here is the honest choice, not a real "added at" time.
     flowEvents.push({
       label: `Payment Added to ${settlementStateLabel(paymentSettlement.state)} Settlement`,
       sublabel: `Part of ${formatCents(paymentSettlement.totalAmountCents ?? 0)} USD Settlement`,
-      date: paymentSettlement.createdAtFinix ?? paymentSettlement.accruedAt,
+      date: transfer.createdAtFinix,
     });
   }
 
@@ -162,7 +167,7 @@ export default async function PaymentDetailPanel({
       flowEvents.push({
         label: `Refund Added to ${settlementStateLabel(refundSettlement.state)} Settlement`,
         sublabel: `Part of ${formatCents(refundSettlement.totalAmountCents ?? 0)} USD settlement`,
-        date: refundSettlement.createdAtFinix ?? refundSettlement.accruedAt,
+        date: r.createdAtFinix,
       });
     }
   }

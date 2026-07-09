@@ -27,6 +27,14 @@ function titleCaseFromSnake(value: string | null | undefined) {
     .join(" ");
 }
 
+function settlementStateLabel(state: string | null | undefined) {
+  const s = (state || "").toUpperCase();
+  if (s === "ACCRUING") return "Accruing";
+  if (s === "PENDING") return "Pending";
+  if (s === "SETTLED") return "Settled";
+  return s ? s.charAt(0) + s.slice(1).toLowerCase() : "";
+}
+
 function sourceLabel(source: string | null | undefined) {
   if (source === "wgc_giving_page") return "WGC Giving Page";
   if (source === "finix_dashboard") return "Finix Dashboard";
@@ -95,10 +103,15 @@ export default async function PaymentFullDetailPage({
     },
   ];
   if (settlement) {
+    // Finix doesn't expose a per-transfer "joined this settlement at"
+    // timestamp, only the settlement batch's own window_start_time (when
+    // the batch first opened, which can be well before this transfer
+    // joined it) — using the transfer's own timestamp here is the honest
+    // choice, not a real "added at" time.
     flowEvents.push({
-      label: "Payment Added to Accruing Settlement",
+      label: `Payment Added to ${settlementStateLabel(settlement.state)} Settlement`,
       sublabel: `Part of ${formatCents(settlement.totalAmountCents ?? 0)} USD Settlement`,
-      date: settlement.createdAtFinix ?? settlement.accruedAt,
+      date: transfer.createdAtFinix,
     });
   }
   for (const r of refunds) {
