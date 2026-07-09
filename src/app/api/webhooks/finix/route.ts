@@ -122,7 +122,7 @@ async function findOnboardingApplicationForFinixEvent(data: any) {
  * yet routed here — see src/lib/finix/sync/{syncFees,syncPayouts,syncSubscriptions}.ts
  * for why (unconfirmed Finix API shapes).
  */
-async function syncFinixDataFromWebhookEvent(
+export async function syncFinixDataFromWebhookEvent(
   entity: string,
   eventType: string,
   data: any,
