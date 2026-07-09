@@ -311,15 +311,38 @@ export class FinixClient {
   // Reversals (Refunds)
   // ==========================================
 
-  async createTransferReversal(transferId: string, payload: any) {
+  // Confirmed field name against docs.finix.com: refund_amount (cents) for
+  // a partial refund — omit for a full reversal. Multiple partial refunds
+  // are allowed as long as the total doesn't exceed the original amount.
+  async createTransferReversal(
+    transferId: string,
+    payload: { refund_amount?: number; idempotency_id?: string; tags?: Record<string, string> }
+  ) {
     return this.fetchApi(`/transfers/${transferId}/reversals`, {
       method: "POST",
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ idempotency_id: payload.idempotency_id ?? crypto.randomUUID(), ...payload })
     });
   }
 
   async listTransferReversals(transferId: string) {
     return this.fetchApi(`/transfers/${transferId}/reversals`);
+  }
+
+  // ==========================================
+  // Receipts
+  // ==========================================
+
+  // Confirmed against docs.finix.com/api/receipts: entity_id links to the
+  // Transfer/Authorization, buyer/merchant details auto-populate from it.
+  async createReceipt(payload: {
+    entity_id: string;
+    send_receipt_to_buyer: boolean;
+    requested_delivery_methods?: { type: "EMAIL" | "SMS" | "PRINT"; destinations: string[] }[];
+  }) {
+    return this.fetchApi("/receipts", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
   }
 
   // ==========================================

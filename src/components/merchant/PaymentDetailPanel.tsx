@@ -5,11 +5,13 @@ import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import ClosePanelButton from "@/components/merchant/ClosePanelButton";
 import {
   PanelNavArrows,
-  ViewAllDetailsButton,
   PaymentMoreMenu,
   PinButton,
   ComingSoonAction,
 } from "@/components/merchant/PaymentDetailActions";
+import ViewAllDetailsLink from "@/components/merchant/ViewAllDetailsLink";
+import IssueRefundButton from "@/components/merchant/IssueRefundButton";
+import CreateReceiptButton from "@/components/merchant/CreateReceiptButton";
 
 function formatDateTime(date: Date | null | undefined) {
   if (!date) return "—";
@@ -95,6 +97,12 @@ export default async function PaymentDetailPanel({
 
   const feesTotal = fees.reduce((sum, f) => sum + (f.amountCents || 0), 0);
 
+  const refundedCents = refunds
+    .filter((r) => (r.state || "").toUpperCase() === "SUCCEEDED")
+    .reduce((sum, r) => sum + (r.amountCents ?? 0), 0);
+  const remainingRefundableCents =
+    (transfer.state || "").toUpperCase() === "SUCCEEDED" ? Math.max(0, (transfer.amountCents ?? 0) - refundedCents) : 0;
+
   const settlementIds = Array.from(
     new Set(
       [transfer.finixSettlementId, ...refunds.map((r) => r.finixSettlementId)].filter(
@@ -167,7 +175,7 @@ export default async function PaymentDetailPanel({
     <div className="w-full lg:w-[420px] shrink-0 bg-white border border-slate-100 rounded-2xl shadow-sm h-fit lg:sticky lg:top-6">
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
         <PanelNavArrows />
-        <ViewAllDetailsButton />
+        <ViewAllDetailsLink href={`/merchant/transactions/payments/${transferId}`} />
         <ClosePanelButton />
       </div>
 
@@ -307,7 +315,11 @@ export default async function PaymentDetailPanel({
 
       <Section
         title="Refunds"
-        action={<ComingSoonAction label="Issue Refund" feature="Issuing refunds" className="text-sm font-semibold text-blue-600 hover:underline" />}
+        action={
+          remainingRefundableCents > 0 ? (
+            <IssueRefundButton transferId={transfer.finixTransferId} maxAmountCents={remainingRefundableCents} />
+          ) : undefined
+        }
       >
         {refunds.length === 0 ? (
           <p className="text-sm text-slate-500">No refunds associated with this payment.</p>
@@ -357,7 +369,7 @@ export default async function PaymentDetailPanel({
 
       <Section
         title="Receipt"
-        action={<ComingSoonAction label="Create Receipt" feature="Sending receipts" className="text-sm font-semibold text-blue-600 hover:underline" />}
+        action={<CreateReceiptButton transferId={transfer.finixTransferId} />}
       >
         {payment?.receiptSentAt ? (
           <Row label="Sent" value={formatDateTime(payment.receiptSentAt)} />
@@ -371,12 +383,13 @@ export default async function PaymentDetailPanel({
         action={<ComingSoonAction label="Edit" feature="Tag editing" className="text-sm font-semibold text-blue-600 hover:underline" />}
         last
       >
-        {transfer.tagsJson && Array.isArray(transfer.tagsJson) && (transfer.tagsJson as string[]).length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {(transfer.tagsJson as string[]).map((tag) => (
-              <span key={tag} className="px-2.5 py-1 rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-                {tag}
-              </span>
+        {transfer.tagsJson && typeof transfer.tagsJson === "object" && !Array.isArray(transfer.tagsJson) && Object.keys(transfer.tagsJson).length > 0 ? (
+          <div className="space-y-1.5">
+            {Object.entries(transfer.tagsJson as Record<string, string>).map(([key, value]) => (
+              <div key={key} className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">{key}</span>
+                <span className="font-mono text-xs text-slate-700">{value}</span>
+              </div>
             ))}
           </div>
         ) : (
