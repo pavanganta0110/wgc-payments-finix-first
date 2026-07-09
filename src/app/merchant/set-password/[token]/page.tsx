@@ -35,9 +35,14 @@ export default function SetPasswordPage() {
         throw new Error(data.error || "Failed to set password.");
       }
 
-      toast.success("Password set! Redirecting to your dashboard...");
-      router.push("/merchant/dashboard");
-      router.refresh();
+      if (data.autoLoginFailed) {
+        toast.success("Password set! Please log in.");
+        router.push("/merchant/login");
+      } else {
+        toast.success("Password set! Redirecting to your dashboard...");
+        router.push("/merchant/dashboard");
+        router.refresh();
+      }
     } catch (err: any) {
       toast.error(err.message || "An error occurred");
       setIsSubmitting(false);

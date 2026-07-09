@@ -41,12 +41,22 @@ export async function POST(req: Request) {
       },
     });
 
-    await setSessionCookie({
-      userId: user.id,
-      email: user.email,
-      role: user.role as "wgc_admin" | "church_admin",
-      churchId: user.churchId,
-    });
+    // Password is saved and the token is consumed at this point — that's
+    // the part that matters. Auto-login is a convenience on top of it, so
+    // a failure here (e.g. a session-signing issue) must not turn into an
+    // error response that tells the user their password wasn't set when
+    // it was — that leaves them with a burned token and no way back in.
+    try {
+      await setSessionCookie({
+        userId: user.id,
+        email: user.email,
+        role: user.role as "wgc_admin" | "church_admin",
+        churchId: user.churchId,
+      });
+    } catch (sessionError) {
+      console.error("Password set but auto-login session failed:", sessionError);
+      return NextResponse.json({ success: true, autoLoginFailed: true });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
