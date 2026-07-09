@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { Loader2 } from "lucide-react";
+import Link from "next/link";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 
@@ -56,7 +57,12 @@ export default function MerchantLoginPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-semibold mb-2">Password</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-semibold">Password</label>
+              <Link href="/merchant/forgot-password" className="text-xs font-semibold text-blue-600 hover:underline">
+                Forgot password?
+              </Link>
+            </div>
             <input
               required
               type="password"
