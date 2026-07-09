@@ -181,6 +181,27 @@ export class FinixClient {
   }
 
   // ==========================================
+  // Fee Profiles / Merchant Profiles (Pricing)
+  // ==========================================
+
+  // Confirmed against the real Finix sandbox: GET /merchants/{id} returns
+  // "merchant_profile" (a Merchant Profile id). Docs.finix.com/api/fee-profiles.
+  async getMerchantProfile(merchantProfileId: string) {
+    return this.fetchApi(`/merchant_profiles/${merchantProfileId}`);
+  }
+
+  // Confirmed field names against a real fee_profiles response: basis_points
+  // (card %, in basis points — divide by 100 for percent), fixed_fee (card
+  // fixed fee in cents), ach_basis_points, ach_fixed_fee (cents).
+  async getFeeProfile(feeProfileId: string) {
+    return this.fetchApi(`/fee_profiles/${feeProfileId}`);
+  }
+
+  async listFeeProfiles() {
+    return this.fetchApi("/fee_profiles");
+  }
+
+  // ==========================================
   // Payment Instruments
   // ==========================================
 
@@ -267,10 +288,11 @@ export class FinixClient {
     return this.fetchApi(`/subscriptions/${subscriptionId}`);
   }
 
+  // Confirmed against docs.finix.com/api/subscriptions: cancellation is
+  // DELETE, not PUT with a state change.
   async cancelSubscription(subscriptionId: string) {
     return this.fetchApi(`/subscriptions/${subscriptionId}`, {
-      method: "PUT",
-      body: JSON.stringify({ state: "CANCELED" })
+      method: "DELETE",
     });
   }
 

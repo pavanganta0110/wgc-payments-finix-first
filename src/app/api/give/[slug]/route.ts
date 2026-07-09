@@ -149,6 +149,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       fraud_session_id: fraudSessionId,
       statement_descriptor: church.name.slice(0, 18).toUpperCase(),
       tags: { source: "wgc_giving_page", churchId: church.id, givingPageId: givingPage.id },
+      // Per docs.finix.com/guides/platform-payments/monetizing-payments/calculating-fees-dynamically:
+      // supplemental_fee is additive reporting on top of amount (amount alone
+      // is what's charged to the donor's card — this doesn't change that).
+      // Only sent when WGC computed the covered-fee portion itself.
+      ...(feeCoveredCents > 0 ? { supplemental_fee: feeCoveredCents } : {}),
     });
 
     await prisma.finixTransfer.upsert({

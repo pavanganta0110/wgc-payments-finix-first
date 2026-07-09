@@ -9,6 +9,7 @@ import { provisionChurchAccount } from "@/lib/auth/provisionChurchAccount";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { syncFeesForTransfer } from "@/lib/finix/sync/syncFees";
 import { linkTransfersToSettlement } from "@/lib/finix/sync/syncSettlements";
+import { syncAllChurchesPricing, syncChurchPricingForMerchantProfile } from "@/lib/finix/sync/syncFeeProfiles";
 
 const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SECRET || process.env.FINIX_WEBHOOK_SIGNING_KEY;
 const BEARER_TOKEN = process.env.FINIX_WEBHOOK_BEARER_TOKEN;
@@ -424,6 +425,27 @@ async function syncFinixDataFromWebhookEvent(
         lastSyncedAt: new Date(),
       },
     });
+    return;
+  }
+
+  if (entity === "FEE_PROFILE" && data?.id) {
+    // Fee profiles don't say which merchants use them, so a rate change on
+    // the shared/default profile can affect any church — refresh them all.
+    // Fine at current scale (see syncAllChurchesPricing for details).
+    try {
+      await syncAllChurchesPricing();
+    } catch (err) {
+      console.error("Failed to sync church pricing after fee_profile event:", err);
+    }
+    return;
+  }
+
+  if (entity === "MERCHANT_PROFILE" && data?.id) {
+    try {
+      await syncChurchPricingForMerchantProfile(data.id);
+    } catch (err) {
+      console.error("Failed to sync church pricing after merchant_profile event:", err);
+    }
     return;
   }
 

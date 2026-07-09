@@ -640,6 +640,41 @@ model ChurchPricing {
   updatedAt         DateTime @updatedAt
 }
 
+// Snapshot of a Finix Fee Profile (docs.finix.com/api/fee-profiles). Rates
+// live entirely in Finix's dashboard — this table is a read-only cache kept
+// in sync via fee_profile.created/updated webhooks, feeding ChurchPricing.
+model FinixFeeProfile {
+  id                String    @id @default(cuid())
+  finixFeeProfileId String    @unique
+  basisPoints       Int?
+  fixedFeeCents     Int?
+  achBasisPoints    Int?
+  achFixedFeeCents  Int?
+  rawJsonRedacted   Json?
+  createdAtFinix    DateTime?
+  updatedAtFinix    DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  lastSyncedAt      DateTime?
+}
+
+// Snapshot of a Finix Merchant Profile (docs.finix.com/api/merchant-profiles),
+// which links a Merchant to its Fee Profile. Kept in sync via
+// merchant_profile.created/updated webhooks.
+model FinixMerchantProfile {
+  id                     String    @id @default(cuid())
+  finixMerchantProfileId String    @unique
+  finixFeeProfileId      String?
+  finixPayoutProfileId   String?
+  finixRiskProfileId     String?
+  rawJsonRedacted        Json?
+  createdAtFinix         DateTime?
+  updatedAtFinix         DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  lastSyncedAt           DateTime?
+}
+
 model User {
   id                        String    @id @default(cuid())
   email                     String    @unique
