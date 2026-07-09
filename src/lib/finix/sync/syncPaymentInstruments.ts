@@ -1,11 +1,14 @@
 import { finixClient } from "@/lib/finix/client";
 import { prisma } from "@/lib/prisma";
 import { redactFinixPayload } from "@/lib/finix/redact";
+import { upsertDonorFromIdentity } from "@/lib/finix/sync/syncDonor";
 
 /**
  * Syncs a single payment instrument's safe/masked metadata into
  * FinixPaymentInstrumentSnapshot. Never stores full card/bank numbers —
  * only last4, brand, and expiration, matching Finix's own masked response.
+ * Also upserts a Donor from the instrument's linked identity (when a
+ * churchId is known) and links it via donorId.
  */
 export async function syncPaymentInstrument(
   finixPaymentInstrumentId: string,
@@ -13,12 +16,17 @@ export async function syncPaymentInstrument(
 ) {
   const instrument = await finixClient.getPaymentInstrument(finixPaymentInstrumentId);
 
+  let donorId = opts?.donorId ?? null;
+  if (!donorId && opts?.churchId && instrument.identity) {
+    donorId = await upsertDonorFromIdentity(instrument.identity, opts.churchId);
+  }
+
   await prisma.finixPaymentInstrumentSnapshot.upsert({
     where: { finixPaymentInstrumentId },
     create: {
       finixPaymentInstrumentId,
       churchId: opts?.churchId ?? null,
-      donorId: opts?.donorId ?? null,
+      donorId,
       finixIdentityId: instrument.identity ?? null,
       instrumentType: instrument.instrument_type ?? null,
       paymentMethodType: instrument.type ?? null,

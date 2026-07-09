@@ -31,7 +31,15 @@ export async function POST(
       );
     }
 
-    const jobTypes = ["merchant", "transfers", "settlements", "disputes", "fees", "payouts"] as const;
+    const jobTypes = [
+      "merchant",
+      "transfers",
+      "settlements",
+      "disputes",
+      "fees",
+      "payouts",
+      "authorizations",
+    ] as const;
     const results: Record<string, unknown> = {};
 
     for (const jobType of jobTypes) {

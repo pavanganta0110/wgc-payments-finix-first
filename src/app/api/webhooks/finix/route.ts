@@ -5,6 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { sendWgcEmail, sendWgcAdminEmail } from "@/lib/email";
 import { redactFinixPayload } from "@/lib/finix/redact";
 import { mapFinixDisputeStateToWgcStatus } from "@/lib/finix/statusMapping";
+import { provisionChurchAccount } from "@/lib/auth/provisionChurchAccount";
+import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
+import { syncFeesForTransfer } from "@/lib/finix/sync/syncFees";
+import { linkTransfersToSettlement } from "@/lib/finix/sync/syncSettlements";
 
 const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SECRET || process.env.FINIX_WEBHOOK_SIGNING_KEY;
 const BEARER_TOKEN = process.env.FINIX_WEBHOOK_BEARER_TOKEN;
@@ -72,6 +76,12 @@ function getFinixEventData(payload: any) {
   return { entity, type, data, eventType: `${entity.toLowerCase()}.${type}` };
 }
 
+async function resolveChurchIdForMerchant(finixMerchantId: string | null | undefined) {
+  if (!finixMerchantId) return null;
+  const church = await prisma.church.findFirst({ where: { finixMerchantId } });
+  return church?.id ?? null;
+}
+
 async function findOnboardingApplicationForFinixEvent(data: any) {
   const finixIds = [
     data?.id,
@@ -121,10 +131,16 @@ async function syncFinixDataFromWebhookEvent(
     const tags = data.tags ?? {};
     const source = tags.source === "wgc_giving_page" ? "wgc_giving_page" : "finix_dashboard";
 
+    const church = data.merchant
+      ? await prisma.church.findFirst({ where: { finixMerchantId: data.merchant } })
+      : null;
+    const churchId = church?.id ?? null;
+
     await prisma.finixTransfer.upsert({
       where: { finixTransferId: data.id },
       create: {
         finixTransferId: data.id,
+        churchId,
         finixMerchantId: data.merchant ?? null,
         finixBuyerIdentityId: data.merchant_identity ?? null,
         finixPaymentInstrumentId: data.source ?? null,
@@ -146,6 +162,7 @@ async function syncFinixDataFromWebhookEvent(
         lastSyncedAt: new Date(),
       },
       update: {
+        churchId: churchId ?? undefined,
         state: data.state ?? null,
         failureCode: data.failure_code ?? null,
         failureMessage: data.failure_message ?? null,
@@ -155,6 +172,23 @@ async function syncFinixDataFromWebhookEvent(
       },
     });
 
+    // Non-blocking: pull the buyer's payment instrument (+ linked donor
+    // identity) and any processor fees now associated with this transfer.
+    // Wrapped individually so a Finix API hiccup on one never drops the
+    // other or blocks the transfer record itself from being saved above.
+    if (data.source) {
+      try {
+        await syncPaymentInstrument(data.source, { churchId: churchId ?? undefined });
+      } catch (err) {
+        console.error("Payment instrument/donor sync failed:", err);
+      }
+    }
+    try {
+      await syncFeesForTransfer(data.id, churchId ?? undefined);
+    } catch (err) {
+      console.error("Fee sync failed:", err);
+    }
+
     // A transfer of subtype REVERSAL/RETURN represents a refund/ACH return —
     // also record it in FinixRefundOrReversal, keyed by the reversal's own id.
     if (data.subtype === "REVERSAL" || data.type === "REVERSAL" || eventType.includes("reversal")) {
@@ -162,6 +196,7 @@ async function syncFinixDataFromWebhookEvent(
         where: { finixReversalId: data.id },
         create: {
           finixReversalId: data.id,
+          churchId,
           finixOriginalTransferId: data.parent_transfer ?? null,
           finixMerchantId: data.merchant ?? null,
           amountCents: data.amount ?? null,
@@ -178,6 +213,7 @@ async function syncFinixDataFromWebhookEvent(
           lastSyncedAt: new Date(),
         },
         update: {
+          churchId: churchId ?? undefined,
           state: data.state ?? null,
           failureCode: data.failure_code ?? null,
           failureMessage: data.failure_message ?? null,
@@ -191,23 +227,35 @@ async function syncFinixDataFromWebhookEvent(
   }
 
   if (entity === "DISPUTE" && data?.id) {
+    const churchId = await resolveChurchIdForMerchant(data.merchant);
+
     await prisma.finixDispute.upsert({
       where: { finixDisputeId: data.id },
       create: {
         finixDisputeId: data.id,
+        churchId,
         finixMerchantId: data.merchant ?? null,
         finixTransferId: data.transfer ?? null,
         state: mapFinixDisputeStateToWgcStatus(data.state),
         reason: data.reason ?? null,
         amountCents: data.amount ?? null,
         currency: data.currency ?? null,
+        evidenceDueAt: data.evidence_due_at ? new Date(data.evidence_due_at) : null,
+        respondedAt: data.responded_at ? new Date(data.responded_at) : null,
+        resolvedAt: data.resolved_at ? new Date(data.resolved_at) : null,
+        outcome: data.outcome ?? null,
         rawJsonRedacted: redactFinixPayload(data),
         createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,
         updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
         lastSyncedAt: new Date(),
       },
       update: {
+        churchId: churchId ?? undefined,
         state: mapFinixDisputeStateToWgcStatus(data.state),
+        evidenceDueAt: data.evidence_due_at ? new Date(data.evidence_due_at) : undefined,
+        respondedAt: data.responded_at ? new Date(data.responded_at) : undefined,
+        resolvedAt: data.resolved_at ? new Date(data.resolved_at) : undefined,
+        outcome: data.outcome ?? undefined,
         rawJsonRedacted: redactFinixPayload(data),
         updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
         lastSyncedAt: new Date(),
@@ -217,22 +265,160 @@ async function syncFinixDataFromWebhookEvent(
   }
 
   if (entity === "SETTLEMENT" && data?.id) {
+    const churchId = await resolveChurchIdForMerchant(data.merchant);
+
     await prisma.finixSettlement.upsert({
       where: { finixSettlementId: data.id },
       create: {
         finixSettlementId: data.id,
+        churchId,
         finixMerchantId: data.merchant ?? null,
         state: data.state ?? null,
         totalAmountCents: data.total_amount ?? null,
+        netAmountCents: data.net_amount ?? null,
+        feeAmountCents: data.fee_amount ?? null,
+        refundAmountCents: data.refund_amount ?? null,
+        disputeAmountCents: data.dispute_amount ?? null,
         currency: data.currency ?? null,
+        accruedAt: data.accrued_at ? new Date(data.accrued_at) : null,
+        settledAt: data.settled_at ? new Date(data.settled_at) : null,
         rawJsonRedacted: redactFinixPayload(data),
         createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,
         updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
         lastSyncedAt: new Date(),
       },
       update: {
+        churchId: churchId ?? undefined,
         state: data.state ?? null,
         totalAmountCents: data.total_amount ?? null,
+        netAmountCents: data.net_amount ?? null,
+        feeAmountCents: data.fee_amount ?? null,
+        refundAmountCents: data.refund_amount ?? null,
+        disputeAmountCents: data.dispute_amount ?? null,
+        settledAt: data.settled_at ? new Date(data.settled_at) : undefined,
+        rawJsonRedacted: redactFinixPayload(data),
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+        lastSyncedAt: new Date(),
+      },
+    });
+
+    try {
+      await linkTransfersToSettlement(data.id);
+    } catch (err) {
+      console.error("Failed to link transfers to settlement:", err);
+    }
+    return;
+  }
+
+  if ((entity === "FUNDING_TRANSFER_ATTEMPT" || entity === "FUNDING_INSTRUMENT") && data?.id) {
+    const churchId = await resolveChurchIdForMerchant(data.merchant);
+
+    await prisma.finixFundingTransferAttempt.upsert({
+      where: { finixFundingTransferAttemptId: data.id },
+      create: {
+        finixFundingTransferAttemptId: data.id,
+        churchId,
+        finixMerchantId: data.merchant ?? null,
+        finixSettlementId: data.settlement ?? null,
+        state: data.state ?? null,
+        amountCents: data.amount ?? null,
+        currency: data.currency ?? null,
+        bankAccountLast4: data.masked_account_number ?? null,
+        bankAccountType: data.account_type ?? null,
+        failureCode: data.failure_code ?? null,
+        failureMessage: data.failure_message ?? null,
+        estimatedArrivalDate: data.estimated_arrival_date ? new Date(data.estimated_arrival_date) : null,
+        sentAt: data.sent_at ? new Date(data.sent_at) : null,
+        arrivedAt: data.arrived_at ? new Date(data.arrived_at) : null,
+        rawJsonRedacted: redactFinixPayload(data),
+        createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+        lastSyncedAt: new Date(),
+      },
+      update: {
+        churchId: churchId ?? undefined,
+        state: data.state ?? null,
+        failureCode: data.failure_code ?? null,
+        failureMessage: data.failure_message ?? null,
+        sentAt: data.sent_at ? new Date(data.sent_at) : undefined,
+        arrivedAt: data.arrived_at ? new Date(data.arrived_at) : undefined,
+        rawJsonRedacted: redactFinixPayload(data),
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+        lastSyncedAt: new Date(),
+      },
+    });
+    return;
+  }
+
+  if (entity === "SUBSCRIPTION" && data?.id) {
+    const churchId = await resolveChurchIdForMerchant(data.merchant);
+
+    await prisma.finixSubscription.upsert({
+      where: { finixSubscriptionId: data.id },
+      create: {
+        finixSubscriptionId: data.id,
+        churchId,
+        finixMerchantId: data.merchant ?? null,
+        finixBuyerIdentityId: data.buyer_identity ?? null,
+        finixPaymentInstrumentId: data.payment_instrument ?? null,
+        state: data.state ?? null,
+        amountCents: data.amount ?? null,
+        currency: data.currency ?? null,
+        billingInterval: data.interval ?? null,
+        collectionMethod: data.collection_method ?? null,
+        nextBillingDate: data.next_billing_date ? new Date(data.next_billing_date) : null,
+        startedAt: data.started_at ? new Date(data.started_at) : occurredAt,
+        canceledAt: data.canceled_at ? new Date(data.canceled_at) : null,
+        rawJsonRedacted: redactFinixPayload(data),
+        createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+        lastSyncedAt: new Date(),
+      },
+      update: {
+        churchId: churchId ?? undefined,
+        state: data.state ?? null,
+        nextBillingDate: data.next_billing_date ? new Date(data.next_billing_date) : undefined,
+        canceledAt: data.canceled_at ? new Date(data.canceled_at) : undefined,
+        rawJsonRedacted: redactFinixPayload(data),
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+        lastSyncedAt: new Date(),
+      },
+    });
+    return;
+  }
+
+  if (entity === "AUTHORIZATION" && data?.id) {
+    const churchId = await resolveChurchIdForMerchant(data.merchant);
+
+    await prisma.finixAuthorization.upsert({
+      where: { finixAuthorizationId: data.id },
+      create: {
+        finixAuthorizationId: data.id,
+        churchId,
+        finixMerchantId: data.merchant ?? null,
+        finixTransferId: data.transfer ?? null,
+        state: data.state ?? null,
+        amountCents: data.amount ?? null,
+        amountRequestedCents: data.amount_requested ?? null,
+        currency: data.currency ?? null,
+        failureCode: data.failure_code ?? null,
+        failureMessage: data.failure_message ?? null,
+        isVoid: Boolean(data.is_void),
+        voidState: data.void_state ?? null,
+        expiresAt: data.expires_at ? new Date(data.expires_at) : null,
+        rawJsonRedacted: redactFinixPayload(data),
+        createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,
+        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+        lastSyncedAt: new Date(),
+      },
+      update: {
+        churchId: churchId ?? undefined,
+        state: data.state ?? null,
+        finixTransferId: data.transfer ?? null,
+        failureCode: data.failure_code ?? null,
+        failureMessage: data.failure_message ?? null,
+        isVoid: Boolean(data.is_void),
+        voidState: data.void_state ?? null,
         rawJsonRedacted: redactFinixPayload(data),
         updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
         lastSyncedAt: new Date(),
@@ -497,6 +683,24 @@ export async function POST(req: Request) {
             actionNeeded: "None.",
             adminDashboardLink: "https://wgcpayments.com/admin/merchant-applications"
           });
+
+          // Provision the Church row + church_admin User account and send
+          // the separate "secure dashboard access" email referenced above.
+          // Wrapped so a failure here never blocks the approval flow itself.
+          try {
+            await provisionChurchAccount({
+              id: app.id,
+              organizationName: app.organizationName,
+              legalBusinessName: app.legalBusinessName,
+              contactEmail: app.contactEmail,
+              contactName: app.contactName,
+              finixMerchantId: app.finixMerchantId || data.id,
+              finixIdentityId: app.finixIdentityId,
+              finixApplicationId: app.finixApplicationId,
+            });
+          } catch (provisionError) {
+            console.error("Failed to provision church dashboard account:", provisionError);
+          }
         } else if (onboardingState === "UPDATE_REQUESTED") {
           if (app.onboardingStatus !== "MORE_INFORMATION_REQUIRED" && app.onboardingStatus !== "APPROVED") {
             updateData.onboardingStatus = "MORE_INFORMATION_REQUIRED";

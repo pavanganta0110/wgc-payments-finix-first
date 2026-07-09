@@ -6,6 +6,7 @@ import { syncDisputes } from "@/lib/finix/sync/syncDisputes";
 import { syncFeesForTransfer } from "@/lib/finix/sync/syncFees";
 import { syncPayoutsForMerchant } from "@/lib/finix/sync/syncPayouts";
 import { syncPaymentInstrumentsForIdentity } from "@/lib/finix/sync/syncPaymentInstruments";
+import { syncAuthorizations } from "@/lib/finix/sync/syncAuthorizations";
 import { finixClient } from "@/lib/finix/client";
 
 export type SyncJobType =
@@ -15,7 +16,8 @@ export type SyncJobType =
   | "disputes"
   | "fees"
   | "payouts"
-  | "paymentInstruments";
+  | "paymentInstruments"
+  | "authorizations";
 
 /**
  * Runs one sync job for one merchant, tracked in FinixSyncJob. All job types
@@ -92,6 +94,9 @@ export async function runSyncJob(params: {
         result = await syncPaymentInstrumentsForIdentity(params.finixIdentityId, {
           churchId: params.churchId,
         });
+        break;
+      case "authorizations":
+        result = await syncAuthorizations(params.finixMerchantId, params.churchId);
         break;
     }
 

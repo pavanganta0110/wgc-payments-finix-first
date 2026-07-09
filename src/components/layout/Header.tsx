@@ -78,7 +78,7 @@ export default function Header() {
 
             {/* Desktop CTA */}
             <div className="flex items-center gap-6">
-              <Link href="https://wgcpayments.payments-dashboard.com/Login" className="text-[12px] font-bold text-[#010409] hover:text-[#eab308] transition-all tracking-[0.1em]">
+              <Link href="/merchant/login" className="text-[12px] font-bold text-[#010409] hover:text-[#eab308] transition-all tracking-[0.1em]">
                 Merchant Login
               </Link>
               <Link 
@@ -137,7 +137,7 @@ export default function Header() {
           
           <div className="mt-8 pt-8 border-t border-white/5 flex flex-col gap-4">
             <Link 
-              href="https://wgcpayments.payments-dashboard.com/Login" 
+              href="/merchant/login" 
               onClick={closeMenu}
               className="w-full flex items-center justify-center px-6 py-4 border border-white/10 rounded-xl text-[12px] font-bold text-white bg-white/5 tracking-wide transition-all active:scale-95"
             >

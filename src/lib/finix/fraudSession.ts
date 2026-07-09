@@ -15,6 +15,30 @@
  *   // sent to POST /api/... (which forwards it to finixClient.createTransfer)
  */
 
+export interface FinixTokenResponse {
+  data?: {
+    id: string;
+    instrument_type: "PAYMENT_CARD" | "BANK_ACCOUNT";
+    expires_at?: string;
+  };
+}
+
+interface FinixPaymentFormOptions {
+  paymentMethods?: ("card" | "bank")[];
+  showAddress?: boolean;
+  onSubmit?: (error: unknown, response: FinixTokenResponse) => void;
+  onLoad?: () => void;
+  onUpdate?: (state: unknown) => void;
+}
+
+export interface FinixPaymentFormInstance {
+  submit: (
+    environment: "sandbox" | "live",
+    applicationId: string,
+    callback: (error: unknown, response: FinixTokenResponse) => void
+  ) => void;
+}
+
 declare global {
   interface Window {
     Finix?: {
@@ -26,6 +50,12 @@ declare global {
         getSessionKey: () => string;
         connect: (merchantId: string, callback?: (sessionKey: string) => void) => void;
       };
+      PaymentForm: (
+        elementId: string,
+        environment: "sandbox" | "live",
+        applicationId: string,
+        options: FinixPaymentFormOptions
+      ) => FinixPaymentFormInstance;
     };
   }
 }

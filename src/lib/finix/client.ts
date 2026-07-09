@@ -83,6 +83,17 @@ export class FinixClient {
     });
   }
 
+  // Same /identities endpoint as createSellerIdentity — Finix identities
+  // aren't typed as buyer/seller at creation time, only by how they're used
+  // afterward (as a Transfer source vs a Merchant owner). Named separately
+  // here for readability at donor-checkout call sites.
+  async createBuyerIdentity(payload: { entity: Record<string, any> }) {
+    return this.fetchApi("/identities", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
   async getIdentity(identityId: string) {
     return this.fetchApi(`/identities/${identityId}`);
   }
@@ -225,6 +236,45 @@ export class FinixClient {
   }
 
   // ==========================================
+  // Subscriptions (Recurring Giving)
+  // ==========================================
+
+  // Confirmed via docs.finix.com/guides/billing/subscriptions/creating-subscriptions:
+  // POST /subscriptions with linked_to/linked_type pointing at the merchant,
+  // buyer_details for the identity+instrument being charged, and
+  // subscription_details.collection_method: "BILL_AUTOMATICALLY". Only
+  // approved merchants on DUMMY_V1 or FINIX_V1 processors can subscribe.
+  async createSubscription(payload: {
+    amount: number;
+    currency: string;
+    billing_interval: "DAILY" | "WEEKLY" | "MONTHLY" | "QUARTERLY" | "YEARLY";
+    linked_to: string;
+    linked_type: "MERCHANT";
+    buyer_details: { identity_id: string; instrument_id: string };
+    subscription_details?: { collection_method: "BILL_AUTOMATICALLY" };
+    tags?: Record<string, string>;
+  }) {
+    return this.fetchApi("/subscriptions", {
+      method: "POST",
+      body: JSON.stringify({
+        subscription_details: { collection_method: "BILL_AUTOMATICALLY" },
+        ...payload,
+      })
+    });
+  }
+
+  async getSubscription(subscriptionId: string) {
+    return this.fetchApi(`/subscriptions/${subscriptionId}`);
+  }
+
+  async cancelSubscription(subscriptionId: string) {
+    return this.fetchApi(`/subscriptions/${subscriptionId}`, {
+      method: "PUT",
+      body: JSON.stringify({ state: "CANCELED" })
+    });
+  }
+
+  // ==========================================
   // Reversals (Refunds)
   // ==========================================
 
@@ -251,6 +301,13 @@ export class FinixClient {
     return this.fetchApi(`/settlements/${settlementId}`);
   }
 
+  // Confirmed via Finix docs (docs.finix.com/api): GET /settlements/{id}/transfers
+  // returns every Transfer (payment or refund/reversal) accrued into that
+  // settlement batch.
+  async listSettlementTransfers(settlementId: string) {
+    return this.fetchApi(`/settlements/${settlementId}/transfers`);
+  }
+
   // ==========================================
   // Disputes (Stubs)
   // ==========================================
@@ -265,6 +322,16 @@ export class FinixClient {
 
   async listTransfersForMerchant(merchantId: string) {
     return this.fetchApi(`/transfers?merchant=${merchantId}`);
+  }
+
+  // Follows the same list-by-merchant convention already confirmed for
+  // /transfers, /disputes, and /settlements.
+  async listAuthorizationsForMerchant(merchantId: string) {
+    return this.fetchApi(`/authorizations?merchant=${merchantId}`);
+  }
+
+  async getAuthorization(authorizationId: string) {
+    return this.fetchApi(`/authorizations/${authorizationId}`);
   }
 }
 

@@ -230,22 +230,27 @@ model Church {
 }
 
 model Donor {
-  id        String   @id @default(cuid())
-  churchId  String
-  name      String?
-  email     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(cuid())
+  churchId         String
+  name             String?
+  email            String?
+  phone            String?
+  finixIdentityId  String?  @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model Payment {
   id                         String    @id @default(cuid())
   churchId                   String
   donorId                    String?
+  givingPageId               String?
   finixTransferId            String?
   finixBuyerIdentityId       String?
   finixPaymentInstrumentId   String?
   amountCents                Int
+  donationAmountCents        Int?
+  feeCoveredCents            Int?
   currency                   String    @default("USD")
   paymentMethodType          String
   status                     String
@@ -358,6 +363,7 @@ model FinixTransfer {
   finixMerchantId          String?
   finixBuyerIdentityId     String?
   finixPaymentInstrumentId String?
+  finixSettlementId        String?
   type                     String?
   subtype                  String?
   state                    String?
@@ -387,6 +393,7 @@ model FinixRefundOrReversal {
   finixReversalId         String    @unique
   finixOriginalTransferId String?
   finixMerchantId         String?
+  finixSettlementId       String?
   amountCents             Int?
   currency                String?
   state                   String?
@@ -631,4 +638,58 @@ model ChurchPricing {
   achFixedFeeCents  Int?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+}
+
+model User {
+  id                        String    @id @default(cuid())
+  email                     String    @unique
+  passwordHash              String?
+  role                      String // "wgc_admin" | "church_admin"
+  churchId                  String?
+  setPasswordTokenHash      String?
+  setPasswordTokenExpiresAt DateTime?
+  lastLoginAt               DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+}
+
+model FinixAuthorization {
+  id                   String    @id @default(cuid())
+  churchId             String?
+  finixAuthorizationId String    @unique
+  finixMerchantId      String?
+  finixTransferId      String?
+  state                String?
+  amountCents          Int?
+  amountRequestedCents Int?
+  currency             String?
+  failureCode          String?
+  failureMessage       String?
+  isVoid               Boolean?
+  voidState            String?
+  expiresAt            DateTime?
+  rawJsonRedacted      Json?
+  createdAtFinix       DateTime?
+  updatedAtFinix       DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  lastSyncedAt         DateTime?
+}
+
+model GivingPage {
+  id                   String   @id @default(cuid())
+  churchId             String
+  slug                 String   @unique
+  name                 String
+  isDefault            Boolean  @default(false)
+  enabled              Boolean  @default(true)
+  logoUrl              String?
+  headline             String?
+  description          String?
+  primaryColorHex      String   @default("#eab308")
+  suggestedAmountsJson Json?
+  allowRecurring       Boolean  @default(true)
+  allowFeeCoverage     Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }

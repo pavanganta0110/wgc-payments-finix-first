@@ -1,0 +1,144 @@
+import { getSession } from "@/lib/auth/session";
+import { prisma } from "@/lib/prisma";
+import { formatCents } from "@/lib/format";
+import { resolveDateRange } from "@/lib/dateRangePresets";
+import TransactionsFilterBar from "@/components/merchant/TransactionsFilterBar";
+import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
+import ClickableTableRow from "@/components/merchant/ClickableTableRow";
+import StateBadge from "@/components/merchant/StateBadge";
+
+const STATES = ["SUCCEEDED", "FAILED", "PENDING", "CANCELED"];
+
+export default async function RefundsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ state?: string; range?: string; from?: string; to?: string }>;
+}) {
+  const session = await getSession();
+  const churchId = session!.churchId!;
+  const { state, range, from, to } = await searchParams;
+  const { from: startDate, to: endDate } = resolveDateRange(range, from, to);
+  const dateFilter = startDate ? { gte: startDate, ...(endDate ? { lte: endDate } : {}) } : undefined;
+
+  const refunds = await prisma.finixRefundOrReversal.findMany({
+    where: {
+      churchId,
+      ...(state ? { state } : {}),
+      ...(dateFilter ? { createdAtFinix: dateFilter } : {}),
+    },
+    orderBy: { createdAtFinix: "desc" },
+    take: 100,
+  });
+
+  const originalTransferIds = refunds
+    .map((r) => r.finixOriginalTransferId)
+    .filter((id): id is string => Boolean(id));
+  const transfers = originalTransferIds.length
+    ? await prisma.finixTransfer.findMany({ where: { finixTransferId: { in: originalTransferIds } } })
+    : [];
+  const transferMap = new Map(transfers.map((t) => [t.finixTransferId, t]));
+
+  const instrumentIds = transfers
+    .map((t) => t.finixPaymentInstrumentId)
+    .filter((id): id is string => Boolean(id));
+  const instruments = instrumentIds.length
+    ? await prisma.finixPaymentInstrumentSnapshot.findMany({
+        where: { finixPaymentInstrumentId: { in: instrumentIds } },
+      })
+    : [];
+  const instrumentMap = new Map(instruments.map((i) => [i.finixPaymentInstrumentId, i]));
+
+  return (
+    <div>
+      <h2 className="text-lg font-bold text-slate-900 mb-6">Refunds</h2>
+
+      <TransactionsFilterBar states={STATES} exportHref="/api/merchant/transactions/refunds/export" />
+
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-visible">
+        {refunds.length === 0 ? (
+          <p className="px-6 py-10 text-center text-sm text-slate-500">
+            No refunds match these filters. Refunds you issue, or that happen directly in Finix, will show here.
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50">
+                <th className="px-6 py-3">ID</th>
+                <th className="px-6 py-3">Created</th>
+                <th className="px-6 py-3">Donor</th>
+                <th className="px-6 py-3">Original Payment</th>
+                <th className="px-6 py-3">State</th>
+                <th className="px-6 py-3">Source</th>
+                <th className="px-6 py-3 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {refunds.map((r) => {
+                const transfer = r.finixOriginalTransferId
+                  ? transferMap.get(r.finixOriginalTransferId)
+                  : null;
+                const instrument = transfer?.finixPaymentInstrumentId
+                  ? instrumentMap.get(transfer.finixPaymentInstrumentId)
+                  : null;
+
+                const cells = (
+                  <>
+                    <td className="px-6 py-3">
+                      <CopyableIdBadge id={r.finixReversalId} />
+                    </td>
+                    <td className="px-6 py-3 text-slate-600 whitespace-nowrap">
+                      {r.createdAtFinix
+                        ? new Date(r.createdAtFinix).toLocaleString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })
+                        : "—"}
+                    </td>
+                    <td className="px-6 py-3 text-slate-700">
+                      {instrument?.accountHolderName || "—"}
+                    </td>
+                    <td className="px-6 py-3">
+                      {r.finixOriginalTransferId ? (
+                        <CopyableIdBadge id={r.finixOriginalTransferId} label="Payment ID" />
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="px-6 py-3">
+                      <StateBadge state={r.state} />
+                      {r.failureCode && <p className="text-xs text-slate-400 mt-0.5">{r.failureCode}</p>}
+                    </td>
+                    <td className="px-6 py-3 text-slate-500 text-xs">
+                      {r.source === "wgc_giving_page" ? "WGC Giving Page" : "Finix Dashboard"}
+                    </td>
+                    <td className="px-6 py-3 text-right font-semibold text-slate-900">
+                      {formatCents(r.amountCents ?? 0)}
+                    </td>
+                  </>
+                );
+
+                return r.finixOriginalTransferId ? (
+                  <ClickableTableRow
+                    key={r.id}
+                    id={r.finixOriginalTransferId}
+                    className="border-t border-slate-50 hover:bg-slate-50"
+                    targetHref={`/merchant/transactions/payments?id=${r.finixOriginalTransferId}`}
+                  >
+                    {cells}
+                  </ClickableTableRow>
+                ) : (
+                  <tr key={r.id} className="border-t border-slate-50">
+                    {cells}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
