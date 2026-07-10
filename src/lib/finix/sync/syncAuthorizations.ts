@@ -2,61 +2,77 @@ import { finixClient } from "@/lib/finix/client";
 import { prisma } from "@/lib/prisma";
 import { redactFinixPayload } from "@/lib/finix/redact";
 
+function authFields(auth: any) {
+  return {
+    finixPaymentInstrumentId: auth.source ?? null,
+    finixBuyerIdentityId: auth.identity ?? null,
+    state: auth.state ?? null,
+    finixTransferId: auth.transfer ?? null,
+    failureCode: auth.failure_code ?? null,
+    failureMessage: auth.failure_message ?? null,
+    isVoid: Boolean(auth.is_void),
+    voidState: auth.void_state ?? null,
+    traceId: auth.trace_id ?? null,
+    cvvVerification: auth.security_code_verification ?? null,
+    addressVerification: auth.address_verification ?? null,
+    authorizationCode: auth.tags?.authorization_code ?? auth.authorization_code ?? null,
+    rawJsonRedacted: redactFinixPayload(auth),
+    updatedAtFinix: auth.updated_at ? new Date(auth.updated_at) : null,
+    lastSyncedAt: new Date(),
+  };
+}
+
 /**
- * Syncs Authorizations for a merchant into FinixAuthorization. Field shape
- * matches the confirmed Authorization resource seen in Finix's idempotency
- * and fraud-detection docs (id, state, amount, amount_requested, currency,
- * source, failure_code, failure_message, is_void, void_state, expires_at).
+ * Syncs all Authorizations for a merchant into FinixAuthorization.
+ * Paginates through all results using Finix's HAL _links.next pattern.
+ * Field names confirmed against Finix's Authorization resource.
  */
 export async function syncAuthorizations(finixMerchantId: string, churchId?: string) {
-  const response = await finixClient.listAuthorizationsForMerchant(finixMerchantId);
-  const authorizations: any[] = response?._embedded?.authorizations ?? [];
-
   let created = 0;
   let updated = 0;
+  let path: string | null = `/authorizations?merchant=${finixMerchantId}&limit=100`;
 
-  for (const auth of authorizations) {
-    const existing = await prisma.finixAuthorization.findUnique({
-      where: { finixAuthorizationId: auth.id },
-    });
+  while (path) {
+    const response = await finixClient.listAuthorizationsPage(path);
+    const authorizations: any[] = response?._embedded?.authorizations ?? [];
 
-    await prisma.finixAuthorization.upsert({
-      where: { finixAuthorizationId: auth.id },
-      create: {
-        finixAuthorizationId: auth.id,
-        churchId: churchId ?? null,
-        finixMerchantId,
-        finixTransferId: auth.transfer ?? null,
-        state: auth.state ?? null,
-        amountCents: auth.amount ?? null,
-        amountRequestedCents: auth.amount_requested ?? null,
-        currency: auth.currency ?? null,
-        failureCode: auth.failure_code ?? null,
-        failureMessage: auth.failure_message ?? null,
-        isVoid: Boolean(auth.is_void),
-        voidState: auth.void_state ?? null,
-        expiresAt: auth.expires_at ? new Date(auth.expires_at) : null,
-        rawJsonRedacted: redactFinixPayload(auth),
-        createdAtFinix: auth.created_at ? new Date(auth.created_at) : null,
-        updatedAtFinix: auth.updated_at ? new Date(auth.updated_at) : null,
-        lastSyncedAt: new Date(),
-      },
-      update: {
-        state: auth.state ?? null,
-        finixTransferId: auth.transfer ?? null,
-        failureCode: auth.failure_code ?? null,
-        failureMessage: auth.failure_message ?? null,
-        isVoid: Boolean(auth.is_void),
-        voidState: auth.void_state ?? null,
-        rawJsonRedacted: redactFinixPayload(auth),
-        updatedAtFinix: auth.updated_at ? new Date(auth.updated_at) : null,
-        lastSyncedAt: new Date(),
-      },
-    });
+    for (const auth of authorizations) {
+      const existing = await prisma.finixAuthorization.findUnique({
+        where: { finixAuthorizationId: auth.id },
+      });
 
-    if (existing) updated++;
-    else created++;
+      await prisma.finixAuthorization.upsert({
+        where: { finixAuthorizationId: auth.id },
+        create: {
+          finixAuthorizationId: auth.id,
+          churchId: churchId ?? null,
+          finixMerchantId,
+          amountCents: auth.amount ?? null,
+          amountRequestedCents: auth.amount_requested ?? null,
+          currency: auth.currency ?? null,
+          expiresAt: auth.expires_at ? new Date(auth.expires_at) : null,
+          createdAtFinix: auth.created_at ? new Date(auth.created_at) : null,
+          ...authFields(auth),
+        },
+        update: authFields(auth),
+      });
+
+      if (existing) updated++;
+      else created++;
+    }
+
+    const nextHref: string | undefined = response?._links?.next?.href;
+    if (nextHref) {
+      // Finix returns absolute URLs; strip the base to get the path.
+      try {
+        path = new URL(nextHref).pathname + new URL(nextHref).search;
+      } catch {
+        path = null;
+      }
+    } else {
+      path = null;
+    }
   }
 
-  return { processed: authorizations.length, created, updated };
+  return { processed: created + updated, created, updated };
 }

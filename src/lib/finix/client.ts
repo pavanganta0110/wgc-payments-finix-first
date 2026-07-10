@@ -389,6 +389,10 @@ export class FinixClient {
     return this.fetchApi(`/authorizations?merchant=${merchantId}`);
   }
 
+  async listAuthorizationsPage(path: string) {
+    return this.fetchApi(path);
+  }
+
   async getAuthorization(authorizationId: string) {
     return this.fetchApi(`/authorizations/${authorizationId}`);
   }

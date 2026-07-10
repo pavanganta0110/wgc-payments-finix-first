@@ -699,26 +699,32 @@ model User {
 }
 
 model FinixAuthorization {
-  id                   String    @id @default(cuid())
-  churchId             String?
-  finixAuthorizationId String    @unique
-  finixMerchantId      String?
-  finixTransferId      String?
-  state                String?
-  amountCents          Int?
-  amountRequestedCents Int?
-  currency             String?
-  failureCode          String?
-  failureMessage       String?
-  isVoid               Boolean?
-  voidState            String?
-  expiresAt            DateTime?
-  rawJsonRedacted      Json?
-  createdAtFinix       DateTime?
-  updatedAtFinix       DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  lastSyncedAt         DateTime?
+  id                        String    @id @default(cuid())
+  churchId                  String?
+  finixAuthorizationId      String    @unique
+  finixMerchantId           String?
+  finixTransferId           String?
+  finixPaymentInstrumentId  String?
+  finixBuyerIdentityId      String?
+  state                     String?
+  amountCents               Int?
+  amountRequestedCents      Int?
+  currency                  String?
+  failureCode               String?
+  failureMessage            String?
+  isVoid                    Boolean?
+  voidState                 String?
+  expiresAt                 DateTime?
+  authorizationCode         String?
+  traceId                   String?
+  cvvVerification           String?
+  addressVerification       String?
+  rawJsonRedacted           Json?
+  createdAtFinix            DateTime?
+  updatedAtFinix            DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  lastSyncedAt              DateTime?
 }
 
 model GivingPage {

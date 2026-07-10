@@ -414,38 +414,40 @@ export async function syncFinixDataFromWebhookEvent(
   if (entity === "AUTHORIZATION" && data?.id) {
     const churchId = await resolveChurchIdForMerchant(data.merchant);
 
+    const authFields = {
+      finixPaymentInstrumentId: data.source ?? null,
+      finixBuyerIdentityId: data.identity ?? null,
+      state: data.state ?? null,
+      finixTransferId: data.transfer ?? null,
+      failureCode: data.failure_code ?? null,
+      failureMessage: data.failure_message ?? null,
+      isVoid: Boolean(data.is_void),
+      voidState: data.void_state ?? null,
+      traceId: data.trace_id ?? null,
+      cvvVerification: data.security_code_verification ?? null,
+      addressVerification: data.address_verification ?? null,
+      authorizationCode: data.tags?.authorization_code ?? data.authorization_code ?? null,
+      rawJsonRedacted: redactFinixPayload(data),
+      updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+      lastSyncedAt: new Date(),
+    };
+
     await prisma.finixAuthorization.upsert({
       where: { finixAuthorizationId: data.id },
       create: {
         finixAuthorizationId: data.id,
         churchId,
         finixMerchantId: data.merchant ?? null,
-        finixTransferId: data.transfer ?? null,
-        state: data.state ?? null,
         amountCents: data.amount ?? null,
         amountRequestedCents: data.amount_requested ?? null,
         currency: data.currency ?? null,
-        failureCode: data.failure_code ?? null,
-        failureMessage: data.failure_message ?? null,
-        isVoid: Boolean(data.is_void),
-        voidState: data.void_state ?? null,
         expiresAt: data.expires_at ? new Date(data.expires_at) : null,
-        rawJsonRedacted: redactFinixPayload(data),
         createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,
-        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
-        lastSyncedAt: new Date(),
+        ...authFields,
       },
       update: {
         churchId: churchId ?? undefined,
-        state: data.state ?? null,
-        finixTransferId: data.transfer ?? null,
-        failureCode: data.failure_code ?? null,
-        failureMessage: data.failure_message ?? null,
-        isVoid: Boolean(data.is_void),
-        voidState: data.void_state ?? null,
-        rawJsonRedacted: redactFinixPayload(data),
-        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
-        lastSyncedAt: new Date(),
+        ...authFields,
       },
     });
     return;

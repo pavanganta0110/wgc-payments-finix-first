@@ -6,6 +6,7 @@ const STATE_STYLES: Record<string, string> = {
   REFUNDED: "bg-amber-50 text-amber-700",
   PARTIALLY_REFUNDED: "bg-amber-50 text-amber-700",
   REFUND_PENDING: "bg-amber-50 text-amber-700",
+  VOIDED: "bg-slate-100 text-slate-500",
 };
 
 export default function StateBadge({ state }: { state: string | null | undefined }) {
