@@ -29,7 +29,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ transfe
   try {
     const reversal = await finixClient.createTransferReversal(transferId, {
       ...(amountCents != null ? { refund_amount: amountCents } : {}),
-      tags: { source: "wgc_merchant_dashboard", churchId: session.churchId },
+      tags: { source: "wgc_merchant_dashboard", merchantId: transfer.finixMerchantId ?? "", churchId: session.churchId },
     });
 
     // Persist immediately so the UI reflects it right away — the

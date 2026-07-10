@@ -143,7 +143,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         linked_to: church.finixMerchantId,
         linked_type: "MERCHANT",
         buyer_details: { identity_id: identityId, instrument_id: instrumentId },
-        tags: { source: "wgc_giving_page", churchId: church.id, givingPageId: givingPage.id },
+        tags: { source: "wgc_giving_page", merchantId: church.finixMerchantId, churchId: church.id, givingPageId: givingPage.id },
       });
 
       await prisma.finixSubscription.upsert({
@@ -182,7 +182,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       source: instrumentId,
       fraud_session_id: fraudSessionId,
       statement_descriptor: church.name.slice(0, 18).toUpperCase(),
-      tags: { source: "wgc_giving_page", churchId: church.id, givingPageId: givingPage.id },
+      tags: { source: "wgc_giving_page", merchantId: church.finixMerchantId, churchId: church.id, givingPageId: givingPage.id },
       // Per docs.finix.com/guides/platform-payments/monetizing-payments/calculating-fees-dynamically:
       // supplemental_fee is additive reporting on top of amount (amount alone
       // is what's charged to the donor's card — this doesn't change that).
@@ -202,7 +202,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         amountCents: totalCents,
         currency: "USD",
         source: "wgc_giving_page",
-        tagsJson: { source: "wgc_giving_page", churchId: church.id, givingPageId: givingPage.id },
+        tagsJson: { source: "wgc_giving_page", merchantId: church.finixMerchantId, churchId: church.id, givingPageId: givingPage.id },
         createdAtFinix: new Date(),
         lastSyncedAt: new Date(),
       },
