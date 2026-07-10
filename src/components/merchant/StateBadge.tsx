@@ -9,6 +9,7 @@ const STATE_STYLES: Record<string, string> = {
   VOIDED: "bg-slate-100 text-slate-500",
   CAPTURED: "bg-green-50 text-green-700",
   EXPIRED: "bg-slate-100 text-slate-500",
+  RETURNED: "bg-red-50 text-red-700",
 };
 
 export default function StateBadge({ state }: { state: string | null | undefined }) {

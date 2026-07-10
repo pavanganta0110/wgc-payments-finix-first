@@ -366,23 +366,31 @@ export async function getDisputesInsights(
 }
 
 export async function getBankReturnsInsights(churchId: string, dateFilter: { gte: Date; lte?: Date } | undefined, trend: string) {
-  // Finix has no dedicated ACH-return resource — a bank return shows up as a
-  // Transfer whose subtype/type indicates a return (e.g. subtype "RETURN").
-  // Matched heuristically here; confirm the exact field with Finix before
-  // relying on this for reconciliation.
-  const transfers = await prisma.finixTransfer.findMany({
+  // ACH volume is every card-less (bank) transfer in the period; returns are
+  // sourced from the dedicated BankReturn table (real NACHA return records,
+  // synced from Finix's return-subtype Transfer webhooks) rather than the
+  // old heuristic of scanning FinixTransfer.subtype at read time.
+  const achTransfers = await prisma.finixTransfer.findMany({
+    where: {
+      churchId,
+      finixPaymentInstrumentId: { not: null },
+      ...(dateFilter ? { createdAtFinix: dateFilter } : {}),
+    },
+  });
+  const returns = await prisma.bankReturn.findMany({
     where: { churchId, ...(dateFilter ? { createdAtFinix: dateFilter } : {}) },
   });
-  const returns = transfers.filter((t) => (t.subtype || "").toUpperCase().includes("RETURN"));
-  const totalAchVolumeCents = transfers.reduce((sum, t) => sum + (t.amountCents ?? 0), 0);
-  const returnVolumeCents = returns.reduce((sum, t) => sum + (t.amountCents ?? 0), 0);
-  const returnRate = transfers.length > 0 ? (returns.length / transfers.length) * 100 : 0;
+
+  const grossAchVolumeCents = achTransfers.reduce((sum, t) => sum + (t.amountCents ?? 0), 0);
+  const returnedAchVolumeCents = returns.reduce((sum, r) => sum + (r.amountCents ?? 0), 0);
+  const netAchVolumeCents = grossAchVolumeCents - returnedAchVolumeCents;
+  const returnRate = achTransfers.length > 0 ? (returns.length / achTransfers.length) * 100 : 0;
 
   const summary = [
-    { label: "ACH Return Volume", value: formatCents(returnVolumeCents) },
-    { label: "ACH Return Count", value: String(returns.length) },
-    { label: "ACH Return Rate", value: `${returnRate.toFixed(2)}%` },
-    { label: "Total ACH Volume", value: formatCents(totalAchVolumeCents) },
+    { label: "Gross ACH Volume", value: formatCents(grossAchVolumeCents) },
+    { label: "Returned ACH Amount", value: formatCents(returnedAchVolumeCents) },
+    { label: "Net ACH Volume", value: formatCents(netAchVolumeCents) },
+    { label: "ACH Return Rate", value: `${returnRate.toFixed(2)}% (${returns.length} of ${achTransfers.length})` },
   ];
 
   const trendData = groupTrend(
@@ -393,7 +401,7 @@ export async function getBankReturnsInsights(churchId: string, dateFilter: { gte
 
   const byReasonTable = Array.from(
     returns.reduce((map, r) => {
-      const reason = r.failureCode || "UNKNOWN";
+      const reason = r.reasonCode || "UNKNOWN";
       const entry = map.get(reason) ?? { volume: 0, count: 0 };
       entry.volume += r.amountCents ?? 0;
       entry.count += 1;

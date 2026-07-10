@@ -448,6 +448,34 @@ model FinixRefundOrReversal {
   lastSyncedAt            DateTime?
 }
 
+// A real ACH return (NACHA reason code), distinct from FinixRefundOrReversal
+// (merchant-initiated refunds). Finix represents a return as a Transfer of
+// subtype containing "RETURN" linked back to the original debit — this table
+// gives it a first-class identity instead of relying on that heuristic at
+// every read site.
+model BankReturn {
+  id                       String    @id @default(cuid())
+  bankReturnId             String    @unique
+  originalTransferId       String?
+  churchId                 String?
+  finixMerchantId          String?
+  buyerId                  String?
+  finixPaymentInstrumentId String?
+  amountCents              Int?
+  currency                 String?
+  reasonCode               String?
+  reasonDescription        String?
+  state                    String?
+  traceId                  String?
+  effectiveAt              DateTime?
+  rawPayloadRedacted       Json?
+  createdAtFinix           DateTime?
+  updatedAtFinix           DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  lastSyncedAt             DateTime?
+}
+
 model FinixFee {
   id              String    @id @default(cuid())
   churchId        String?

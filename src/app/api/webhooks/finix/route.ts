@@ -11,6 +11,7 @@ import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { syncFeesForTransfer } from "@/lib/finix/sync/syncFees";
 import { linkTransfersToSettlement } from "@/lib/finix/sync/syncSettlements";
 import { syncAllChurchesPricing, syncChurchPricingForMerchantProfile } from "@/lib/finix/sync/syncFeeProfiles";
+import { describeAchReturnReason } from "@/lib/finix/achReturnReasonCodes";
 
 const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SECRET || process.env.FINIX_WEBHOOK_SIGNING_KEY;
 const BEARER_TOKEN = process.env.FINIX_WEBHOOK_BEARER_TOKEN;
@@ -246,6 +247,77 @@ export async function syncFinixDataFromWebhookEvent(
           lastSyncedAt: new Date(),
         },
       });
+    }
+
+    // An actual ACH return (NACHA reason code) is a distinct event from a
+    // merchant-initiated refund/reversal above — Finix represents it as a
+    // Transfer whose subtype contains "RETURN" linked back to the original
+    // debit via parent_transfer (unconfirmed exact field name; mirrors the
+    // REVERSAL handling above until confirmed against a live Finix payload).
+    const isReturn = String(data.subtype || data.type || "").toUpperCase().includes("RETURN") || eventType.includes("return");
+    if (isReturn) {
+      const originalTransferId = data.parent_transfer ?? data.source_transfer ?? null;
+      const reasonCode = data.failure_code ?? data.return_code ?? null;
+
+      await prisma.bankReturn.upsert({
+        where: { bankReturnId: data.id },
+        create: {
+          bankReturnId: data.id,
+          originalTransferId,
+          churchId,
+          finixMerchantId: data.merchant ?? null,
+          buyerId: null,
+          finixPaymentInstrumentId: data.source ?? null,
+          amountCents: data.amount ?? null,
+          currency: data.currency ?? null,
+          reasonCode,
+          reasonDescription: describeAchReturnReason(reasonCode),
+          state: data.state ?? null,
+          traceId: data.trace_id ?? null,
+          effectiveAt: data.effective_at ? new Date(data.effective_at) : null,
+          rawPayloadRedacted: redactFinixPayload(data),
+          createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,
+          updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+          lastSyncedAt: new Date(),
+        },
+        update: {
+          churchId: churchId ?? undefined,
+          state: data.state ?? null,
+          reasonCode,
+          reasonDescription: describeAchReturnReason(reasonCode),
+          traceId: data.trace_id ?? null,
+          effectiveAt: data.effective_at ? new Date(data.effective_at) : undefined,
+          rawPayloadRedacted: redactFinixPayload(data),
+          updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+          lastSyncedAt: new Date(),
+        },
+      });
+
+      // Link the buyer (donor) via the payment instrument snapshot so the
+      // Bank Returns table/drawer can show who the return belongs to
+      // without a second round-trip at read time.
+      if (data.source) {
+        const instrument = await prisma.finixPaymentInstrumentSnapshot.findUnique({
+          where: { finixPaymentInstrumentId: data.source },
+          select: { donorId: true },
+        });
+        if (instrument?.donorId) {
+          await prisma.bankReturn.update({
+            where: { bankReturnId: data.id },
+            data: { buyerId: instrument.donorId },
+          });
+        }
+      }
+
+      // The original ACH payment is no longer settled funds — reflect that
+      // on the Payment record so Payments/Insights/donor history stop
+      // counting it as a completed gift.
+      if (originalTransferId) {
+        await prisma.payment.updateMany({
+          where: { finixTransferId: originalTransferId },
+          data: { status: "RETURNED" },
+        });
+      }
     }
     return;
   }
