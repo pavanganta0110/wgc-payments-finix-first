@@ -2,7 +2,7 @@ import { finixClient } from "@/lib/finix/client";
 import { prisma } from "@/lib/prisma";
 import { redactFinixPayload } from "@/lib/finix/redact";
 
-function authFields(auth: any) {
+function authFields(auth: any, voidedAt: Date | null) {
   return {
     finixPaymentInstrumentId: auth.source ?? null,
     finixBuyerIdentityId: auth.identity ?? null,
@@ -12,10 +12,12 @@ function authFields(auth: any) {
     failureMessage: auth.failure_message ?? null,
     isVoid: Boolean(auth.is_void),
     voidState: auth.void_state ?? null,
+    voidedAt,
     traceId: auth.trace_id ?? null,
     cvvVerification: auth.security_code_verification ?? null,
     addressVerification: auth.address_verification ?? null,
     authorizationCode: auth.tags?.authorization_code ?? auth.authorization_code ?? null,
+    tagsJson: auth.tags ?? null,
     rawJsonRedacted: redactFinixPayload(auth),
     updatedAtFinix: auth.updated_at ? new Date(auth.updated_at) : null,
     lastSyncedAt: new Date(),
@@ -39,7 +41,12 @@ export async function syncAuthorizations(finixMerchantId: string, churchId?: str
     for (const auth of authorizations) {
       const existing = await prisma.finixAuthorization.findUnique({
         where: { finixAuthorizationId: auth.id },
+        select: { voidedAt: true },
       });
+      const isVoid = Boolean(auth.is_void);
+      const voidedAt = auth.voided_at
+        ? new Date(auth.voided_at)
+        : existing?.voidedAt ?? (isVoid ? (auth.updated_at ? new Date(auth.updated_at) : new Date()) : null);
 
       await prisma.finixAuthorization.upsert({
         where: { finixAuthorizationId: auth.id },
@@ -52,9 +59,9 @@ export async function syncAuthorizations(finixMerchantId: string, churchId?: str
           currency: auth.currency ?? null,
           expiresAt: auth.expires_at ? new Date(auth.expires_at) : null,
           createdAtFinix: auth.created_at ? new Date(auth.created_at) : null,
-          ...authFields(auth),
+          ...authFields(auth, voidedAt),
         },
-        update: authFields(auth),
+        update: authFields(auth, voidedAt),
       });
 
       if (existing) updated++;

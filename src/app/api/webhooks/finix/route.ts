@@ -413,6 +413,18 @@ export async function syncFinixDataFromWebhookEvent(
 
   if (entity === "AUTHORIZATION" && data?.id) {
     const churchId = await resolveChurchIdForMerchant(data.merchant);
+    const isVoid = Boolean(data.is_void);
+
+    // voidedAt is only ever set once — the first webhook that reports
+    // is_void: true wins, so later re-syncs don't keep bumping the
+    // timestamp forward to whatever updatedAtFinix happens to be then.
+    const existing = await prisma.finixAuthorization.findUnique({
+      where: { finixAuthorizationId: data.id },
+      select: { voidedAt: true },
+    });
+    const voidedAt = data.voided_at
+      ? new Date(data.voided_at)
+      : existing?.voidedAt ?? (isVoid ? occurredAt : null);
 
     const authFields = {
       finixPaymentInstrumentId: data.source ?? null,
@@ -421,12 +433,14 @@ export async function syncFinixDataFromWebhookEvent(
       finixTransferId: data.transfer ?? null,
       failureCode: data.failure_code ?? null,
       failureMessage: data.failure_message ?? null,
-      isVoid: Boolean(data.is_void),
+      isVoid,
       voidState: data.void_state ?? null,
+      voidedAt,
       traceId: data.trace_id ?? null,
       cvvVerification: data.security_code_verification ?? null,
       addressVerification: data.address_verification ?? null,
       authorizationCode: data.tags?.authorization_code ?? data.authorization_code ?? null,
+      tagsJson: data.tags ?? null,
       rawJsonRedacted: redactFinixPayload(data),
       updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
       lastSyncedAt: new Date(),

@@ -714,11 +714,13 @@ model FinixAuthorization {
   failureMessage            String?
   isVoid                    Boolean?
   voidState                 String?
+  voidedAt                  DateTime?
   expiresAt                 DateTime?
   authorizationCode         String?
   traceId                   String?
   cvvVerification           String?
   addressVerification       String?
+  tagsJson                  Json?
   rawJsonRedacted           Json?
   createdAtFinix            DateTime?
   updatedAtFinix            DateTime?

@@ -8,12 +8,20 @@ import StateBadge from "@/components/merchant/StateBadge";
 import { formatPersonName } from "@/lib/formatPersonName";
 import AuthorizationDetailPanel from "@/components/merchant/AuthorizationDetailPanel";
 import AuthorizationFilterBar from "@/components/merchant/AuthorizationFilterBar";
+import { PinButton } from "@/components/merchant/PaymentDetailActions";
+import { resolveAuthorizationEffectiveStatus, isAuthorizationCaptured } from "@/lib/finix/authorizationStatus";
 
-const STATES = ["SUCCEEDED", "FAILED", "PENDING", "CANCELED", "VOIDED"];
+const STATES = ["CAPTURED", "SUCCEEDED", "VOIDED", "EXPIRED", "PENDING", "FAILED"];
 
-function resolveDisplayStatus(state: string | null | undefined, isVoid: boolean | null | undefined) {
-  if (isVoid) return "VOIDED";
-  return state ?? "UNKNOWN";
+function formatDateTime(date: Date | null | undefined) {
+  if (!date) return "—";
+  return new Date(date).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 export default async function AuthorizationsListPage({
@@ -26,41 +34,49 @@ export default async function AuthorizationsListPage({
     to?: string;
     buyer?: string;
     last4?: string;
-    voided?: string;
+    org?: string;
+    captured?: string;
     id?: string;
   }>;
 }) {
   const session = await getSession();
   const churchId = session!.churchId!;
-  const { state, range, from, to, buyer, last4, voided, id } = await searchParams;
+  const { state, range, from, to, buyer, last4, org, captured, id } = await searchParams;
   const { from: startDate, to: endDate } = resolveDateRange(range, from, to);
   const dateFilter = startDate ? { gte: startDate, ...(endDate ? { lte: endDate } : {}) } : undefined;
 
-  const isVoidedFilter = voided === "true" ? true : voided === "false" ? false : undefined;
-  const isVoidedState = state === "VOIDED";
-  const effectiveState = isVoidedState ? undefined : state;
+  // Effective-status filters (CAPTURED/VOIDED/EXPIRED) are derived, not
+  // stored directly — translate them into the underlying DB predicates the
+  // resolver relies on, rather than filtering the raw `state` column.
+  const isCapturedFilter = state === "CAPTURED";
+  const isVoidedFilter = state === "VOIDED";
+  const isExpiredFilter = state === "EXPIRED";
+  const isRawStateFilter = state && !isCapturedFilter && !isVoidedFilter && !isExpiredFilter;
 
   const authorizations = await prisma.finixAuthorization.findMany({
     where: {
       churchId,
-      ...(effectiveState ? { state: effectiveState } : {}),
-      ...(isVoidedState ? { isVoid: true } : {}),
-      ...(isVoidedFilter != null && !isVoidedState ? { isVoid: isVoidedFilter } : {}),
+      ...(isRawStateFilter ? { state } : {}),
+      ...(isVoidedFilter ? { isVoid: true, finixTransferId: null } : {}),
+      ...(isExpiredFilter ? { expiresAt: { lt: new Date() }, isVoid: { not: true }, finixTransferId: null } : {}),
+      ...(isCapturedFilter ? { finixTransferId: { not: null } } : {}),
+      ...(captured === "true" && !isCapturedFilter ? { finixTransferId: { not: null } } : {}),
+      ...(captured === "false" && !isCapturedFilter ? { finixTransferId: null } : {}),
       ...(dateFilter ? { createdAtFinix: dateFilter } : {}),
     },
     orderBy: { createdAtFinix: "desc" },
     take: 200,
   });
 
-  // Resolve instruments directly from finixPaymentInstrumentId (stored on auth now)
-  // with a fallback to looking through finixTransferId for older records.
+  const church = await prisma.church.findUnique({ where: { id: churchId } });
+
   const directInstrumentIds = authorizations
     .map((a) => a.finixPaymentInstrumentId)
-    .filter((id): id is string => Boolean(id));
+    .filter((iid): iid is string => Boolean(iid));
 
   const transferIds = authorizations
     .map((a) => a.finixTransferId)
-    .filter((id): id is string => Boolean(id));
+    .filter((tid): tid is string => Boolean(tid));
 
   const [directInstruments, transfers] = await Promise.all([
     directInstrumentIds.length
@@ -75,10 +91,11 @@ export default async function AuthorizationsListPage({
 
   const instrumentMap = new Map(directInstruments.map((i) => [i.finixPaymentInstrumentId, i]));
 
-  // Fallback: for old records without finixPaymentInstrumentId, look up via transfer
+  // Fallback: older records synced before finixPaymentInstrumentId was
+  // stored directly on the authorization — resolve via the linked transfer.
   const fallbackInstrumentIds = transfers
     .map((t) => t.finixPaymentInstrumentId)
-    .filter((id): id is string => Boolean(id) && !instrumentMap.has(id as string));
+    .filter((iid): iid is string => Boolean(iid) && !instrumentMap.has(iid as string));
   if (fallbackInstrumentIds.length) {
     const fallbacks = await prisma.finixPaymentInstrumentSnapshot.findMany({
       where: { finixPaymentInstrumentId: { in: fallbackInstrumentIds } },
@@ -95,13 +112,19 @@ export default async function AuthorizationsListPage({
     : [];
   const donorMap = new Map(donors.map((d) => [d.id, d]));
 
-  // Apply buyer name and last4 filters in memory (small result set, < 200 rows)
+  function resolveInstrument(a: (typeof authorizations)[number]) {
+    if (a.finixPaymentInstrumentId) return instrumentMap.get(a.finixPaymentInstrumentId) ?? null;
+    if (a.finixTransferId) {
+      const t = transferMap.get(a.finixTransferId);
+      if (t?.finixPaymentInstrumentId) return instrumentMap.get(t.finixPaymentInstrumentId) ?? null;
+    }
+    return null;
+  }
+
+  // Buyer name and organization name filters run in memory — the result
+  // set is already narrowed to <=200 rows for this church by the query above.
   const rows = authorizations.filter((a) => {
-    const instrument =
-      (a.finixPaymentInstrumentId ? instrumentMap.get(a.finixPaymentInstrumentId) : null) ??
-      (a.finixTransferId
-        ? instrumentMap.get(transferMap.get(a.finixTransferId)?.finixPaymentInstrumentId ?? "")
-        : null);
+    const instrument = resolveInstrument(a);
     const donor = instrument?.donorId ? donorMap.get(instrument.donorId) : null;
 
     if (last4) {
@@ -112,12 +135,19 @@ export default async function AuthorizationsListPage({
       const name = donor?.name || instrument?.accountHolderName || "";
       if (!name.toLowerCase().includes(buyer.toLowerCase())) return false;
     }
+    if (org) {
+      const orgName = church?.name || "";
+      if (!orgName.toLowerCase().includes(org.toLowerCase())) return false;
+    }
     return true;
   });
 
   return (
     <div>
-      <h2 className="text-lg font-bold text-slate-900 mb-6">Authorizations</h2>
+      <div className="flex items-center gap-2 mb-6">
+        <h2 className="text-lg font-bold text-slate-900">Authorizations</h2>
+        <PinButton />
+      </div>
 
       <AuthorizationFilterBar
         states={STATES}
@@ -129,7 +159,7 @@ export default async function AuthorizationsListPage({
         <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-visible">
           {rows.length === 0 ? (
             <p className="px-6 py-10 text-center text-sm text-slate-500">
-              No authorizations match these filters. Use the sync button above to import from Finix.
+              No authorizations match these filters. Use "Sync Authorizations" above to import the latest records.
             </p>
           ) : (
             <table className="w-full text-sm">
@@ -137,21 +167,22 @@ export default async function AuthorizationsListPage({
                 <tr className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide bg-slate-50">
                   <th className="px-6 py-3">ID</th>
                   <th className="px-6 py-3">Created</th>
+                  <th className="px-6 py-3">Organization</th>
                   <th className="px-6 py-3">Buyer</th>
-                  <th className="px-6 py-3">Last 4</th>
-                  <th className="px-6 py-3">Status</th>
                   <th className="px-6 py-3 text-right">Amount</th>
+                  <th className="px-6 py-3">State</th>
+                  <th className="px-6 py-3">Payment Instrument</th>
+                  <th className="px-6 py-3">Instrument Type</th>
+                  <th className="px-6 py-3">Captured Status</th>
+                  <th className="px-6 py-3">Updated</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((a) => {
-                  const instrument =
-                    (a.finixPaymentInstrumentId ? instrumentMap.get(a.finixPaymentInstrumentId) : null) ??
-                    (a.finixTransferId
-                      ? instrumentMap.get(transferMap.get(a.finixTransferId)?.finixPaymentInstrumentId ?? "")
-                      : null);
+                  const instrument = resolveInstrument(a);
                   const donor = instrument?.donorId ? donorMap.get(instrument.donorId) : null;
-                  const displayStatus = resolveDisplayStatus(a.state, a.isVoid);
+                  const effectiveStatus = resolveAuthorizationEffectiveStatus(a);
+                  const captured = isAuthorizationCaptured(a);
                   const isSelected = id === a.finixAuthorizationId;
 
                   return (
@@ -164,30 +195,44 @@ export default async function AuthorizationsListPage({
                         <CopyableIdBadge id={a.finixAuthorizationId} />
                       </td>
                       <td className="px-6 py-3 text-slate-600 whitespace-nowrap">
-                        {a.createdAtFinix
-                          ? new Date(a.createdAtFinix).toLocaleString("en-US", {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })
-                          : "—"}
+                        {formatDateTime(a.createdAtFinix)}
                       </td>
+                      <td className="px-6 py-3 text-slate-700">{church?.name || "—"}</td>
                       <td className="px-6 py-3 text-slate-700">
                         {formatPersonName(donor?.name, instrument?.accountHolderName)}
                       </td>
-                      <td className="px-6 py-3 text-slate-500 font-mono text-xs">
-                        {instrument?.cardLast4 || instrument?.bankLast4 || "—"}
+                      <td className="px-6 py-3 text-right font-semibold text-slate-900">
+                        {formatCents(a.amountCents ?? 0)}
                       </td>
                       <td className="px-6 py-3">
-                        <StateBadge state={displayStatus} />
+                        <StateBadge state={effectiveStatus} />
                         {a.failureCode && (
                           <p className="text-xs text-slate-400 mt-0.5">{a.failureCode}</p>
                         )}
                       </td>
-                      <td className="px-6 py-3 text-right font-semibold text-slate-900">
-                        {formatCents(a.amountCents ?? 0)}
+                      <td className="px-6 py-3 text-slate-600">
+                        {instrument
+                          ? `${instrument.cardBrand || "Bank"} •••• ${instrument.cardLast4 || instrument.bankLast4 || "----"}`
+                          : "—"}
+                      </td>
+                      <td className="px-6 py-3 text-slate-600">
+                        {instrument?.paymentMethodType === "BANK_ACCOUNT" || instrument?.bankLast4
+                          ? "Bank Account"
+                          : instrument
+                          ? "Card"
+                          : "—"}
+                      </td>
+                      <td className="px-6 py-3">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                            captured ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-500"
+                          }`}
+                        >
+                          {captured ? "Captured" : "Not Captured"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-3 text-slate-500 text-xs whitespace-nowrap">
+                        {formatDateTime(a.updatedAtFinix)}
                       </td>
                     </ClickableTableRow>
                   );
@@ -197,9 +242,7 @@ export default async function AuthorizationsListPage({
           )}
         </div>
 
-        {id && (
-          <AuthorizationDetailPanel authorizationId={id} churchId={churchId} />
-        )}
+        {id && <AuthorizationDetailPanel authorizationId={id} churchId={churchId} />}
       </div>
     </div>
   );
