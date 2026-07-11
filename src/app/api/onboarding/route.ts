@@ -17,6 +17,26 @@ function extractFinixErrorMessage(err: any): string {
   return finixErrorStr;
 }
 
+// Known API field identifiers mapped to the labels shown on our own form,
+// so error text reads like it's talking about the field the user actually saw.
+const FIELD_LABELS: Record<string, string> = {
+  account_number: "account number",
+  bank_code: "routing number",
+  routing_number: "routing number",
+  first_name: "first name",
+  last_name: "last name",
+  business_name: "business name",
+  business_tax_id: "business tax ID",
+  business_address: "business address",
+  personal_address: "personal address",
+  tax_id: "tax ID",
+  dob: "date of birth",
+  max_transaction_amount: "max transaction amount",
+  ach_max_transaction_amount: "max ACH transaction amount",
+  annual_card_volume: "expected annual card volume",
+  annual_ach_volume: "expected annual ACH volume",
+};
+
 // Turns a raw processor error into plain-English copy that's safe to show
 // customers: no vendor name, no internal field paths, dollars instead of cents.
 function humanizeErrorDetail(raw: string): string {
@@ -28,13 +48,20 @@ function humanizeErrorDetail(raw: string): string {
     return "Please double-check the information you entered and try again.";
   }
 
-  return trimmed
+  const message = trimmed
     .replace(/Invalid Field:\s*[\w.]+;\s*/gi, "")
     .replace(/\b(\d+)\s*cents\b/gi, (_match, cents) =>
       `$${(Number(cents) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     )
+    // Field identifiers embedded mid-sentence, e.g. "account_number must not equal bank_code"
+    .replace(/\b[a-z][a-z0-9]*(?:\.[a-z0-9]+|_[a-z0-9]+)+\b/gi, (token: string) => {
+      const key = token.toLowerCase().split(".").pop() as string;
+      return FIELD_LABELS[key] || key.replace(/_/g, " ");
+    })
     .replace(/\bFinix\b/gi, "our payment processor")
     .trim();
+
+  return message.charAt(0).toUpperCase() + message.slice(1);
 }
 
 export async function POST(req: Request) {
