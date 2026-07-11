@@ -6,6 +6,7 @@ import TransactionsFilterBar from "@/components/merchant/TransactionsFilterBar";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import ClickableTableRow from "@/components/merchant/ClickableTableRow";
 import StateBadge from "@/components/merchant/StateBadge";
+import { formatDateTime, formatDate } from "@/lib/formatCentralTime";
 
 const STATES = ["SUCCEEDED", "FAILED", "PENDING", "CANCELED"];
 
@@ -62,15 +63,7 @@ export default async function DepositsPage({
                       <CopyableIdBadge id={d.finixFundingTransferAttemptId} />
                     </td>
                     <td className="px-6 py-3 text-slate-600 whitespace-nowrap">
-                      {d.sentAt || d.createdAtFinix
-                        ? new Date(d.sentAt ?? d.createdAtFinix!).toLocaleString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })
-                        : "—"}
+                      {formatDateTime(d.sentAt ?? d.createdAtFinix)}
                     </td>
                     <td className="px-6 py-3 text-slate-600">
                       {d.bankAccountLast4 ? `•••• ${d.bankAccountLast4}` : "—"}
@@ -83,13 +76,7 @@ export default async function DepositsPage({
                       )}
                     </td>
                     <td className="px-6 py-3 text-slate-600 whitespace-nowrap">
-                      {d.estimatedArrivalDate
-                        ? new Date(d.estimatedArrivalDate).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })
-                        : "—"}
+                      {formatDate(d.estimatedArrivalDate)}
                     </td>
                     <td className="px-6 py-3">
                       <StateBadge state={d.state} />

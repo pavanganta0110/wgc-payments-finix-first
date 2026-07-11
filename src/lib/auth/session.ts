@@ -4,10 +4,19 @@ import { cookies } from "next/headers";
 export const SESSION_COOKIE_NAME = "wgc_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
+export type Role =
+  | "wgc_admin"
+  | "church_owner"
+  | "church_admin"
+  | "finance_admin"
+  | "giving_manager"
+  | "viewer"
+  | "reporting_user";
+
 export interface SessionPayload {
   userId: string;
   email: string;
-  role: "wgc_admin" | "church_admin";
+  role: Role;
   churchId: string | null;
   exp: number; // unix seconds
 }
