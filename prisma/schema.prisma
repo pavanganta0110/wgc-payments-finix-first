@@ -225,19 +225,99 @@ model Church {
   finixIdentityId         String?
   finixApplicationId      String?
   status                  String
+  // Organization identity used on annual donation statements and the
+  // organization profile — not required by onboarding/payments, so all
+  // nullable. Intentionally not backfilled from OnboardingApplication:
+  // Church.onboardingApplicationId isn't a dependable join, so these are
+  // populated going forward via an explicit organization-profile edit.
+  addressLine1            String?
+  addressLine2            String?
+  city                    String?
+  state                   String?
+  postalCode              String?
+  country                 String?
+  logoUrl                 String?
+  taxId                   String?
+  phone                   String?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }
 
 model Donor {
-  id               String   @id @default(cuid())
-  churchId         String
-  name             String?
-  email            String?
-  phone            String?
-  finixIdentityId  String?  @unique
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                  String    @id @default(cuid())
+  churchId            String
+  name                String?
+  email               String?
+  // Lowercased/trimmed copy of `email`, indexed for matching/dedup — `email`
+  // itself stays exactly as entered for display.
+  normalizedEmail     String?
+  phone               String?
+  // E.164-normalized copy of `phone` where the input is a recognizable US
+  // number — `phone` itself stays exactly as entered for display.
+  normalizedPhone     String?
+  addressLine1        String?
+  addressLine2        String?
+  city                String?
+  state               String?
+  postalCode          String?
+  country             String?
+  companyName         String?
+  // Donor-level display preference, distinct from Payment.isAnonymous
+  // (a per-payment flag) — this is "always show this donor as anonymous."
+  anonymousPreference Boolean   @default(false)
+  finixIdentityId     String?   @unique
+  archivedAt          DateTime?
+  archivedByUserId    String?
+  archivedByEmail     String?
+  // Set when this donor record was merged into another (the survivor).
+  // A merged donor is archived and never deleted — financial history stays
+  // attached to it, so nothing here is ever hard-deleted.
+  mergedIntoDonorId   String?
+  mergedAt            DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([churchId])
+  @@index([normalizedEmail])
+  @@index([normalizedPhone])
+  @@index([createdAt])
+  @@index([archivedAt])
+}
+
+// Multiple free-text internal notes per donor, each with its own author/
+// timestamp — distinct from the single-overwritable-field pattern used by
+// FinixDispute.internalNote. Never sent to the donor or the processor.
+model DonorNote {
+  id              String    @id @default(cuid())
+  donorId         String
+  churchId        String
+  body            String
+  createdByUserId String?
+  createdByEmail  String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  @@index([donorId])
+  @@index([churchId])
+}
+
+// A named designation donations can be attributed to (e.g. "Building Fund",
+// "General Fund"). Introduced to replace the free-text fundName strings on
+// Payment/PaymentAttempt/GivingLink with a real per-organization entity —
+// fundName itself is left in place on those models for backward
+// compatibility; fundId is the new relationship going forward.
+model Fund {
+  id          String   @id @default(cuid())
+  churchId    String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([churchId, name])
+  @@index([churchId])
 }
 
 model Payment {
@@ -265,6 +345,7 @@ model Payment {
   achAuthorizationAccepted   Boolean   @default(false)
   achAuthorizationAcceptedAt DateTime?
   fundName                   String?
+  fundId                     String?
   note                       String?
   isAnonymous                Boolean   @default(false)
   createdByAdminUserId       String?
@@ -282,26 +363,27 @@ model Payment {
 // gets a fresh one). idempotencyId is generated here server-side exactly
 // once per clientAttemptId and is the value actually sent to Finix.
 model PaymentAttempt {
-  id                String    @id @default(cuid())
+  id                String   @id @default(cuid())
   churchId          String
   adminUserId       String?
   donorId           String?
   givingLinkId      String?
-  clientAttemptId   String    @unique
-  idempotencyId     String    @unique
+  clientAttemptId   String   @unique
+  idempotencyId     String   @unique
   amountCents       Int
   feeCents          Int?
   totalCents        Int
   paymentMethodType String
   fundName          String?
+  fundId            String?
   note              String?
-  isAnonymous       Boolean   @default(false)
+  isAnonymous       Boolean  @default(false)
   fraudSessionId    String?
   status            String // PROCESSING | PENDING | SUCCEEDED | FAILED | CANCELED
   finixTransferId   String?
   failureMessage    String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model SubscriptionPlan {
@@ -501,41 +583,41 @@ model FinixFee {
 }
 
 model FinixSettlement {
-  id                 String    @id @default(cuid())
-  churchId           String?
-  finixSettlementId  String    @unique
-  finixMerchantId    String?
-  state              String? // legacy: historically the raw "status" value — left as-is for backward compat
-  processorState     String? // raw processor state as returned by every sync, never overwritten by a mapped value
-  totalAmountCents   Int? // gross amount
-  netAmountCents     Int? // processor-reported net
-  feeAmountCents     Int?
-  refundAmountCents  Int?
-  returnAmountCents  Int? // bank returns against payments in this settlement
-  disputeAmountCents Int?
+  id                         String    @id @default(cuid())
+  churchId                   String?
+  finixSettlementId          String    @unique
+  finixMerchantId            String?
+  state                      String? // legacy: historically the raw "status" value — left as-is for backward compat
+  processorState             String? // raw processor state as returned by every sync, never overwritten by a mapped value
+  totalAmountCents           Int? // gross amount
+  netAmountCents             Int? // processor-reported net
+  feeAmountCents             Int?
+  refundAmountCents          Int?
+  returnAmountCents          Int? // bank returns against payments in this settlement
+  disputeAmountCents         Int?
   otherAdjustmentAmountCents Int?
-  transactionCount   Int?
-  feeCount           Int?
-  refundCount        Int?
-  bankReturnCount    Int?
-  disputeCount       Int?
-  traceId            String?
-  currency           String?
-  accruedAt          DateTime?
-  settledAt          DateTime?
-  createdAtFinix     DateTime?
-  updatedAtFinix     DateTime?
-  rawJsonRedacted    Json?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  lastSyncedAt       DateTime?
+  transactionCount           Int?
+  feeCount                   Int?
+  refundCount                Int?
+  bankReturnCount            Int?
+  disputeCount               Int?
+  traceId                    String?
+  currency                   String?
+  accruedAt                  DateTime?
+  settledAt                  DateTime?
+  createdAtFinix             DateTime?
+  updatedAtFinix             DateTime?
+  rawJsonRedacted            Json?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+  lastSyncedAt               DateTime?
 
   // Admin-controlled reconciliation state — never auto-set. The "calculated
   // net" vs "processor net" comparison itself is computed fresh on every
   // read from the settlement's actual included records, not stored here
   // (so it can't drift out of sync with the real numbers); this only
   // persists the human decision once a wgc_admin acts on it.
-  reconciliationStatus String   @default("UNRECONCILED")
+  reconciliationStatus String    @default("UNRECONCILED")
   reconciledAt         DateTime?
   reconciledByUserId   String?
   reconciledByEmail    String?
@@ -577,32 +659,32 @@ model FinixFundingTransferAttempt {
 }
 
 model FinixDispute {
-  id              String    @id @default(cuid())
-  churchId        String?
-  finixDisputeId  String    @unique
-  finixTransferId String?
-  paymentId       String?
-  finixMerchantId String?
-  state           String? // legacy: historically the mapped display value — left as-is for backward compat with existing readers/filters
-  processorState  String? // raw processor state as returned by every sync, never overwritten by a mapped value
-  reason          String?
-  amountCents     Int?
-  currency        String?
-  evidenceDueAt   DateTime?
-  respondedAt     DateTime?
-  resolvedAt      DateTime?
-  outcome         String?
+  id                    String            @id @default(cuid())
+  churchId              String?
+  finixDisputeId        String            @unique
+  finixTransferId       String?
+  paymentId             String?
+  finixMerchantId       String?
+  state                 String? // legacy: historically the mapped display value — left as-is for backward compat with existing readers/filters
+  processorState        String? // raw processor state as returned by every sync, never overwritten by a mapped value
+  reason                String?
+  amountCents           Int?
+  currency              String?
+  evidenceDueAt         DateTime?
+  respondedAt           DateTime?
+  resolvedAt            DateTime?
+  outcome               String?
   // Submission failure/retry tracking: keep uploaded evidence and let the
   // admin retry final submission without re-uploading if it fails.
   submissionError       String?
   submissionAttemptedAt DateTime?
-  submissionRetryCount  Int       @default(0)
+  submissionRetryCount  Int               @default(0)
   internalNote          String?
   rawJsonRedacted       Json?
   createdAtFinix        DateTime?
   updatedAtFinix        DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
   lastSyncedAt          DateTime?
   evidence              DisputeEvidence[]
 
@@ -854,34 +936,34 @@ model User {
 }
 
 model FinixAuthorization {
-  id                        String    @id @default(cuid())
-  churchId                  String?
-  finixAuthorizationId      String    @unique
-  finixMerchantId           String?
-  finixTransferId           String?
-  finixPaymentInstrumentId  String?
-  finixBuyerIdentityId      String?
-  state                     String?
-  amountCents               Int?
-  amountRequestedCents      Int?
-  currency                  String?
-  failureCode               String?
-  failureMessage            String?
-  isVoid                    Boolean?
-  voidState                 String?
-  voidedAt                  DateTime?
-  expiresAt                 DateTime?
-  authorizationCode         String?
-  traceId                   String?
-  cvvVerification           String?
-  addressVerification       String?
-  tagsJson                  Json?
-  rawJsonRedacted           Json?
-  createdAtFinix            DateTime?
-  updatedAtFinix            DateTime?
-  createdAt                 DateTime  @default(now())
-  updatedAt                 DateTime  @updatedAt
-  lastSyncedAt              DateTime?
+  id                       String    @id @default(cuid())
+  churchId                 String?
+  finixAuthorizationId     String    @unique
+  finixMerchantId          String?
+  finixTransferId          String?
+  finixPaymentInstrumentId String?
+  finixBuyerIdentityId     String?
+  state                    String?
+  amountCents              Int?
+  amountRequestedCents     Int?
+  currency                 String?
+  failureCode              String?
+  failureMessage           String?
+  isVoid                   Boolean?
+  voidState                String?
+  voidedAt                 DateTime?
+  expiresAt                DateTime?
+  authorizationCode        String?
+  traceId                  String?
+  cvvVerification          String?
+  addressVerification      String?
+  tagsJson                 Json?
+  rawJsonRedacted          Json?
+  createdAtFinix           DateTime?
+  updatedAtFinix           DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  lastSyncedAt             DateTime?
 }
 
 // A configurable, trackable donation link — distinct from the simpler
@@ -892,47 +974,48 @@ model FinixAuthorization {
 // FinixSubscription created through one is tagged with its id for
 // attribution (see givingLinkId fields above).
 model GivingLink {
-  id                     String    @id @default(cuid())
-  churchId               String
-  publicSlug             String    @unique
-  internalName           String
-  publicTitle            String
-  description            String?
-  status                 String    @default("ACTIVE") // ACTIVE | INACTIVE | EXPIRED | ARCHIVED
-  amountType             String    @default("FIXED") // FIXED | VARIABLE
-  fixedAmountCents       Int?
-  minAmountCents         Int?
-  maxAmountCents         Int?
-  suggestedAmountsJson   Json?
-  allowCustomAmount      Boolean   @default(true)
-  linkType               String    @default("MULTI_USE") // ONE_TIME | MULTI_USE
-  maxSuccessfulUses      Int?
-  maxCollectedAmountCents Int?
-  expiresAt              DateTime?
-  fundName               String?
-  recurringEnabled       Boolean   @default(false)
-  allowedFrequenciesJson Json?
+  id                        String    @id @default(cuid())
+  churchId                  String
+  publicSlug                String    @unique
+  internalName              String
+  publicTitle               String
+  description               String?
+  status                    String    @default("ACTIVE") // ACTIVE | INACTIVE | EXPIRED | ARCHIVED
+  amountType                String    @default("FIXED") // FIXED | VARIABLE
+  fixedAmountCents          Int?
+  minAmountCents            Int?
+  maxAmountCents            Int?
+  suggestedAmountsJson      Json?
+  allowCustomAmount         Boolean   @default(true)
+  linkType                  String    @default("MULTI_USE") // ONE_TIME | MULTI_USE
+  maxSuccessfulUses         Int?
+  maxCollectedAmountCents   Int?
+  expiresAt                 DateTime?
+  fundName                  String?
+  fundId                    String?
+  recurringEnabled          Boolean   @default(false)
+  allowedFrequenciesJson    Json?
   allowedPaymentMethodsJson Json? // ["CARD","BANK","APPLE_PAY","GOOGLE_PAY"]
-  donorFieldSettingsJson Json?
-  feeCoverEnabled        Boolean   @default(true)
-  feeCoverDefaultOn      Boolean   @default(true)
-  receiptSettingsJson    Json?
-  statementDescriptor    String?
-  internalNote           String?
-  referenceNumber        String?
-  successReturnUrl       String?
-  failureReturnUrl       String?
-  cancelReturnUrl        String?
-  brandingSettingsJson   Json?
-  totalAttempts          Int       @default(0)
-  successfulDonations    Int       @default(0)
-  totalCollectedCents    Int       @default(0)
-  refundedCents          Int       @default(0)
-  returnedCents          Int       @default(0)
-  lastUsedAt             DateTime?
-  createdByUserId        String?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  donorFieldSettingsJson    Json?
+  feeCoverEnabled           Boolean   @default(true)
+  feeCoverDefaultOn         Boolean   @default(true)
+  receiptSettingsJson       Json?
+  statementDescriptor       String?
+  internalNote              String?
+  referenceNumber           String?
+  successReturnUrl          String?
+  failureReturnUrl          String?
+  cancelReturnUrl           String?
+  brandingSettingsJson      Json?
+  totalAttempts             Int       @default(0)
+  successfulDonations       Int       @default(0)
+  totalCollectedCents       Int       @default(0)
+  refundedCents             Int       @default(0)
+  returnedCents             Int       @default(0)
+  lastUsedAt                DateTime?
+  createdByUserId           String?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 }
 
 model GivingLinkShare {
@@ -946,6 +1029,82 @@ model GivingLinkShare {
   state          String    @default("SENT") // SENT | FAILED | PENDING
   openedAt       DateTime?
   createdAt      DateTime  @default(now())
+}
+
+// One immutable snapshot per (donor, taxYear, version) — a later donor-name
+// or organization-address change never alters a statement already
+// generated/sent. Regenerating after a donation adjustment creates a new
+// version and marks the previous one superseded rather than overwriting it.
+model AnnualDonationStatement {
+  id       String @id @default(cuid())
+  churchId String
+  donorId  String
+  taxYear  Int
+  version  Int    @default(1)
+
+  statementStatus String @default("NOT_GENERATED") // NOT_GENERATED | NEEDS_REVIEW | READY | GENERATED | VOIDED
+  deliveryStatus  String @default("NOT_SENT") // NOT_SENT | QUEUED | SENT | DELIVERED | BOUNCED | FAILED
+
+  grossDonatedCents      Int @default(0)
+  refundedAmountCents    Int @default(0)
+  returnedAmountCents    Int @default(0)
+  disputeAdjustmentCents Int @default(0)
+  eligibleAmountCents    Int @default(0)
+  donationCount          Int @default(0)
+
+  // Snapshots — copied at generation time, never re-read live.
+  donorNameSnapshot           String?
+  donorEmailSnapshot          String?
+  donorAddressSnapshot        Json?
+  organizationNameSnapshot    String?
+  organizationAddressSnapshot Json?
+  organizationTaxIdSnapshot   String?
+
+  pdfStorageReference     String?
+  secureDownloadTokenHash String?
+  secureDownloadExpiresAt DateTime?
+
+  generatedByUserId String?
+  generatedAt       DateTime?
+
+  recipientEmail         String?
+  emailProviderMessageId String?
+  sentAt                 DateTime?
+  deliveredAt            DateTime?
+  bouncedAt              DateTime?
+  failureReason          String?
+  resendCount            Int       @default(0)
+
+  supersededAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([donorId, taxYear, version])
+  @@index([churchId])
+  @@index([donorId])
+  @@index([churchId, taxYear])
+}
+
+model AnnualDonationStatementLine {
+  id                String  @id @default(cuid())
+  annualStatementId String
+  paymentId         String?
+
+  donationDate       DateTime?
+  reference          String?
+  fundOrCampaignName String?
+
+  grossAmountCents       Int @default(0)
+  donorCoveredFeeCents   Int @default(0)
+  refundedAmountCents    Int @default(0)
+  returnedAmountCents    Int @default(0)
+  disputeAdjustmentCents Int @default(0)
+  eligibleAmountCents    Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([annualStatementId])
 }
 
 model GivingPage {

@@ -1,32 +1,30 @@
-import { prisma } from "@/lib/prisma";
+import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 import { formatCents } from "@/lib/format";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import StateBadge from "@/components/merchant/StateBadge";
 import ClosePanelButton from "@/components/merchant/ClosePanelButton";
-import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
+import { ViewAllDetailsButton } from "@/components/merchant/PaymentDetailActions";
+import { Section, Row } from "@/components/merchant/detail/DetailDrawerPrimitives";
 import { formatPersonName } from "@/lib/formatPersonName";
-
-function formatDateTime(date: Date | null | undefined) {
-  if (!date) return "—";
-  return new Date(date).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+import { formatDateTimeCDT as formatDateTime, formatDateCDT } from "@/lib/formatDateTimeCDT";
+import { titleCaseFromSnake as titleCase } from "@/lib/finix/displayFormatters";
+import { loadDonorDetail } from "@/lib/donors/donorDetail";
+import { DONOR_DISPLAY_STATUS_LABELS } from "@/lib/donors/donorStatus";
+import DonorNotesList from "@/components/merchant/DonorNotesList";
 
 export default async function DonorDetailPanel({
   donorId,
   churchId,
+  canAddNote,
 }: {
   donorId: string;
   churchId: string;
+  canAddNote: boolean;
 }) {
-  const donor = await prisma.donor.findFirst({ where: { id: donorId, churchId } });
+  const detail = await loadDonorDetail(donorId, churchId);
 
-  if (!donor) {
+  if (!detail) {
     return (
       <div className="w-full lg:w-[420px] shrink-0 border-l border-slate-100 bg-white rounded-2xl lg:rounded-none p-6">
         <p className="text-sm text-slate-500">This donor could not be found.</p>
@@ -34,112 +32,111 @@ export default async function DonorDetailPanel({
     );
   }
 
-  const instruments = await prisma.finixPaymentInstrumentSnapshot.findMany({
-    where: { donorId: donor.id },
-  });
-  const instrumentIds = instruments.map((i) => i.finixPaymentInstrumentId);
-
-  const transfers = instrumentIds.length
-    ? await prisma.finixTransfer.findMany({
-        // See the OR-in-null fix in transactions/payments/page.tsx — NOT
-        // alone would exclude every null-subtype (i.e. most) transfers too.
-        where: {
-          churchId,
-          finixPaymentInstrumentId: { in: instrumentIds },
-          OR: [{ subtype: null }, { NOT: { subtype: { contains: "RETURN" } } }],
-        },
-        orderBy: { createdAtFinix: "desc" },
-        take: 50,
-      })
-    : [];
-
-  const transferIds = transfers.map((t) => t.finixTransferId);
-  const refunds = transferIds.length
-    ? await prisma.finixRefundOrReversal.findMany({
-        where: { finixOriginalTransferId: { in: transferIds } },
-      })
-    : [];
-  const refundsByTransfer = new Map<string, typeof refunds>();
-  for (const r of refunds) {
-    if (!r.finixOriginalTransferId) continue;
-    const list = refundsByTransfer.get(r.finixOriginalTransferId) ?? [];
-    list.push(r);
-    refundsByTransfer.set(r.finixOriginalTransferId, list);
-  }
-  const transfersWithRefund = transfers.map((t) => ({
-    transfer: t,
-    refund: computeRefundStatus(t, refundsByTransfer.get(t.finixTransferId) ?? []),
-  }));
-
-  const succeeded = transfers.filter((t) => (t.state || "").toUpperCase() === "SUCCEEDED");
-  // Net given — a fully refunded gift shouldn't count toward what the donor
-  // actually gave, a partially refunded one should count for its net amount.
-  const totalGiven = transfersWithRefund
-    .filter(({ transfer: t }) => (t.state || "").toUpperCase() === "SUCCEEDED")
-    .reduce((sum, { refund }) => sum + refund.netAmountCents, 0);
+  const { donor, instruments, aggregates, status, needsAttentionReasons, recentTransfers, activeSubscriptions, notes } = detail;
+  const primaryInstrument = instruments[0] ?? null;
 
   return (
     <div className="w-full lg:w-[420px] shrink-0 bg-white border border-slate-100 rounded-2xl shadow-sm h-fit lg:sticky lg:top-6">
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
         <h3 className="text-sm font-bold text-slate-900">Donor</h3>
-        <ClosePanelButton />
+        <div className="flex items-center gap-2">
+          <ViewAllDetailsButton href={`/merchant/donors/${donor.id}`} />
+          <ClosePanelButton />
+        </div>
       </div>
 
       <div className="px-5 py-4 border-b border-slate-100">
-        <p className="text-lg font-bold text-slate-900">
-          {formatPersonName(donor.name) === "—" ? "Unknown Donor" : formatPersonName(donor.name)}
-        </p>
-        <div className="mt-3 space-y-1.5 text-sm">
-          <Row label="Email" value={donor.email || "—"} />
-          <Row label="Phone" value={donor.phone || "—"} />
-          <Row label="Donor Since" value={formatDateTime(donor.createdAt)} />
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-lg font-bold text-slate-900">
+            {donor.anonymousPreference ? "Anonymous Donor" : formatPersonName(donor.name)}
+          </p>
+          <StateBadge state={status} />
+        </div>
+        {donor.companyName && <p className="text-sm text-slate-500 mb-2">{donor.companyName}</p>}
+        <div className="space-y-1.5 text-sm">
+          <Row label="Donor ID" value={<CopyableIdBadge id={donor.id} />} />
+          <Row label="Created" value={formatDateTime(donor.createdAt)} />
         </div>
       </div>
 
-      <div className="px-5 py-4 border-b border-slate-100 grid grid-cols-2 gap-4">
-        <div>
-          <p className="text-xs text-slate-500">Total Given</p>
-          <p className="text-lg font-bold text-slate-900">{formatCents(totalGiven)}</p>
+      {needsAttentionReasons.length > 0 && (
+        <div className="px-5 py-3 border-b border-slate-100 bg-amber-50 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-sm text-amber-800">{needsAttentionReasons.join(" · ")}</p>
         </div>
-        <div>
-          <p className="text-xs text-slate-500">Gifts</p>
-          <p className="text-lg font-bold text-slate-900">{succeeded.length}</p>
-        </div>
-      </div>
+      )}
 
-      <div className="px-5 py-4">
-        <h3 className="text-sm font-bold text-slate-900 mb-3">Giving History</h3>
-        {transfers.length === 0 ? (
-          <p className="text-sm text-slate-500">No gifts recorded yet.</p>
+      <Section title="Giving Summary">
+        <Row label="Total Donated" value={formatCents(aggregates.totalDonatedCents)} />
+        <Row label="Net Donated" value={formatCents(aggregates.netDonatedCents)} />
+        <Row label="Donation Count" value={String(aggregates.donationCount)} />
+        <Row label="Average Donation" value={formatCents(aggregates.averageDonationCents)} />
+        <Row label="Largest Donation" value={formatCents(aggregates.largestDonationCents)} />
+        <Row label="First Donation" value={aggregates.firstDonationAt ? formatDateCDT(aggregates.firstDonationAt) : "—"} />
+        <Row label="Last Donation" value={aggregates.lastDonationAt ? formatDateCDT(aggregates.lastDonationAt) : "—"} />
+        <Row label="Active Recurring Donations" value={String(aggregates.activeSubscriptionCount)} />
+        {aggregates.refundedAmountCents > 0 && <Row label="Lifetime Refunded" value={formatCents(aggregates.refundedAmountCents)} />}
+        {aggregates.returnedAmountCents > 0 && <Row label="Lifetime Returned" value={formatCents(aggregates.returnedAmountCents)} />}
+        {aggregates.disputedAmountCents > 0 && <Row label="Lifetime Disputed" value={formatCents(aggregates.disputedAmountCents)} />}
+      </Section>
+
+      <Section title="Contact Information">
+        <Row label="Email" value={donor.email || "—"} />
+        <Row label="Phone" value={donor.phone || "—"} />
+        {(donor.city || donor.state) && <Row label="Location" value={[donor.city, donor.state].filter(Boolean).join(", ")} />}
+      </Section>
+
+      <Section title={`Recent Donations (${recentTransfers.length})`}>
+        {recentTransfers.length === 0 ? (
+          <p className="text-sm text-slate-500">This donor&apos;s donation history will appear here.</p>
         ) : (
-          <div className="space-y-3">
-            {transfersWithRefund.map(({ transfer: t, refund }) => (
-              <div key={t.id} className="flex items-center justify-between text-sm">
+          <div className="space-y-2">
+            {recentTransfers.map((t) => (
+              <Link
+                key={t.id}
+                href={`/merchant/transactions/payments?id=${t.finixTransferId}`}
+                className="flex items-center justify-between text-sm hover:bg-slate-50 -mx-2 px-2 py-1 rounded-lg"
+              >
                 <div>
-                  <CopyableIdBadge id={t.finixTransferId} label={t.finixTransferId} variant="link" />
-                  <p className="text-xs text-slate-400 mt-0.5">{formatDateTime(t.createdAtFinix)}</p>
+                  <p className="text-slate-700">{formatDateCDT(t.createdAtFinix)}</p>
+                  <StateBadge state={t.state} />
                 </div>
-                <div className="text-right">
-                  <StateBadge state={resolveDisplayStatus(t.state, refund)} />
-                  <p className="font-semibold text-slate-900 mt-0.5">{formatCents(t.amountCents ?? 0)}</p>
-                  {refund.refundStatus !== "NONE" && refund.refundStatus !== "PENDING" && (
-                    <p className="text-xs text-slate-400">Net {formatCents(refund.netAmountCents)}</p>
-                  )}
-                </div>
-              </div>
+                <p className="font-semibold text-slate-900">{formatCents(t.amountCents ?? 0)}</p>
+              </Link>
             ))}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
+      </Section>
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between text-sm py-1">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-semibold text-slate-700 text-right">{value}</span>
+      {activeSubscriptions.length > 0 && (
+        <Section title="Recurring Donations">
+          <div className="space-y-2">
+            {activeSubscriptions.map((s) => (
+              <div key={s.id} className="flex items-center justify-between text-sm">
+                <div>
+                  <p className="text-slate-700">{titleCase(s.billingInterval)}</p>
+                  <p className="text-xs text-slate-400">Next: {formatDateCDT(s.nextBillingDate)}</p>
+                </div>
+                <p className="font-semibold text-slate-900">{formatCents(s.amountCents ?? 0)}</p>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {primaryInstrument && (
+        <Section title="Payment Methods">
+          <Row
+            label={primaryInstrument.cardBrand || (primaryInstrument.bankLast4 ? "Bank Account" : "Unknown")}
+            value={`•••• ${primaryInstrument.cardLast4 || primaryInstrument.bankLast4 || "—"}`}
+          />
+          {instruments.length > 1 && <p className="text-xs text-slate-400 mt-1">+{instruments.length - 1} more</p>}
+        </Section>
+      )}
+
+      <Section title="Internal Notes" last>
+        <DonorNotesList donorId={donor.id} initialNotes={notes} editable={canAddNote} limit={5} />
+      </Section>
     </div>
   );
 }

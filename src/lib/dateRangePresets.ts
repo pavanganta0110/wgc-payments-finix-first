@@ -98,6 +98,21 @@ export const RANGE_PRESETS: { key: string; label: string; compute: () => DateRan
       return { from: startOfDay(from), to: endOfDay(now) };
     },
   },
+  {
+    key: "prev_month",
+    label: "Previous Month",
+    compute: () => {
+      const now = new Date();
+      const from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const to = new Date(now.getFullYear(), now.getMonth(), 0);
+      return { from: startOfDay(from), to: endOfDay(to) };
+    },
+  },
+  {
+    key: "all",
+    label: "All Time",
+    compute: () => ({ from: null, to: null }),
+  },
 ];
 
 export const DEFAULT_RANGE_KEY = "6m";

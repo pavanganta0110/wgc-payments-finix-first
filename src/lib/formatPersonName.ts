@@ -1,4 +1,8 @@
-const JUNK_TOKENS = new Set(["nan", "undefined", "null"]);
+// "unknown" shows up as a literal stored value on some synced identities
+// (confirmed against real donor records, e.g. a buyer identity with
+// last_name "Unknown") — filtered as a placeholder token, same as the
+// others, rather than displayed as if it were a real name component.
+const JUNK_TOKENS = new Set(["nan", "undefined", "null", "unknown"]);
 
 function isJunk(value: string | null | undefined) {
   if (!value) return true;
