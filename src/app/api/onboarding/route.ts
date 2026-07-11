@@ -62,6 +62,18 @@ export async function POST(req: Request) {
     const ipAddress = reqHeaders.get("x-forwarded-for") || reqHeaders.get("x-real-ip") || "unknown";
     const userAgent = reqHeaders.get("user-agent") || "unknown";
 
+    // The Payout Bank / Processing form fields are labeled in whole dollars,
+    // but both our DB columns (*Cents) and Finix's underwriting fields
+    // (annual_card_volume, max_transaction_amount, etc.) are in cents.
+    // Convert once here so nothing downstream has to guess the unit.
+    const toCents = (dollars: any) => Math.round(Number(dollars || 0) * 100);
+    const annualCardVolumeCents = toCents(annualCardVolume);
+    const annualAchVolumeCents = toCents(annualAchVolume);
+    const averageCardTransferAmountCents = toCents(averageCardTransferAmount);
+    const averageAchTransferAmountCents = toCents(averageAchTransferAmount);
+    const maxTransactionAmountCents = toCents(maxTransactionAmount);
+    const achMaxTransactionAmountCents = toCents(achMaxTransactionAmount);
+
     // Create OnboardingApplication locally
     console.log("ONBOARDING_STEP", "REQUEST_RECEIVED");
     console.log("ONBOARDING_STEP", "VALIDATION_PASSED");
@@ -93,8 +105,8 @@ export async function POST(req: Request) {
           principalTaxIdProvided: !!taxId,
           incorporationYear, incorporationMonth, incorporationDay,
 
-          annualCardVolumeCents: annualCardVolume, annualAchVolumeCents: annualAchVolume, averageCardTransferAmountCents: averageCardTransferAmount, averageAchTransferAmountCents: averageAchTransferAmount,
-          maxTransactionAmountCents: maxTransactionAmount, achMaxTransactionAmountCents: achMaxTransactionAmount, ecommercePercentage, cardPresentPercentage, mailOrderTelephoneOrderPercentage, businessToBusinessPercentage, businessToConsumerPercentage, otherVolumePercentage,
+          annualCardVolumeCents, annualAchVolumeCents, averageCardTransferAmountCents, averageAchTransferAmountCents,
+          maxTransactionAmountCents, achMaxTransactionAmountCents, ecommercePercentage, cardPresentPercentage, mailOrderTelephoneOrderPercentage, businessToBusinessPercentage, businessToConsumerPercentage, otherVolumePercentage,
           refundPolicy, hasAcceptedCreditCardsPreviously,
 
           bankAccountType: accountType, bankName: accountHolderName, bankCountry, bankCurrency: currency,
@@ -195,11 +207,11 @@ export async function POST(req: Request) {
         dob: formatFinixDate(dobYear, dobMonth, dobDay, "Date of Birth"),
         personal_address: { line1: personalAddressLine1, line2: personalAddressLine2, city: personalCity, region: personalState, postal_code: personalPostalCode, country: personalCountry },
         tax_id: taxId, principal_percentage_ownership: ownershipPercentage,
-        annual_card_volume: annualCardVolume, max_transaction_amount: maxTransactionAmount, ach_max_transaction_amount: achMaxTransactionAmount, mcc,
+        annual_card_volume: annualCardVolumeCents, max_transaction_amount: maxTransactionAmountCents, ach_max_transaction_amount: achMaxTransactionAmountCents, mcc,
         url: website, has_accepted_credit_cards_previously: hasAcceptedCreditCardsPreviously
       },
       additional_underwriting_data: {
-        annual_ach_volume: Number(annualAchVolume), average_ach_transfer_amount: Number(averageAchTransferAmount), average_card_transfer_amount: Number(averageCardTransferAmount),
+        annual_ach_volume: annualAchVolumeCents, average_ach_transfer_amount: averageAchTransferAmountCents, average_card_transfer_amount: averageCardTransferAmountCents,
         business_description: businessDescription,
         card_volume_distribution: { 
           card_present_percentage: Number(cardPresentPercentage || 0), 
