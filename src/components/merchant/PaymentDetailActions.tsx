@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import toast from "react-hot-toast";
 import { ChevronUp, ChevronDown, MoreHorizontal, Pin } from "lucide-react";
 
@@ -27,7 +28,17 @@ export function PanelNavArrows() {
   );
 }
 
-export function ViewAllDetailsButton() {
+export function ViewAllDetailsButton({ href }: { href?: string }) {
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+      >
+        View All Details
+      </Link>
+    );
+  }
   return (
     <button
       onClick={() => showComingSoon("Full payment details page")}

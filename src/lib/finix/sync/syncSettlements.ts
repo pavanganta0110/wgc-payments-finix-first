@@ -30,19 +30,100 @@ export async function linkTransfersToSettlement(finixSettlementId: string) {
   return { linked: transfersUpdated.count + refundsUpdated.count };
 }
 
-function toSettlementFields(settlement: any) {
-  // Confirmed against a real GET /settlements/{id} response: state field is
-  // actually "status", fee total is "total_fee"/"total_fees" (no separate
-  // refund/dispute amount at the settlement level), window_start_time is
-  // the closest analog to an "accrued at" timestamp.
+/**
+ * Recomputes the counts/adjustment totals Finix doesn't report directly on
+ * the settlement resource itself (confirmed: no separate refund_amount/
+ * dispute_amount/return_amount at the settlement level) from the records
+ * WGC has actually linked to it. totalAmountCents/netAmountCents/
+ * feeAmountCents stay whatever Finix itself reported — this only fills in
+ * the components Finix's settlement payload doesn't carry.
+ *
+ * otherAdjustmentAmountCents is an honest residual (Finix's reported net
+ * minus every component we can independently account for), not a real
+ * category with a known source — surfaced as such in the UI rather than
+ * labeled as something specific we can't actually confirm.
+ */
+export async function recomputeSettlementAggregates(finixSettlementId: string) {
+  const settlement = await prisma.finixSettlement.findUnique({ where: { finixSettlementId } });
+  if (!settlement) return;
+
+  // Every sub-query is scoped by churchId in addition to the ID linkage —
+  // finixSettlementId/linkedToId are globally unique Finix IDs so this
+  // shouldn't ever exclude a real match, but it's a defense-in-depth
+  // guarantee against a record ever being counted into the wrong church's
+  // settlement totals.
+  const churchId = settlement.churchId;
+
+  const transfers = await prisma.finixTransfer.findMany({ where: { finixSettlementId, churchId } });
+  const transferIds = transfers.map((t) => t.finixTransferId);
+
+  const [refunds, fees, bankReturns, disputes] = await Promise.all([
+    prisma.finixRefundOrReversal.findMany({ where: { finixSettlementId, churchId } }),
+    transferIds.length ? prisma.finixFee.findMany({ where: { linkedToId: { in: transferIds }, churchId } }) : Promise.resolve([]),
+    transferIds.length ? prisma.bankReturn.findMany({ where: { originalTransferId: { in: transferIds }, churchId } }) : Promise.resolve([]),
+    transferIds.length ? prisma.finixDispute.findMany({ where: { finixTransferId: { in: transferIds }, churchId } }) : Promise.resolve([]),
+  ]);
+
+  const refundAmountCents = refunds.reduce((sum, r) => sum + (r.amountCents ?? 0), 0);
+  const returnAmountCents = bankReturns.reduce((sum, r) => sum + (r.amountCents ?? 0), 0);
+  const disputeAmountCents = disputes.reduce((sum, d) => sum + (d.amountCents ?? 0), 0);
+
+  const knownComponents =
+    (settlement.feeAmountCents ?? 0) + refundAmountCents + returnAmountCents + disputeAmountCents;
+  const otherAdjustmentAmountCents =
+    settlement.netAmountCents != null && settlement.totalAmountCents != null
+      ? settlement.netAmountCents - (settlement.totalAmountCents - knownComponents)
+      : null;
+
+  await prisma.finixSettlement.update({
+    where: { finixSettlementId },
+    data: {
+      transactionCount: transfers.length,
+      feeCount: fees.length,
+      refundCount: refunds.length,
+      bankReturnCount: bankReturns.length,
+      disputeCount: disputes.length,
+      refundAmountCents,
+      returnAmountCents,
+      disputeAmountCents,
+      otherAdjustmentAmountCents,
+    },
+  });
+}
+
+// Confirmed against a real GET /settlements/{id} response: state field is
+// actually "status", fee total is "total_fee"/"total_fees" (no separate
+// refund/dispute amount at the settlement level), window_start_time is
+// the closest analog to an "accrued at" timestamp.
+function toSettlementFieldsForCreate(settlement: any) {
   return {
     state: settlement.status ?? null,
+    processorState: settlement.status ?? null,
     totalAmountCents: settlement.total_amount ?? null,
     netAmountCents: settlement.net_amount ?? null,
     feeAmountCents: settlement.total_fee ?? settlement.total_fees ?? null,
+    traceId: settlement.trace_id ?? null,
     currency: settlement.currency ?? null,
     accruedAt: settlement.window_start_time ? new Date(settlement.window_start_time) : null,
     settledAt: settlement.status === "SETTLED" && settlement.updated_at ? new Date(settlement.updated_at) : null,
+  };
+}
+
+// Same fields as create, but every optional value falls back to `undefined`
+// (Prisma skips the field entirely) instead of `null` — a later webhook
+// firing with a partial payload must never blank out a value a previous,
+// more complete sync already populated.
+function toSettlementFieldsForUpdate(settlement: any) {
+  return {
+    state: settlement.status ?? undefined,
+    processorState: settlement.status ?? undefined,
+    totalAmountCents: settlement.total_amount ?? undefined,
+    netAmountCents: settlement.net_amount ?? undefined,
+    feeAmountCents: settlement.total_fee ?? settlement.total_fees ?? undefined,
+    traceId: settlement.trace_id ?? undefined,
+    currency: settlement.currency ?? undefined,
+    accruedAt: settlement.window_start_time ? new Date(settlement.window_start_time) : undefined,
+    settledAt: settlement.status === "SETTLED" && settlement.updated_at ? new Date(settlement.updated_at) : undefined,
   };
 }
 
@@ -54,7 +135,6 @@ function toSettlementFields(settlement: any) {
  */
 export async function syncSettlementById(finixSettlementId: string, finixMerchantId: string, churchId?: string) {
   const settlement = await finixClient.getSettlement(finixSettlementId);
-  const fields = toSettlementFields(settlement);
 
   await prisma.finixSettlement.upsert({
     where: { finixSettlementId },
@@ -62,7 +142,7 @@ export async function syncSettlementById(finixSettlementId: string, finixMerchan
       finixSettlementId,
       churchId: churchId ?? null,
       finixMerchantId,
-      ...fields,
+      ...toSettlementFieldsForCreate(settlement),
       rawJsonRedacted: redactFinixPayload(settlement),
       createdAtFinix: settlement.created_at ? new Date(settlement.created_at) : null,
       updatedAtFinix: settlement.updated_at ? new Date(settlement.updated_at) : null,
@@ -70,14 +150,16 @@ export async function syncSettlementById(finixSettlementId: string, finixMerchan
     },
     update: {
       churchId: churchId ?? undefined,
-      ...fields,
+      ...toSettlementFieldsForUpdate(settlement),
       rawJsonRedacted: redactFinixPayload(settlement),
-      updatedAtFinix: settlement.updated_at ? new Date(settlement.updated_at) : null,
+      updatedAtFinix: settlement.updated_at ? new Date(settlement.updated_at) : undefined,
       lastSyncedAt: new Date(),
     },
   });
 
-  return linkTransfersToSettlement(finixSettlementId);
+  const result = await linkTransfersToSettlement(finixSettlementId);
+  await recomputeSettlementAggregates(finixSettlementId);
+  return result;
 }
 
 /**
@@ -109,30 +191,29 @@ export async function syncSettlements(finixMerchantId: string, churchId?: string
       where: { finixSettlementId: settlement.id },
     });
 
-    const fields = toSettlementFields(settlement);
-
     await prisma.finixSettlement.upsert({
       where: { finixSettlementId: settlement.id },
       create: {
         finixSettlementId: settlement.id,
         churchId: churchId ?? null,
         finixMerchantId,
-        ...fields,
+        ...toSettlementFieldsForCreate(settlement),
         rawJsonRedacted: redactFinixPayload(settlement),
         createdAtFinix: settlement.created_at ? new Date(settlement.created_at) : null,
         updatedAtFinix: settlement.updated_at ? new Date(settlement.updated_at) : null,
         lastSyncedAt: new Date(),
       },
       update: {
-        ...fields,
+        ...toSettlementFieldsForUpdate(settlement),
         rawJsonRedacted: redactFinixPayload(settlement),
-        updatedAtFinix: settlement.updated_at ? new Date(settlement.updated_at) : null,
+        updatedAtFinix: settlement.updated_at ? new Date(settlement.updated_at) : undefined,
         lastSyncedAt: new Date(),
       },
     });
 
     try {
       await linkTransfersToSettlement(settlement.id);
+      await recomputeSettlementAggregates(settlement.id);
     } catch (err) {
       console.error(`Failed to link transfers for settlement ${settlement.id}:`, err);
     }

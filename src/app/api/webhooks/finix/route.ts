@@ -9,7 +9,7 @@ import { mapFinixDisputeStateToWgcStatus } from "@/lib/finix/statusMapping";
 import { provisionChurchAccount } from "@/lib/auth/provisionChurchAccount";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { syncFeesForTransfer } from "@/lib/finix/sync/syncFees";
-import { linkTransfersToSettlement } from "@/lib/finix/sync/syncSettlements";
+import { linkTransfersToSettlement, recomputeSettlementAggregates } from "@/lib/finix/sync/syncSettlements";
 import { syncAllChurchesPricing, syncChurchPricingForMerchantProfile } from "@/lib/finix/sync/syncFeeProfiles";
 import { describeAchReturnReason } from "@/lib/finix/achReturnReasonCodes";
 
@@ -469,9 +469,11 @@ export async function syncFinixDataFromWebhookEvent(
         churchId,
         finixMerchantId: data.merchant_id ?? null,
         state: data.status ?? null,
+        processorState: data.status ?? null,
         totalAmountCents: data.total_amount ?? null,
         netAmountCents: data.net_amount ?? null,
         feeAmountCents: data.total_fee ?? data.total_fees ?? null,
+        traceId: data.trace_id ?? null,
         currency: data.currency ?? null,
         accruedAt: data.window_start_time ? new Date(data.window_start_time) : null,
         settledAt: data.status === "SETTLED" && data.updated_at ? new Date(data.updated_at) : null,
@@ -480,12 +482,19 @@ export async function syncFinixDataFromWebhookEvent(
         updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
         lastSyncedAt: new Date(),
       },
+      // Partial webhook payloads must never blank out a value a previous,
+      // more complete sync already populated — every optional field here
+      // falls back to `undefined` (Prisma skips it) instead of `null`.
       update: {
         churchId: churchId ?? undefined,
-        state: data.status ?? null,
-        totalAmountCents: data.total_amount ?? null,
-        netAmountCents: data.net_amount ?? null,
-        feeAmountCents: data.total_fee ?? data.total_fees ?? null,
+        state: data.status ?? undefined,
+        processorState: data.status ?? undefined,
+        totalAmountCents: data.total_amount ?? undefined,
+        netAmountCents: data.net_amount ?? undefined,
+        feeAmountCents: data.total_fee ?? data.total_fees ?? undefined,
+        traceId: data.trace_id ?? undefined,
+        currency: data.currency ?? undefined,
+        accruedAt: data.window_start_time ? new Date(data.window_start_time) : undefined,
         settledAt: data.status === "SETTLED" && data.updated_at ? new Date(data.updated_at) : undefined,
         rawJsonRedacted: redactFinixPayload(data),
         updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
@@ -495,6 +504,7 @@ export async function syncFinixDataFromWebhookEvent(
 
     try {
       await linkTransfersToSettlement(data.id);
+      await recomputeSettlementAggregates(data.id);
     } catch (err) {
       console.error("Failed to link transfers to settlement:", err);
     }

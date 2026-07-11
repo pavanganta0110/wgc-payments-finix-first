@@ -26,7 +26,16 @@ const STATE_STYLES: Record<string, string> = {
   CLOSED: "bg-slate-100 text-slate-500",
   // Settlements
   ACCRUING: "bg-amber-50 text-amber-700",
+  READY: "bg-blue-50 text-blue-700",
+  FUNDED: "bg-green-50 text-green-700",
+  PAID: "bg-green-50 text-green-700",
   SETTLED: "bg-green-50 text-green-700",
+  // Reconciliation
+  UNRECONCILED: "bg-slate-100 text-slate-600",
+  PARTIALLY_RECONCILED: "bg-amber-50 text-amber-700",
+  RECONCILED: "bg-green-50 text-green-700",
+  MISMATCH: "bg-red-50 text-red-700",
+  NEEDS_REVIEW: "bg-red-50 text-red-700",
 };
 
 export default function StateBadge({ state }: { state: string | null | undefined }) {

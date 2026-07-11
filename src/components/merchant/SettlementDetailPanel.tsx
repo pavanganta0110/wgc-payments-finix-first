@@ -1,22 +1,12 @@
-import { ReactNode } from "react";
-import { prisma } from "@/lib/prisma";
-import { formatCents } from "@/lib/format";
+import { formatCents, formatSignedCents } from "@/lib/format";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import StateBadge from "@/components/merchant/StateBadge";
 import ClosePanelButton from "@/components/merchant/ClosePanelButton";
 import { PanelNavArrows, ViewAllDetailsButton, PaymentMoreMenu, PinButton } from "@/components/merchant/PaymentDetailActions";
-import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
-
-function formatDateTime(date: Date | null | undefined) {
-  if (!date) return "—";
-  return new Date(date).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+import { Section, Row } from "@/components/merchant/detail/DetailDrawerPrimitives";
+import { formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
+import { loadSettlementDetail } from "@/lib/finix/settlementDetail";
+import { resolveSettlementDisplayStatus, SETTLEMENT_DISPLAY_STATUS_LABELS } from "@/lib/finix/settlementStatus";
 
 export default async function SettlementDetailPanel({
   settlementId,
@@ -25,11 +15,9 @@ export default async function SettlementDetailPanel({
   settlementId: string;
   churchId: string;
 }) {
-  const settlement = await prisma.finixSettlement.findFirst({
-    where: { finixSettlementId: settlementId, churchId },
-  });
+  const detail = await loadSettlementDetail(settlementId, churchId);
 
-  if (!settlement) {
+  if (!detail) {
     return (
       <div className="w-full lg:w-[420px] shrink-0 border-l border-slate-100 bg-white rounded-2xl lg:rounded-none p-6">
         <p className="text-sm text-slate-500">This settlement could not be found.</p>
@@ -37,46 +25,14 @@ export default async function SettlementDetailPanel({
     );
   }
 
-  const [transfers, refunds, deposits] = await Promise.all([
-    prisma.finixTransfer.findMany({
-      where: { finixSettlementId: settlementId },
-      orderBy: { createdAtFinix: "asc" },
-      take: 50,
-    }),
-    prisma.finixRefundOrReversal.findMany({
-      where: { finixSettlementId: settlementId },
-      orderBy: { createdAtFinix: "asc" },
-      take: 50,
-    }),
-    prisma.finixFundingTransferAttempt.findMany({
-      where: { finixSettlementId: settlementId },
-      orderBy: { createdAtFinix: "asc" },
-    }),
-  ]);
-
-  // Refunds against these transfers may have landed in a different
-  // settlement than the original charge (a refund issued after this
-  // settlement already closed) — need all refunds for these transfer IDs,
-  // not just the ones scoped to this settlement, to show accurate status.
-  const transferIds = transfers.map((t) => t.finixTransferId);
-  const allRefundsForTheseTransfers = transferIds.length
-    ? await prisma.finixRefundOrReversal.findMany({
-        where: { finixOriginalTransferId: { in: transferIds } },
-      })
-    : [];
-  const refundsByTransfer = new Map<string, typeof allRefundsForTheseTransfers>();
-  for (const r of allRefundsForTheseTransfers) {
-    if (!r.finixOriginalTransferId) continue;
-    const list = refundsByTransfer.get(r.finixOriginalTransferId) ?? [];
-    list.push(r);
-    refundsByTransfer.set(r.finixOriginalTransferId, list);
-  }
+  const { settlement, paymentRows, refunds, bankReturns, disputes, deposit } = detail;
+  const displayStatus = resolveSettlementDisplayStatus(settlement);
 
   return (
     <div className="w-full lg:w-[420px] shrink-0 bg-white border border-slate-100 rounded-2xl shadow-sm h-fit lg:sticky lg:top-6">
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
         <PanelNavArrows />
-        <ViewAllDetailsButton />
+        <ViewAllDetailsButton href={`/merchant/settlements/${settlement.finixSettlementId}`} />
         <ClosePanelButton />
       </div>
 
@@ -95,40 +51,40 @@ export default async function SettlementDetailPanel({
             </span>
             <span className="text-sm font-semibold text-slate-400">{settlement.currency || "USD"}</span>
           </div>
-          <StateBadge state={settlement.state} />
+          <StateBadge state={displayStatus} />
         </div>
         <PaymentMoreMenu />
       </div>
 
       <Section title="Settlement Details">
-        <Row label="Total Amount" value={formatCents(settlement.totalAmountCents ?? 0)} />
+        <Row label="Status" value={SETTLEMENT_DISPLAY_STATUS_LABELS[displayStatus]} />
+        <Row label="Gross Amount" value={formatCents(settlement.totalAmountCents ?? 0)} />
+        <Row label="Fee Amount" value={formatSignedCents(-(settlement.feeAmountCents ?? 0))} />
+        <Row label="Refund Amount" value={formatSignedCents(-(settlement.refundAmountCents ?? 0))} />
+        <Row label="Return Amount" value={formatSignedCents(-(settlement.returnAmountCents ?? 0))} />
+        <Row label="Dispute Amount" value={formatSignedCents(-(settlement.disputeAmountCents ?? 0))} />
+        {settlement.otherAdjustmentAmountCents != null && (
+          <Row label="Other Adjustments" value={formatSignedCents(settlement.otherAdjustmentAmountCents)} />
+        )}
         <Row label="Net Amount" value={formatCents(settlement.netAmountCents ?? 0)} />
-        <Row label="Fees" value={formatCents(settlement.feeAmountCents ?? 0)} />
-        <Row label="Refunds" value={formatCents(settlement.refundAmountCents ?? 0)} />
-        <Row label="Disputes" value={formatCents(settlement.disputeAmountCents ?? 0)} />
         <Row label="Accrued" value={formatDateTime(settlement.accruedAt)} />
         <Row label="Settled" value={formatDateTime(settlement.settledAt)} />
       </Section>
 
-      <Section title={`Payments (${transfers.length})`}>
-        {transfers.length === 0 ? (
+      <Section title={`Included Payments (${paymentRows.length})`}>
+        {paymentRows.length === 0 ? (
           <p className="text-sm text-slate-500">No payments linked yet.</p>
         ) : (
           <div className="space-y-2">
-            {transfers.map((t) => {
-              const refund = computeRefundStatus(t, refundsByTransfer.get(t.finixTransferId) ?? []);
-              return (
-                <div key={t.id} className="flex items-center justify-between text-sm">
-                  <CopyableIdBadge id={t.finixTransferId} label={t.finixTransferId} variant="link" />
-                  <div className="text-right">
-                    {refund.refundStatus !== "NONE" && (
-                      <StateBadge state={resolveDisplayStatus(t.state, refund)} />
-                    )}
-                    <p className="font-semibold text-slate-700">{formatCents(t.amountCents ?? 0)}</p>
-                  </div>
-                </div>
-              );
-            })}
+            {paymentRows.slice(0, 10).map(({ payment }) => (
+              <div key={payment.id} className="flex items-center justify-between text-sm">
+                <CopyableIdBadge id={payment.finixTransferId || payment.id} label={payment.finixTransferId || payment.id} variant="link" />
+                <p className="font-semibold text-slate-700">{formatCents(payment.amountCents ?? 0)}</p>
+              </div>
+            ))}
+            {paymentRows.length > 10 && (
+              <p className="text-xs text-slate-400 pt-1">+{paymentRows.length - 10} more — view full details</p>
+            )}
           </div>
         )}
       </Section>
@@ -138,7 +94,7 @@ export default async function SettlementDetailPanel({
           <p className="text-sm text-slate-500">No refunds linked yet.</p>
         ) : (
           <div className="space-y-2">
-            {refunds.map((r) => (
+            {refunds.slice(0, 10).map((r) => (
               <div key={r.id} className="flex items-center justify-between text-sm">
                 <CopyableIdBadge id={r.finixReversalId} label={r.finixReversalId} variant="link" />
                 <span className="font-semibold text-slate-700">{formatCents(r.amountCents ?? 0)}</span>
@@ -148,46 +104,54 @@ export default async function SettlementDetailPanel({
         )}
       </Section>
 
-      <Section title="Deposits" last>
-        {deposits.length === 0 ? (
-          <p className="text-sm text-slate-500">No bank deposit has been sent for this settlement yet.</p>
+      <Section title={`Bank Returns (${bankReturns.length})`}>
+        {bankReturns.length === 0 ? (
+          <p className="text-sm text-slate-500">No bank returns linked yet.</p>
         ) : (
           <div className="space-y-2">
-            {deposits.map((d) => (
-              <div key={d.id} className="flex items-center justify-between text-sm">
-                <div>
-                  <p className="font-semibold text-slate-700">
-                    {d.bankAccountLast4 ? `•••• ${d.bankAccountLast4}` : "Bank Deposit"}
-                  </p>
-                  <p className="text-xs text-slate-400">{formatDateTime(d.sentAt ?? d.createdAtFinix)}</p>
-                </div>
-                <div className="text-right">
-                  <StateBadge state={d.state} />
-                  <p className="font-semibold text-slate-900 mt-0.5">{formatCents(d.amountCents ?? 0)}</p>
-                </div>
+            {bankReturns.slice(0, 10).map((r) => (
+              <div key={r.id} className="flex items-center justify-between text-sm">
+                <CopyableIdBadge id={r.bankReturnId} label={r.bankReturnId} variant="link" />
+                <span className="font-semibold text-slate-700">{formatCents(r.amountCents ?? 0)}</span>
               </div>
             ))}
           </div>
         )}
       </Section>
-    </div>
-  );
-}
 
-function Section({ title, last, children }: { title: string; last?: boolean; children: ReactNode }) {
-  return (
-    <div className={`px-5 py-4 ${last ? "" : "border-b border-slate-100"}`}>
-      <h3 className="text-sm font-bold text-slate-900 mb-3">{title}</h3>
-      {children}
-    </div>
-  );
-}
+      <Section title={`Disputes (${disputes.length})`}>
+        {disputes.length === 0 ? (
+          <p className="text-sm text-slate-500">No disputes linked yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {disputes.slice(0, 10).map((d) => (
+              <div key={d.id} className="flex items-center justify-between text-sm">
+                <CopyableIdBadge id={d.finixDisputeId} label={d.finixDisputeId} variant="link" />
+                <span className="font-semibold text-slate-700">{formatCents(d.amountCents ?? 0)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between text-sm py-1">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-semibold text-slate-700 text-right">{value}</span>
+      <Section title="Linked Deposit" last>
+        {!deposit ? (
+          <p className="text-sm text-slate-500">No bank deposit has been sent for this settlement yet.</p>
+        ) : (
+          <div className="flex items-center justify-between text-sm">
+            <div>
+              <p className="font-semibold text-slate-700">
+                {deposit.bankAccountLast4 ? `•••• ${deposit.bankAccountLast4}` : "Bank Deposit"}
+              </p>
+              <p className="text-xs text-slate-400">{formatDateTime(deposit.sentAt ?? deposit.createdAtFinix)}</p>
+            </div>
+            <div className="text-right">
+              <StateBadge state={deposit.state} />
+              <p className="font-semibold text-slate-900 mt-0.5">{formatCents(deposit.amountCents ?? 0)}</p>
+            </div>
+          </div>
+        )}
+      </Section>
     </div>
   );
 }

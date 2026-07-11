@@ -505,12 +505,21 @@ model FinixSettlement {
   churchId           String?
   finixSettlementId  String    @unique
   finixMerchantId    String?
-  state              String?
-  totalAmountCents   Int?
-  netAmountCents     Int?
+  state              String? // legacy: historically the raw "status" value — left as-is for backward compat
+  processorState     String? // raw processor state as returned by every sync, never overwritten by a mapped value
+  totalAmountCents   Int? // gross amount
+  netAmountCents     Int? // processor-reported net
   feeAmountCents     Int?
   refundAmountCents  Int?
+  returnAmountCents  Int? // bank returns against payments in this settlement
   disputeAmountCents Int?
+  otherAdjustmentAmountCents Int?
+  transactionCount   Int?
+  feeCount           Int?
+  refundCount        Int?
+  bankReturnCount    Int?
+  disputeCount       Int?
+  traceId            String?
   currency           String?
   accruedAt          DateTime?
   settledAt          DateTime?
@@ -520,6 +529,20 @@ model FinixSettlement {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   lastSyncedAt       DateTime?
+
+  // Admin-controlled reconciliation state — never auto-set. The "calculated
+  // net" vs "processor net" comparison itself is computed fresh on every
+  // read from the settlement's actual included records, not stored here
+  // (so it can't drift out of sync with the real numbers); this only
+  // persists the human decision once a wgc_admin acts on it.
+  reconciliationStatus String   @default("UNRECONCILED")
+  reconciledAt         DateTime?
+  reconciledByUserId   String?
+  reconciledByEmail    String?
+  reconciliationNotes  String?
+
+  @@index([churchId])
+  @@index([churchId, createdAtFinix])
 }
 
 model FinixFundingTransferAttempt {
