@@ -1,4 +1,3 @@
-import { ReactNode } from "react";
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
@@ -7,6 +6,7 @@ import ClosePanelButton from "@/components/merchant/ClosePanelButton";
 import { PanelNavArrows, ViewAllDetailsButton, PaymentMoreMenu, PinButton } from "@/components/merchant/PaymentDetailActions";
 import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
 import { formatDateTime } from "@/lib/formatCentralTime";
+import { Section, Row } from "@/components/merchant/detail/DetailDrawerPrimitives";
 
 export default async function SettlementDetailPanel({
   settlementId,
@@ -164,20 +164,3 @@ export default async function SettlementDetailPanel({
   );
 }
 
-function Section({ title, last, children }: { title: string; last?: boolean; children: ReactNode }) {
-  return (
-    <div className={`px-5 py-4 ${last ? "" : "border-b border-slate-100"}`}>
-      <h3 className="text-sm font-bold text-slate-900 mb-3">{title}</h3>
-      {children}
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between text-sm py-1">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-semibold text-slate-700 text-right">{value}</span>
-    </div>
-  );
-}

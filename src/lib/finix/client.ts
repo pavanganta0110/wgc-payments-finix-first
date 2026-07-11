@@ -379,6 +379,54 @@ export class FinixClient {
     return this.fetchApi(`/disputes/${disputeId}`);
   }
 
+  // Confirmed via docs.finix.com/guides/after-the-payment/disputes/responding-disputes:
+  // dispute evidence uses its own dedicated endpoint, NOT the generic /files resource
+  // (which only links to a Merchant/Identity ID, not a Dispute ID). Max 8 files per
+  // dispute, 1MB each, JPG/PDF/PNG only — enforced here and again server-side.
+  async uploadDisputeEvidence(disputeId: string, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const url = `${this.baseUrl}/disputes/${disputeId}/evidence`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": this.authHeader,
+        "Accept": "application/hal+json",
+        "Finix-Version": this.version,
+      },
+      body: formData,
+    });
+
+    let data;
+    const text = await res.text();
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (e) {
+      data = text;
+    }
+
+    if (!res.ok) {
+      const errorStr = typeof data === "object" ? JSON.stringify(data) : data;
+      console.error(`Finix API Error [${res.status}] on ${url}: ${errorStr}`);
+      const err: any = new Error(`Finix Error: ${errorStr}`);
+      err.details = typeof data === "object" ? data : null;
+      err.status = res.status;
+      throw err;
+    }
+
+    return data;
+  }
+
+  // Final submission step — notifies the issuing bank the evidence is complete.
+  // Finix docs: "once submitted, additional evidence can't be uploaded."
+  async submitDisputeResponse(disputeId: string) {
+    return this.fetchApi(`/disputes/${disputeId}/submit`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
   async listTransfersForMerchant(merchantId: string) {
     return this.fetchApi(`/transfers?merchant=${merchantId}`);
   }

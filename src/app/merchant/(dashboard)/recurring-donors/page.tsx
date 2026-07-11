@@ -5,14 +5,7 @@ import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import StateBadge from "@/components/merchant/StateBadge";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { formatDate } from "@/lib/formatCentralTime";
-
-function titleCase(s: string | null | undefined) {
-  if (!s) return "—";
-  return s
-    .split("_")
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-    .join(" ");
-}
+import { titleCaseFromSnake as titleCase } from "@/lib/finix/displayFormatters";
 
 export default async function RecurringDonorsPage() {
   const session = await getSession();

@@ -1,4 +1,3 @@
-import { ReactNode } from "react";
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
@@ -16,28 +15,16 @@ import StateBadge from "@/components/merchant/StateBadge";
 import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { formatDateTime } from "@/lib/formatCentralTime";
+import {
+  titleCaseFromSnake as titleCaseFromSnakeBase,
+  instrumentStateLabel,
+  sourceLabel,
+  settlementStateLabel,
+} from "@/lib/finix/displayFormatters";
+import { Section, Row } from "@/components/merchant/detail/DetailDrawerPrimitives";
+import { TransactionTimeline } from "@/components/merchant/detail/TransactionTimeline";
 
-function titleCaseFromSnake(value: string | null | undefined) {
-  if (!value) return "Fee";
-  return value
-    .split("_")
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-    .join(" ");
-}
-
-function instrumentStateLabel(state: string | null | undefined) {
-  const s = (state || "").toUpperCase();
-  if (s === "ENABLED") return "Enabled";
-  if (s === "DISABLED") return "Disabled";
-  if (s === "DELETED") return "Deleted";
-  return "—";
-}
-
-function sourceLabel(source: string | null | undefined) {
-  if (source === "wgc_giving_page") return "WGC Giving Page";
-  if (source === "finix_dashboard") return "Finix Dashboard";
-  return "Unknown";
-}
+const titleCaseFromSnake = (value: string | null | undefined) => titleCaseFromSnakeBase(value, "Fee");
 
 export default async function PaymentDetailPanel({
   transferId,
@@ -105,14 +92,6 @@ export default async function PaymentDetailPanel({
   const paymentSettlement = transfer.finixSettlementId
     ? settlementMap.get(transfer.finixSettlementId)
     : null;
-
-  function settlementStateLabel(state: string | null | undefined) {
-    const s = (state || "").toUpperCase();
-    if (s === "ACCRUING") return "Accruing";
-    if (s === "PENDING") return "Pending";
-    if (s === "SETTLED") return "Settled";
-    return s ? s.charAt(0) + s.slice(1).toLowerCase() : "";
-  }
 
   type FlowEvent = { label: string; sublabel?: string; date: Date | null };
   const flowEvents: FlowEvent[] = [];
@@ -247,21 +226,7 @@ export default async function PaymentDetailPanel({
       </div>
 
       <Section title="Transaction Flow">
-        <div className="space-y-4">
-          {flow.map((event, i) => (
-            <div key={i} className="flex gap-3">
-              <div className="flex flex-col items-center pt-1">
-                <span className="w-2 h-2 rounded-full bg-slate-400" />
-                {i < flow.length - 1 && <span className="w-px flex-1 bg-slate-200 mt-1" />}
-              </div>
-              <div className="pb-1">
-                <p className="text-sm font-semibold text-slate-800">{event.label}</p>
-                {event.sublabel && <p className="text-xs text-slate-500">{event.sublabel}</p>}
-                <p className="text-xs text-slate-400">{formatDateTime(event.date)}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+        <TransactionTimeline events={flow} />
       </Section>
 
       <Section title="Payment Details">
@@ -427,33 +392,3 @@ export default async function PaymentDetailPanel({
   );
 }
 
-function Section({
-  title,
-  action,
-  last,
-  children,
-}: {
-  title: string;
-  action?: ReactNode;
-  last?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className={`px-5 py-4 ${last ? "" : "border-b border-slate-100"}`}>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-bold text-slate-900">{title}</h3>
-        {action}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between text-sm py-1">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-semibold text-slate-700 text-right">{value}</span>
-    </div>
-  );
-}

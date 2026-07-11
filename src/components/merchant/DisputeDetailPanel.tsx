@@ -1,4 +1,3 @@
-import { ReactNode } from "react";
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
@@ -6,21 +5,15 @@ import StateBadge from "@/components/merchant/StateBadge";
 import ClosePanelButton from "@/components/merchant/ClosePanelButton";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { formatDateTime } from "@/lib/formatCentralTime";
+import { titleCaseFromSnake as titleCase } from "@/lib/finix/displayFormatters";
 import {
   PanelNavArrows,
-  ViewAllDetailsButton,
   PaymentMoreMenu,
   PinButton,
-  ComingSoonAction,
 } from "@/components/merchant/PaymentDetailActions";
-
-function titleCase(s: string | null | undefined) {
-  if (!s) return "—";
-  return s
-    .split("_")
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-    .join(" ");
-}
+import ViewAllDetailsLink from "@/components/merchant/ViewAllDetailsLink";
+import { Section, Row } from "@/components/merchant/detail/DetailDrawerPrimitives";
+import { TransactionTimeline } from "@/components/merchant/detail/TransactionTimeline";
 
 export default async function DisputeDetailPanel({
   disputeId,
@@ -87,7 +80,7 @@ export default async function DisputeDetailPanel({
     <div className="w-full lg:w-[420px] shrink-0 bg-white border border-slate-100 rounded-2xl shadow-sm h-fit lg:sticky lg:top-6">
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
         <PanelNavArrows />
-        <ViewAllDetailsButton />
+        <ViewAllDetailsLink href={`/merchant/disputes/${dispute.finixDisputeId}`} />
         <ClosePanelButton />
       </div>
 
@@ -115,11 +108,12 @@ export default async function DisputeDetailPanel({
             <span className="text-xs font-semibold text-amber-800">
               Evidence due {formatDateTime(dispute.evidenceDueAt)}
             </span>
-            <ComingSoonAction
-              label="Submit Evidence"
-              feature="Submitting dispute evidence"
+            <a
+              href={`/merchant/disputes/${dispute.finixDisputeId}`}
               className="text-xs font-bold text-blue-600 hover:underline"
-            />
+            >
+              Submit Evidence
+            </a>
           </div>
         )}
 
@@ -140,21 +134,7 @@ export default async function DisputeDetailPanel({
       </div>
 
       <Section title="Dispute Timeline">
-        <div className="space-y-4">
-          {flow.map((event, i) => (
-            <div key={i} className="flex gap-3">
-              <div className="flex flex-col items-center pt-1">
-                <span className="w-2 h-2 rounded-full bg-slate-400" />
-                {i < flow.length - 1 && <span className="w-px flex-1 bg-slate-200 mt-1" />}
-              </div>
-              <div className="pb-1">
-                <p className="text-sm font-semibold text-slate-800">{event.label}</p>
-                {event.sublabel && <p className="text-xs text-slate-500">{event.sublabel}</p>}
-                <p className="text-xs text-slate-400">{formatDateTime(event.date)}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+        <TransactionTimeline events={flow} />
       </Section>
 
       <Section title="Dispute Details">
@@ -180,32 +160,6 @@ export default async function DisputeDetailPanel({
           <Row label="Account Holder Name" value={instrument.accountHolderName || "—"} />
         </Section>
       )}
-    </div>
-  );
-}
-
-function Section({
-  title,
-  last,
-  children,
-}: {
-  title: string;
-  last?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className={`px-5 py-4 ${last ? "" : "border-b border-slate-100"}`}>
-      <h3 className="text-sm font-bold text-slate-900 mb-3">{title}</h3>
-      {children}
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between text-sm py-1">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-semibold text-slate-700 text-right">{value}</span>
     </div>
   );
 }

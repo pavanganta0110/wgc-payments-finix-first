@@ -10,36 +10,16 @@ import CreateReceiptButton from "@/components/merchant/CreateReceiptButton";
 import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { formatDateTime } from "@/lib/formatCentralTime";
+import {
+  titleCaseFromSnake as titleCaseFromSnakeBase,
+  instrumentStateLabel,
+  sourceLabel,
+  settlementStateLabel,
+} from "@/lib/finix/displayFormatters";
+import { Row } from "@/components/merchant/detail/DetailDrawerPrimitives";
+import { TransactionTimeline } from "@/components/merchant/detail/TransactionTimeline";
 
-function titleCaseFromSnake(value: string | null | undefined) {
-  if (!value) return "Fee";
-  return value
-    .split("_")
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-    .join(" ");
-}
-
-function settlementStateLabel(state: string | null | undefined) {
-  const s = (state || "").toUpperCase();
-  if (s === "ACCRUING") return "Accruing";
-  if (s === "PENDING") return "Pending";
-  if (s === "SETTLED") return "Settled";
-  return s ? s.charAt(0) + s.slice(1).toLowerCase() : "";
-}
-
-function sourceLabel(source: string | null | undefined) {
-  if (source === "wgc_giving_page") return "WGC Giving Page";
-  if (source === "finix_dashboard") return "Finix Dashboard";
-  return "Unknown";
-}
-
-function instrumentStateLabel(state: string | null | undefined) {
-  const s = (state || "").toUpperCase();
-  if (s === "ENABLED") return "Enabled";
-  if (s === "DISABLED") return "Disabled";
-  if (s === "DELETED") return "Deleted";
-  return "—";
-}
+const titleCaseFromSnake = (value: string | null | undefined) => titleCaseFromSnakeBase(value, "Fee");
 
 export default async function PaymentFullDetailPage({
   params,
@@ -192,21 +172,7 @@ export default async function PaymentFullDetailPage({
 
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
             <h3 className="text-sm font-bold text-slate-900 mb-4">Transaction Flow</h3>
-            <div className="space-y-4">
-              {flow.map((event, i) => (
-                <div key={i} className="flex gap-3">
-                  <div className="flex flex-col items-center pt-1">
-                    <span className="w-2 h-2 rounded-full bg-slate-400" />
-                    {i < flow.length - 1 && <span className="w-px flex-1 bg-slate-200 mt-1" />}
-                  </div>
-                  <div className="pb-1">
-                    <p className="text-sm font-semibold text-slate-800">{event.label}</p>
-                    {event.sublabel && <p className="text-xs text-slate-500">{event.sublabel}</p>}
-                    <p className="text-xs text-slate-400">{formatDateTime(event.date)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <TransactionTimeline events={flow} />
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
@@ -372,15 +338,6 @@ export default async function PaymentFullDetailPage({
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between text-sm py-1">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-semibold text-slate-700 text-right">{value}</span>
     </div>
   );
 }

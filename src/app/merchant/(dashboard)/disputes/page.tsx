@@ -9,6 +9,7 @@ import StateBadge from "@/components/merchant/StateBadge";
 import DisputeDetailPanel from "@/components/merchant/DisputeDetailPanel";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { formatDateTime, formatDate } from "@/lib/formatCentralTime";
+import { titleCaseFromSnake as titleCase } from "@/lib/finix/displayFormatters";
 
 // FinixDispute.state stores mapFinixDisputeStateToWgcStatus()'s output (lowercase),
 // not the raw Finix state — unlike Settlements/Deposits, which filter on raw state.
@@ -58,14 +59,6 @@ export default async function DisputesPage({
     ? await prisma.donor.findMany({ where: { id: { in: donorIds } } })
     : [];
   const donorMap = new Map(donors.map((d) => [d.id, d]));
-
-  function titleCase(s: string | null | undefined) {
-    if (!s) return "—";
-    return s
-      .split("_")
-      .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-      .join(" ");
-  }
 
   return (
     <div>
