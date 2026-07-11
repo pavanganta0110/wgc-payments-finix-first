@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import { resolveDateRange } from "@/lib/dateRangePresets";
+import { formatFundingSpeed } from "@/lib/depositColumns";
 
 function csvEscape(value: string) {
   if (value.includes(",") || value.includes('"') || value.includes("\n")) {
@@ -35,19 +36,43 @@ export async function GET(req: Request) {
     orderBy: { createdAtFinix: "desc" },
   });
 
-  const header = ["ID", "Sent", "Bank Account", "Settlement", "Estimated Arrival", "State", "Amount"];
+  const church = await prisma.church.findUnique({ where: { id: session.churchId } });
+
+  const header = [
+    "ID",
+    "Created",
+    "Organization",
+    "Deposit Amount",
+    "Bank Account",
+    "Deposit State",
+    "Funding Speed",
+    "Settlement Count",
+    "Payment Count",
+    "Net Amount",
+    "Expected Deposit Date",
+    "Actual Deposit Date",
+    "Trace/Reference",
+    "Updated",
+  ];
   const lines = [header.join(",")];
 
   for (const d of deposits) {
     lines.push(
       [
         csvEscape(d.finixFundingTransferAttemptId),
-        csvEscape(d.sentAt ? d.sentAt.toISOString() : ""),
-        csvEscape(d.bankAccountLast4 || ""),
-        csvEscape(d.finixSettlementId || ""),
-        csvEscape(d.estimatedArrivalDate ? d.estimatedArrivalDate.toISOString() : ""),
-        csvEscape(d.state || "UNKNOWN"),
+        csvEscape(d.createdAtFinix ? d.createdAtFinix.toISOString() : ""),
+        csvEscape(church?.name || ""),
         csvEscape(formatCents(d.amountCents ?? 0)),
+        csvEscape(d.bankAccountLast4 ? `${d.bankName || "Bank"} ••••${d.bankAccountLast4}` : ""),
+        csvEscape(d.state || "UNKNOWN"),
+        csvEscape(formatFundingSpeed(d.fundingSpeed)),
+        csvEscape(String(d.settlementCount ?? (d.finixSettlementId ? 1 : 0))),
+        csvEscape(String(d.paymentCount ?? "")),
+        csvEscape(formatCents(d.netAmountCents ?? d.amountCents ?? 0)),
+        csvEscape(d.estimatedArrivalDate ? d.estimatedArrivalDate.toISOString() : ""),
+        csvEscape(d.arrivedAt ? d.arrivedAt.toISOString() : ""),
+        csvEscape(d.traceId || ""),
+        csvEscape(d.updatedAtFinix ? d.updatedAtFinix.toISOString() : ""),
       ].join(",")
     );
   }

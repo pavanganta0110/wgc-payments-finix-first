@@ -421,3 +421,37 @@ export async function getBankReturnsInsights(churchId: string, dateFilter: { gte
 
   return { summary, trendData, byReasonTable, hasData: returns.length > 0 };
 }
+
+export async function getDepositsInsights(churchId: string, dateFilter: { gte: Date; lte?: Date } | undefined, trend: string) {
+  const deposits = await prisma.finixFundingTransferAttempt.findMany({
+    where: { churchId, ...(dateFilter ? { createdAtFinix: dateFilter } : {}) },
+  });
+
+  const completed = deposits.filter((d) => (d.state || "").toUpperCase() === "COMPLETED");
+  const pending = deposits.filter((d) => ["PENDING", "PROCESSING", "SENT"].includes((d.state || "").toUpperCase()));
+  const failed = deposits.filter((d) => ["FAILED", "RETURNED", "CANCELED"].includes((d.state || "").toUpperCase()));
+
+  const totalDepositedCents = deposits.reduce((sum, d) => sum + (d.amountCents ?? 0), 0);
+  const netDepositedCents = deposits.reduce((sum, d) => sum + (d.netAmountCents ?? d.amountCents ?? 0), 0);
+  const pendingCents = pending.reduce((sum, d) => sum + (d.amountCents ?? 0), 0);
+  const completedCents = completed.reduce((sum, d) => sum + (d.amountCents ?? 0), 0);
+  const failedCents = failed.reduce((sum, d) => sum + (d.amountCents ?? 0), 0);
+  const avgDepositCents = deposits.length > 0 ? Math.round(totalDepositedCents / deposits.length) : 0;
+
+  const summary = [
+    { label: "Total Deposited", value: formatCents(totalDepositedCents) },
+    { label: "Pending Deposits", value: `${formatCents(pendingCents)} (${pending.length})` },
+    { label: "Completed Deposits", value: `${formatCents(completedCents)} (${completed.length})` },
+    { label: "Failed Deposits", value: `${formatCents(failedCents)} (${failed.length})` },
+    { label: "Average Deposit Amount", value: formatCents(avgDepositCents) },
+    { label: "Net Deposited Amount", value: formatCents(netDepositedCents) },
+  ];
+
+  const trendData = groupTrend(
+    deposits.map((d) => ({ createdAtFinix: d.createdAtFinix, amountCents: d.amountCents, series: "Deposit Volume" })),
+    trend,
+    ["Deposit Volume"]
+  );
+
+  return { summary, trendData, hasData: deposits.length > 0 };
+}

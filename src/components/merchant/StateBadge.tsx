@@ -13,6 +13,9 @@ const STATE_STYLES: Record<string, string> = {
   ACTIVE: "bg-green-50 text-green-700",
   INACTIVE: "bg-slate-100 text-slate-500",
   ARCHIVED: "bg-slate-100 text-slate-400",
+  PROCESSING: "bg-amber-50 text-amber-700",
+  SENT: "bg-blue-50 text-blue-700",
+  COMPLETED: "bg-green-50 text-green-700",
 };
 
 export default function StateBadge({ state }: { state: string | null | undefined }) {

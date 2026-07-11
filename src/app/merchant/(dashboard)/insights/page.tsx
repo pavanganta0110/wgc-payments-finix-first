@@ -15,6 +15,7 @@ import {
   getRefundsInsights,
   getDisputesInsights,
   getBankReturnsInsights,
+  getDepositsInsights,
   PAYMENT_DIMENSIONS,
   type PaymentDimensionKey,
 } from "@/lib/reports/insightsData";
@@ -117,6 +118,9 @@ export default async function InsightsPage({
       )}
       {tab === "bank-returns" && (
         <BankReturnsTab churchId={churchId} dateFilter={dateFilter} trend={trend} />
+      )}
+      {tab === "deposits" && (
+        <DepositsTab churchId={churchId} dateFilter={dateFilter} trend={trend} />
       )}
     </div>
   );
@@ -455,6 +459,45 @@ async function BankReturnsTab({
           <h3 className="text-sm font-bold text-slate-900">ACH Returns by Reason Code</h3>
         </div>
         <AchReturnsTable rows={byReasonTable} />
+      </div>
+    </>
+  );
+}
+
+async function DepositsTab({
+  churchId,
+  dateFilter,
+  trend,
+}: {
+  churchId: string;
+  dateFilter: { gte: Date; lte?: Date } | undefined;
+  trend: string;
+}) {
+  const { summary, trendData, hasData } = await getDepositsInsights(churchId, dateFilter, trend);
+
+  return (
+    <>
+      <SummaryCards items={summary} />
+
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-bold text-slate-900">Deposit Trends</p>
+        <TrendFilter />
+      </div>
+      <div className="grid md:grid-cols-2 gap-4">
+        <ChartCard title="Deposit Volume">
+          {hasData ? (
+            <StackedBarChart
+              data={trendData}
+              seriesKeys={["Deposit Volume"]}
+              formatValue={(n) => `$${n.toFixed(0)}`}
+            />
+          ) : (
+            <EmptyChart />
+          )}
+        </ChartCard>
+        <ChartCard title="Deposit Count Trend">
+          <EmptyChart />
+        </ChartCard>
       </div>
     </>
   );

@@ -8,6 +8,7 @@ const TABS = [
   { key: "refunds", label: "Refunds" },
   { key: "disputes", label: "Disputes" },
   { key: "bank-returns", label: "Bank Returns" },
+  { key: "deposits", label: "Deposits" },
 ];
 
 export default function InsightsTabs() {
