@@ -5,32 +5,15 @@ import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import StateBadge from "@/components/merchant/StateBadge";
 import ClosePanelButton from "@/components/merchant/ClosePanelButton";
 import { formatPersonName } from "@/lib/formatPersonName";
+import Link from "next/link";
 import {
   PanelNavArrows,
-  ViewAllDetailsButton,
   PaymentMoreMenu,
   PinButton,
-  ComingSoonAction,
 } from "@/components/merchant/PaymentDetailActions";
-
-function formatDateTime(date: Date | null | undefined) {
-  if (!date) return "—";
-  return new Date(date).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function titleCase(s: string | null | undefined) {
-  if (!s) return "—";
-  return s
-    .split("_")
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-    .join(" ");
-}
+import ViewAllDetailsLink from "@/components/merchant/ViewAllDetailsLink";
+import { formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
+import { titleCaseFromSnake as titleCase } from "@/lib/finix/displayFormatters";
 
 export default async function DisputeDetailPanel({
   disputeId,
@@ -97,7 +80,7 @@ export default async function DisputeDetailPanel({
     <div className="w-full lg:w-[420px] shrink-0 bg-white border border-slate-100 rounded-2xl shadow-sm h-fit lg:sticky lg:top-6">
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
         <PanelNavArrows />
-        <ViewAllDetailsButton />
+        <ViewAllDetailsLink href={`/merchant/disputes/${dispute.finixDisputeId}`} />
         <ClosePanelButton />
       </div>
 
@@ -125,11 +108,12 @@ export default async function DisputeDetailPanel({
             <span className="text-xs font-semibold text-amber-800">
               Evidence due {formatDateTime(dispute.evidenceDueAt)}
             </span>
-            <ComingSoonAction
-              label="Submit Evidence"
-              feature="Submitting dispute evidence"
+            <Link
+              href={`/merchant/disputes/${dispute.finixDisputeId}`}
               className="text-xs font-bold text-blue-600 hover:underline"
-            />
+            >
+              Submit Evidence
+            </Link>
           </div>
         )}
 

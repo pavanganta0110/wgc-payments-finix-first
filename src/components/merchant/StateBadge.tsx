@@ -16,6 +16,12 @@ const STATE_STYLES: Record<string, string> = {
   PROCESSING: "bg-amber-50 text-amber-700",
   SENT: "bg-blue-50 text-blue-700",
   COMPLETED: "bg-green-50 text-green-700",
+  // Disputes (FinixDispute.state)
+  WON: "bg-green-50 text-green-700",
+  LOST: "bg-red-50 text-red-700",
+  // Settlements
+  ACCRUING: "bg-amber-50 text-amber-700",
+  SETTLED: "bg-green-50 text-green-700",
 };
 
 export default function StateBadge({ state }: { state: string | null | undefined }) {

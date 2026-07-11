@@ -15,39 +15,10 @@ import CreateReceiptButton from "@/components/merchant/CreateReceiptButton";
 import StateBadge from "@/components/merchant/StateBadge";
 import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
 import { formatPersonName } from "@/lib/formatPersonName";
+import { formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
+import { titleCaseFromSnake as titleCaseFromSnakeBase, instrumentStateLabel, sourceLabel } from "@/lib/finix/displayFormatters";
 
-function formatDateTime(date: Date | null | undefined) {
-  if (!date) return "—";
-  return new Date(date).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function titleCaseFromSnake(value: string | null | undefined) {
-  if (!value) return "Fee";
-  return value
-    .split("_")
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-    .join(" ");
-}
-
-function instrumentStateLabel(state: string | null | undefined) {
-  const s = (state || "").toUpperCase();
-  if (s === "ENABLED") return "Enabled";
-  if (s === "DISABLED") return "Disabled";
-  if (s === "DELETED") return "Deleted";
-  return "—";
-}
-
-function sourceLabel(source: string | null | undefined) {
-  if (source === "wgc_giving_page") return "WGC Giving Page";
-  if (source === "finix_dashboard") return "Finix Dashboard";
-  return "Unknown";
-}
+const titleCaseFromSnake = (value: string | null | undefined) => titleCaseFromSnakeBase(value, "Fee");
 
 export default async function PaymentDetailPanel({
   transferId,

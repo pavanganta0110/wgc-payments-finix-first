@@ -574,6 +574,48 @@ model FinixDispute {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   lastSyncedAt    DateTime?
+  evidence        DisputeEvidence[]
+}
+
+// Metadata-only record of a dispute-evidence upload — the actual file bytes
+// live in Finix (POST /disputes/{id}/evidence), never stored here.
+model DisputeEvidence {
+  id              String       @id @default(cuid())
+  disputeId       String
+  dispute         FinixDispute @relation(fields: [disputeId], references: [id])
+  churchId        String?
+  uploadedByEmail String?
+  fileName        String
+  fileSize        Int
+  mimeType        String
+  finixFileId     String?
+  submittedAt     DateTime?
+  createdAt       DateTime     @default(now())
+
+  @@index([disputeId])
+  @@index([churchId])
+}
+
+// General-purpose dashboard action audit trail (distinct from the existing
+// AuditLog, which is onboarding-flow-only). actorRole is a free string
+// snapshotting whatever role the actor held at the time, not an FK — so
+// this doesn't require adopting a wider role model to use.
+model DashboardAuditLog {
+  id          String   @id @default(cuid())
+  churchId    String
+  actorUserId String?
+  actorEmail  String?
+  actorRole   String?
+  action      String
+  entityType  String?
+  entityId    String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([churchId, createdAt])
+  @@index([entityType, entityId])
 }
 
 model FinixPaymentInstrumentSnapshot {
