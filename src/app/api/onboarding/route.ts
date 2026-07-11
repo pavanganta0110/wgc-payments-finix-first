@@ -17,6 +17,26 @@ function extractFinixErrorMessage(err: any): string {
   return finixErrorStr;
 }
 
+// Turns a raw processor error into plain-English copy that's safe to show
+// customers: no vendor name, no internal field paths, dollars instead of cents.
+function humanizeErrorDetail(raw: string): string {
+  if (!raw) return "";
+
+  // Untranslated JSON blobs (no _embedded.errors match) aren't customer-safe.
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return "Please double-check the information you entered and try again.";
+  }
+
+  return trimmed
+    .replace(/Invalid Field:\s*[\w.]+;\s*/gi, "")
+    .replace(/\b(\d+)\s*cents\b/gi, (_match, cents) =>
+      `$${(Number(cents) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    )
+    .replace(/\bFinix\b/gi, "our payment processor")
+    .trim();
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -84,12 +104,10 @@ export async function POST(req: Request) {
       console.log("ONBOARDING_STEP", "APPLICATION_CREATED", application.id);
     } catch (err: any) {
       console.error("ONBOARDING_FAILED", { step: "DATABASE_APPLICATION_CREATE_FAILED", errorMessage: err.message, code: err.code });
-      return NextResponse.json({ 
-        success: false, 
-        step: "DATABASE_APPLICATION_CREATE_FAILED", 
-        message: "Database create failed",
-        prismaCode: err.code,
-        prismaMessage: err.message
+      return NextResponse.json({
+        success: false,
+        step: "DATABASE_APPLICATION_CREATE_FAILED",
+        message: "We couldn't save your application. Please try again."
       }, { status: 500 });
     }
 
@@ -143,7 +161,7 @@ export async function POST(req: Request) {
       console.log("ONBOARDING_STEP", "LEGAL_ACCEPTANCE_CREATED");
     } catch (err: any) {
       console.error("ONBOARDING_FAILED", { step: "LEGAL_ACCEPTANCE_CREATE_FAILED", applicationId: application.id, errorMessage: err.message });
-      return NextResponse.json({ success: false, step: "LEGAL_ACCEPTANCE_CREATE_FAILED", message: "Failed to save legal acceptance." }, { status: 500 });
+      return NextResponse.json({ success: false, step: "LEGAL_ACCEPTANCE_CREATE_FAILED", message: "We couldn't save your legal acceptance. Please try again." }, { status: 500 });
     }
 
     // ==========================================
@@ -215,11 +233,11 @@ export async function POST(req: Request) {
         errorMessage: finixErrorStr,
         status: err.status
       });
-      return NextResponse.json({ 
-        success: false, 
-        step: "FINIX_IDENTITY_CREATE_FAILED", 
+      return NextResponse.json({
+        success: false,
+        step: "FINIX_IDENTITY_CREATE_FAILED",
         message: "We could not verify your business identity.",
-        finixError: finixErrorStr
+        errorDetail: humanizeErrorDetail(finixErrorStr)
       }, { status: 400 });
     }
 
@@ -295,7 +313,7 @@ export async function POST(req: Request) {
         success: false,
         step: "FINIX_BANK_INSTRUMENT_FAILED",
         message: "We could not link your payout bank account. Please verify your routing and account numbers.",
-        finixError: finixErrorStr
+        errorDetail: humanizeErrorDetail(finixErrorStr)
       }, { status: 400 });
     }
 
@@ -330,7 +348,7 @@ export async function POST(req: Request) {
         success: false,
         step: "FINIX_MERCHANT_CREATE_FAILED",
         message: "We could not finalize your merchant account. Please contact support.",
-        finixError: finixErrorStr
+        errorDetail: humanizeErrorDetail(finixErrorStr)
       }, { status: 400 });
     }
 

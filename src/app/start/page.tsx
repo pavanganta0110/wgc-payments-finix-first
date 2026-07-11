@@ -198,18 +198,24 @@ export default function StartOnboardingPage() {
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        let errorMsg = data.step ? `Failed to submit: ${data.step}` : data.message || data.error || "Failed to submit onboarding application.";
-        if (data.prismaCode) errorMsg += ` | Prisma Code: ${data.prismaCode}`;
-        if (data.prismaMessage) errorMsg += ` | Msg: ${data.prismaMessage}`;
-        if (data.finixError) errorMsg += ` | Finix Error: ${data.finixError}`;
-        throw new Error(errorMsg);
+        const title = data.message || "We couldn't submit your application.";
+        const detail = data.errorDetail;
+        toast.error(
+          <div>
+            <p className="font-semibold text-slate-900">{title}</p>
+            {detail && <p className="text-sm text-slate-600 mt-1">{detail}</p>}
+          </div>,
+          { duration: 8000, style: { maxWidth: 420 } }
+        );
+        setIsSubmitting(false);
+        return;
       }
 
       toast.success("Application started!");
       router.push(`/onboarding/success?applicationId=${data.applicationId}`);
     } catch (err: any) {
       console.error(err);
-      toast.error(err.message || "An error occurred");
+      toast.error("We couldn't submit your application. Please try again.");
       setIsSubmitting(false);
     }
   };
