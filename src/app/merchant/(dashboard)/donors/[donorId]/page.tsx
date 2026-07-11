@@ -12,6 +12,7 @@ import { formatPersonName } from "@/lib/formatPersonName";
 import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
 import { loadDonorDetail } from "@/lib/donors/donorDetail";
 import { loadDonationTrend } from "@/lib/donors/donorAnalytics";
+import { loadDonorFundBreakdown, loadDonorPaymentMethodMix } from "@/lib/donors/donorBreakdowns";
 import { DONOR_DISPLAY_STATUS_LABELS } from "@/lib/donors/donorStatus";
 import { getDonorPermissions } from "@/lib/donors/donorPermissions";
 import {
@@ -28,6 +29,7 @@ import DonorNotesList from "@/components/merchant/DonorNotesList";
 import DonorRowActions from "@/components/merchant/DonorRowActions";
 import EditDonorButton from "@/components/merchant/EditDonorButton";
 import DuplicateDonorsCard from "@/components/merchant/DuplicateDonorsCard";
+import DonorStatementsPanel from "@/components/merchant/DonorStatementsPanel";
 import SendGivingLinkButton from "@/components/merchant/SendGivingLinkButton";
 import DonationTrendChart from "@/components/merchant/DonationTrendChart";
 import Pagination from "@/components/merchant/Pagination";
@@ -193,6 +195,8 @@ export default async function DonorProfilePage({
           notes={notes}
           canAddNote={permissions.canAddNote}
           canMerge={permissions.canMerge}
+          canGenerateStatements={permissions.canGenerateStatements}
+          canSendStatements={permissions.canSendStatements}
         />
       )}
       {tab === "donations" && (
@@ -226,9 +230,14 @@ function Card({ title, action, children }: { title: string; action?: React.React
   );
 }
 
-async function OverviewTab({ churchId, donor, aggregates, instruments, notes, canAddNote, canMerge }: any) {
+async function OverviewTab({ churchId, donor, aggregates, instruments, notes, canAddNote, canMerge, canGenerateStatements, canSendStatements }: any) {
   const trend = await loadDonationTrend(churchId, undefined, "monthly");
   const primaryInstrument = instruments[0] ?? null;
+  const instrumentIds = instruments.map((i: any) => i.finixPaymentInstrumentId);
+  const [fundBreakdown, methodMix] = await Promise.all([
+    loadDonorFundBreakdown(donor.id, churchId),
+    loadDonorPaymentMethodMix(instrumentIds, churchId),
+  ]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -251,6 +260,50 @@ async function OverviewTab({ churchId, donor, aggregates, instruments, notes, ca
         <Card title="Donation Trend">
           <DonationTrendChart data={trend} />
         </Card>
+        {fundBreakdown.length > 0 && (
+          <Card title="Fund/Campaign Breakdown">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                    <th className="py-2 pr-4">Fund/Campaign</th>
+                    <th className="py-2 pr-4 text-right">Donations</th>
+                    <th className="py-2 pr-4 text-right">Gross</th>
+                    <th className="py-2 pr-4 text-right">Refunded</th>
+                    <th className="py-2 pr-4 text-right">Returned</th>
+                    <th className="py-2 text-right">Net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fundBreakdown.map((f: any) => (
+                    <tr key={f.fundId} className="border-t border-slate-50">
+                      <td className="py-2 pr-4 font-semibold text-slate-800">{f.fundName}</td>
+                      <td className="py-2 pr-4 text-right text-slate-600">{f.donationCount}</td>
+                      <td className="py-2 pr-4 text-right text-slate-900 font-semibold">{formatCents(f.grossCents)}</td>
+                      <td className="py-2 pr-4 text-right text-slate-600">{formatCents(f.refundedCents)}</td>
+                      <td className="py-2 pr-4 text-right text-slate-600">{formatCents(f.returnedCents)}</td>
+                      <td className="py-2 text-right font-semibold text-slate-900">{formatCents(f.netCents)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+        {methodMix.length > 0 && (
+          <Card title="Payment Method Breakdown">
+            <div className="space-y-2">
+              {methodMix.map((m: any) => (
+                <div key={m.method} className="flex items-center justify-between text-sm">
+                  <span className="text-slate-600">{titleCase(m.method)}</span>
+                  <span className="font-semibold text-slate-900">
+                    {formatCents(m.amountCents)} <span className="text-slate-400 font-normal">· {m.count}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
       </div>
       <div className="space-y-6">
         <Card title="Contact Information">
@@ -270,6 +323,9 @@ async function OverviewTab({ churchId, donor, aggregates, instruments, notes, ca
         )}
         <Card title="Internal Notes">
           <DonorNotesList donorId={donor.id} initialNotes={notes} editable={canAddNote} limit={3} />
+        </Card>
+        <Card title="Year-End Donation Statements">
+          <DonorStatementsPanel donorId={donor.id} canGenerate={canGenerateStatements} canSend={canSendStatements} />
         </Card>
       </div>
     </div>

@@ -1,6 +1,16 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy — constructing Resend eagerly at module load time throws whenever
+// RESEND_API_KEY is unset/empty (confirmed: this crashes locally today),
+// which means merely importing this file anywhere — even a route that
+// never actually sends an email — takes down the whole request. Deferred
+// until sendWgcEmail actually runs, where the existing missing-key check
+// already handles it gracefully.
+let resend: Resend | null = null;
+function getResendClient(): Resend {
+  if (!resend) resend = new Resend(process.env.RESEND_API_KEY);
+  return resend;
+}
 
 interface WgcEmailOptions {
   to: string;
@@ -10,6 +20,7 @@ interface WgcEmailOptions {
   badgeText?: string;
   badgeColor?: string; // e.g. "#C99A2E" or "#10B981"
   bodyHtml: string;
+  attachments?: { filename: string; content: Buffer }[];
 }
 
 const WGC_LOGO_URL = "https://wgcpayments.com/wgc-logo.png";
@@ -120,13 +131,14 @@ support@wgcpayments.com
   `.trim();
 
   try {
-    const data = await resend.emails.send({
+    const data = await getResendClient().emails.send({
       from: "WGC Payments <no-reply@wgcpayments.com>",
       replyTo: "support@wgcpayments.com",
       to: options.to,
       subject: options.subject,
       html,
       text,
+      ...(options.attachments ? { attachments: options.attachments } : {}),
     });
 
     console.log("WGC Email sent successfully:", data);

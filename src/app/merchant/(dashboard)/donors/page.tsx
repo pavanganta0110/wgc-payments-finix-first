@@ -18,6 +18,10 @@ import { formatPersonName } from "@/lib/formatPersonName";
 import { loadDonorsList, type DonorsListSort } from "@/lib/donors/donorsList";
 import { loadDonorSummary } from "@/lib/donors/donorSummary";
 import { loadDonationTrend, loadTopDonors, type TopDonorMetric } from "@/lib/donors/donorAnalytics";
+import { loadDonorAnalyticsExtended } from "@/lib/donors/donorAnalyticsExtended";
+import { loadDonorPaymentMethodMix } from "@/lib/donors/donorBreakdowns";
+import { prisma } from "@/lib/prisma";
+import DonorAnalyticsExtras from "@/components/merchant/DonorAnalyticsExtras";
 import { parseVisibleDonorColumns } from "@/lib/donorColumns";
 import { DONOR_DISPLAY_STATUS_LABELS, type DonorDisplayStatus } from "@/lib/donors/donorStatus";
 import { getDonorPermissions } from "@/lib/donors/donorPermissions";
@@ -96,6 +100,22 @@ export default async function DonorsPage({
   const summary = await loadDonorSummary(churchId, dateFilter);
   const trend = await loadDonationTrend(churchId, dateFilter, "weekly");
   const topDonors = await loadTopDonors(churchId, dateFilter, topMetric, 10);
+
+  let previousPeriodFilter: { gte: Date; lte?: Date } | undefined;
+  if (dateFilter?.lte) {
+    const spanMs = dateFilter.lte.getTime() - dateFilter.gte.getTime();
+    previousPeriodFilter = { gte: new Date(dateFilter.gte.getTime() - spanMs), lte: new Date(dateFilter.gte.getTime() - 1) };
+  }
+  const extended = await loadDonorAnalyticsExtended(churchId, dateFilter, previousPeriodFilter);
+  const orgInstruments = await prisma.finixPaymentInstrumentSnapshot.findMany({
+    where: { churchId, donorId: { not: null } },
+    select: { finixPaymentInstrumentId: true },
+  });
+  const paymentMethodMix = await loadDonorPaymentMethodMix(
+    orgInstruments.map((i) => i.finixPaymentInstrumentId),
+    churchId,
+  );
+
   const { rows, totalCount } = await loadDonorsList(
     churchId,
     {
@@ -133,6 +153,9 @@ export default async function DonorsPage({
       <div className="flex items-center gap-2 mb-6">
         <h2 className="text-lg font-bold text-slate-900">Donors</h2>
         <PinButton />
+        <Link href="/merchant/donors/annual-statements" className="text-sm font-semibold text-blue-600 hover:underline">
+          Annual Donation Statements
+        </Link>
         {permissions.canEdit && (
           <div className="ml-auto">
             <AddDonorButton />
@@ -159,6 +182,8 @@ export default async function DonorsPage({
         </div>
         <TopDonorsCard rows={topDonors.rows} metric={topMetric} />
       </div>
+
+      <DonorAnalyticsExtras extended={extended} paymentMethodMix={paymentMethodMix} />
 
       <DonorsFilterBar exportHref="/api/merchant/donors/export" />
 

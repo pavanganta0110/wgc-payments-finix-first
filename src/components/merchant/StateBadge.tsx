@@ -39,6 +39,13 @@ const STATE_STYLES: Record<string, string> = {
   // Donors (resolveDonorDisplayStatus)
   AT_RISK: "bg-red-50 text-red-700",
   RECURRING: "bg-blue-50 text-blue-700",
+  // Annual statements
+  NOT_GENERATED: "bg-slate-100 text-slate-500",
+  GENERATED: "bg-green-50 text-green-700",
+  NOT_SENT: "bg-slate-100 text-slate-500",
+  QUEUED: "bg-amber-50 text-amber-700",
+  DELIVERED: "bg-green-50 text-green-700",
+  BOUNCED: "bg-red-50 text-red-700",
 };
 
 export default function StateBadge({ state }: { state: string | null | undefined }) {
