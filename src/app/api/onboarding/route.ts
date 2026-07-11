@@ -4,6 +4,19 @@ import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
 import { sendWgcEmail } from "@/lib/email";
 
+function extractFinixErrorMessage(err: any): string {
+  let finixErrorStr = err.message || "Unknown error";
+  const errData = err.details || (err.response && err.response.data);
+  if (errData) {
+    if (errData._embedded && errData._embedded.errors && errData._embedded.errors.length > 0) {
+      finixErrorStr = errData._embedded.errors.map((e: any) => e.message).join(", ");
+    } else {
+      finixErrorStr = JSON.stringify(errData);
+    }
+  }
+  return finixErrorStr;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -194,16 +207,8 @@ export async function POST(req: Request) {
       finixIdentity = await finixClient.createSellerIdentity(identityPayload);
       console.log("ONBOARDING_STEP", "FINIX_IDENTITY_SUCCESS", finixIdentity.id);
     } catch (err: any) {
-      let finixErrorStr = err.message || "Unknown error";
-      const errData = err.details || (err.response && err.response.data);
-      if (errData) {
-        if (errData._embedded && errData._embedded.errors && errData._embedded.errors.length > 0) {
-          finixErrorStr = errData._embedded.errors.map((e: any) => e.message).join(", ");
-        } else {
-          finixErrorStr = JSON.stringify(errData);
-        }
-      }
-      
+      const finixErrorStr = extractFinixErrorMessage(err);
+
       console.error("ONBOARDING_FAILED", {
         step: "FINIX_IDENTITY_CREATE_FAILED",
         applicationId: application.id,
@@ -273,21 +278,24 @@ export async function POST(req: Request) {
       finixPaymentInstrument = await finixClient.createPaymentInstrument(paymentInstrumentPayload);
       console.log("ONBOARDING_STEP", "BANK_INSTRUMENT_SUCCESS", finixPaymentInstrument.id);
     } catch (err: any) {
+      const finixErrorStr = extractFinixErrorMessage(err);
+
       console.error("ONBOARDING_FAILED", {
         step: "FINIX_BANK_INSTRUMENT_FAILED",
         applicationId: application.id,
         finixIdentityId: finixIdentity.id,
-        errorMessage: err.message,
+        errorMessage: finixErrorStr,
         status: err.status
       });
       await prisma.onboardingApplication.update({
         where: { id: application.id },
         data: { status: "BANK_INSTRUMENT_FAILED" },
       });
-      return NextResponse.json({ 
-        success: false, 
-        step: "FINIX_BANK_INSTRUMENT_FAILED", 
-        message: "We could not link your payout bank account. Please verify your routing and account numbers." 
+      return NextResponse.json({
+        success: false,
+        step: "FINIX_BANK_INSTRUMENT_FAILED",
+        message: "We could not link your payout bank account. Please verify your routing and account numbers.",
+        finixError: finixErrorStr
       }, { status: 400 });
     }
 
@@ -304,22 +312,25 @@ export async function POST(req: Request) {
       finixMerchant = await finixClient.createMerchant(finixIdentity.id, processor);
       console.log("ONBOARDING_STEP", "MERCHANT_CREATE_SUCCESS", finixMerchant.id);
     } catch (err: any) {
+      const finixErrorStr = extractFinixErrorMessage(err);
+
       console.error("ONBOARDING_FAILED", {
         step: "FINIX_MERCHANT_CREATE_FAILED",
         applicationId: application.id,
         finixIdentityId: finixIdentity.id,
         finixPaymentInstrumentId: finixPaymentInstrument.id,
-        errorMessage: err.message,
+        errorMessage: finixErrorStr,
         status: err.status
       });
       await prisma.onboardingApplication.update({
         where: { id: application.id },
         data: { status: "MERCHANT_CREATION_FAILED" },
       });
-      return NextResponse.json({ 
-        success: false, 
-        step: "FINIX_MERCHANT_CREATE_FAILED", 
-        message: "We could not finalize your merchant account. Please contact support." 
+      return NextResponse.json({
+        success: false,
+        step: "FINIX_MERCHANT_CREATE_FAILED",
+        message: "We could not finalize your merchant account. Please contact support.",
+        finixError: finixErrorStr
       }, { status: 400 });
     }
 
