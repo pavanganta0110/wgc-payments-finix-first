@@ -5,6 +5,7 @@ import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import StateBadge from "@/components/merchant/StateBadge";
 import ClosePanelButton from "@/components/merchant/ClosePanelButton";
 import { formatPersonName } from "@/lib/formatPersonName";
+import { formatDateTime } from "@/lib/formatCentralTime";
 import {
   PanelNavArrows,
   ViewAllDetailsButton,
@@ -12,17 +13,6 @@ import {
   PinButton,
   ComingSoonAction,
 } from "@/components/merchant/PaymentDetailActions";
-
-function formatDateTime(date: Date | null | undefined) {
-  if (!date) return "—";
-  return new Date(date).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 function titleCase(s: string | null | undefined) {
   if (!s) return "—";

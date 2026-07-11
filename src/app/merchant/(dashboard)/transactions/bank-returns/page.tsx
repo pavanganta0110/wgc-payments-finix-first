@@ -8,6 +8,7 @@ import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import ClickableTableRow from "@/components/merchant/ClickableTableRow";
 import StateBadge from "@/components/merchant/StateBadge";
 import { formatPersonName } from "@/lib/formatPersonName";
+import { formatDateTime } from "@/lib/formatCentralTime";
 
 const STATES = ["SUCCEEDED", "FAILED", "PENDING", "CANCELED"];
 
@@ -112,15 +113,7 @@ export default async function BankReturnsListPage({
                         <CopyableIdBadge id={r.finixTransferId} />
                       </td>
                       <td className="px-6 py-3 text-slate-600 whitespace-nowrap">
-                        {r.createdAtFinix
-                          ? new Date(r.createdAtFinix).toLocaleString("en-US", {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })
-                          : "—"}
+                        {formatDateTime(r.createdAtFinix)}
                       </td>
                       <td className="px-6 py-3 text-slate-700">
                         {formatPersonName(donor?.name, instrument?.accountHolderName)}

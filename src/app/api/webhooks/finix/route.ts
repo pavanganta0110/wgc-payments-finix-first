@@ -12,6 +12,20 @@ import { syncFeesForTransfer } from "@/lib/finix/sync/syncFees";
 import { linkTransfersToSettlement } from "@/lib/finix/sync/syncSettlements";
 import { syncAllChurchesPricing, syncChurchPricingForMerchantProfile } from "@/lib/finix/sync/syncFeeProfiles";
 
+// FinixFundingTransferAttempt.finixSettlementId is now a real FK into FinixSettlement.
+// Webhooks for related entities can arrive out of order (a deposit event referencing a
+// settlement that hasn't been synced yet), so ensure a minimal placeholder row exists
+// before writing the reference — the real settlement sync later fills it in via its own
+// upsert's update branch. Without this, an out-of-order deposit webhook would fail the
+// FK constraint and the event would be lost.
+async function ensureSettlementStub(finixSettlementId: string, churchId: string | null) {
+  await prisma.finixSettlement.upsert({
+    where: { finixSettlementId },
+    create: { finixSettlementId, churchId },
+    update: {},
+  });
+}
+
 const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SECRET || process.env.FINIX_WEBHOOK_SIGNING_KEY;
 const BEARER_TOKEN = process.env.FINIX_WEBHOOK_BEARER_TOKEN;
 const BASIC_AUTH_USERNAME =
@@ -256,7 +270,12 @@ export async function syncFinixDataFromWebhookEvent(
         churchId,
         finixMerchantId: data.merchant ?? null,
         finixTransferId: data.transfer ?? null,
+        // `state` keeps its historical (mapped) value for backward compatibility with
+        // existing readers; processorState/displayStatus are the correct fields going
+        // forward — processorState is the raw Finix state, never overwritten.
         state: mapFinixDisputeStateToWgcStatus(data.state),
+        processorState: data.state ?? null,
+        displayStatus: mapFinixDisputeStateToWgcStatus(data.state),
         reason: data.reason ?? null,
         amountCents: data.amount ?? null,
         currency: data.currency ?? null,
@@ -272,6 +291,8 @@ export async function syncFinixDataFromWebhookEvent(
       update: {
         churchId: churchId ?? undefined,
         state: mapFinixDisputeStateToWgcStatus(data.state),
+        processorState: data.state ?? null,
+        displayStatus: mapFinixDisputeStateToWgcStatus(data.state),
         evidenceDueAt: data.evidence_due_at ? new Date(data.evidence_due_at) : undefined,
         respondedAt: data.responded_at ? new Date(data.responded_at) : undefined,
         resolvedAt: data.resolved_at ? new Date(data.resolved_at) : undefined,
@@ -332,6 +353,12 @@ export async function syncFinixDataFromWebhookEvent(
 
   if ((entity === "FUNDING_TRANSFER_ATTEMPT" || entity === "FUNDING_INSTRUMENT") && data?.id) {
     const churchId = await resolveChurchIdForMerchant(data.merchant);
+
+    // data.settlement is not a confirmed field name (see syncPayouts.ts) — guard the FK
+    // with a stub row rather than assuming it's always a real, already-synced settlement.
+    if (data.settlement) {
+      await ensureSettlementStub(data.settlement, churchId);
+    }
 
     await prisma.finixFundingTransferAttempt.upsert({
       where: { finixFundingTransferAttemptId: data.id },

@@ -431,6 +431,13 @@ model FinixFee {
   updatedAtFinix  DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  // Populated from linkedToId/linkedToType (kept as-is — Finix fees can link to
+  // entities beyond settlements) when linkedToType === "SETTLEMENT".
+  settlementId String?
+  settlement   FinixSettlement? @relation("SettlementFees", fields: [settlementId], references: [finixSettlementId])
+
+  @@index([settlementId])
 }
 
 model FinixSettlement {
@@ -453,6 +460,13 @@ model FinixSettlement {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   lastSyncedAt       DateTime?
+  tagsJson           Json?
+
+  fees     FinixFee[]                    @relation("SettlementFees")
+  deposits FinixFundingTransferAttempt[] @relation("SettlementDeposits")
+
+  @@index([churchId])
+  @@index([state])
 }
 
 model FinixFundingTransferAttempt {
@@ -477,6 +491,17 @@ model FinixFundingTransferAttempt {
   createdAt                     DateTime  @default(now())
   updatedAt                     DateTime  @updatedAt
   lastSyncedAt                  DateTime?
+  tagsJson                      Json?
+  // "confirmed" | "inferred" — Finix has no documented field confirming the
+  // settlement<->deposit link today (see syncPayouts.ts); default to "inferred"
+  // until a real payout event verifies the field, don't assume "confirmed".
+  linkConfidence                String?   @default("inferred")
+
+  settlement FinixSettlement? @relation("SettlementDeposits", fields: [finixSettlementId], references: [finixSettlementId])
+
+  @@index([churchId])
+  @@index([finixSettlementId])
+  @@index([state])
 }
 
 model FinixDispute {
@@ -486,7 +511,9 @@ model FinixDispute {
   finixTransferId String?
   paymentId       String?
   finixMerchantId String?
-  state           String?
+  state           String? // legacy: historically held the mapped display status, not raw Finix state
+  processorState  String? // raw Finix state (PENDING/WON/LOST/EXPIRED), never overwritten
+  displayStatus   String? // WGC-mapped status for UI (pending/won/lost/expired/unknown)
   reason          String?
   amountCents     Int?
   currency        String?
@@ -500,6 +527,28 @@ model FinixDispute {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   lastSyncedAt    DateTime?
+  evidence        DisputeEvidence[]
+
+  @@index([churchId])
+  @@index([displayStatus])
+  @@index([evidenceDueAt])
+}
+
+model DisputeEvidence {
+  id              String    @id @default(cuid())
+  disputeId       String
+  dispute         FinixDispute @relation(fields: [disputeId], references: [id])
+  churchId        String?
+  uploadedByEmail String?
+  fileName        String
+  fileSize        Int
+  mimeType        String
+  finixFileId     String?
+  submittedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([disputeId])
+  @@index([churchId])
 }
 
 model FinixPaymentInstrumentSnapshot {
@@ -689,13 +738,63 @@ model User {
   id                        String    @id @default(cuid())
   email                     String    @unique
   passwordHash              String?
-  role                      String // "wgc_admin" | "church_admin"
+  // "wgc_admin" (internal ops, unrelated axis, gated separately via Basic Auth on /admin) |
+  // "church_owner" | "church_admin" | "finance_admin" | "giving_manager" | "viewer" | "reporting_user"
+  role                      String
   churchId                  String?
   setPasswordTokenHash      String?
   setPasswordTokenExpiresAt DateTime?
   lastLoginAt               DateTime?
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
+
+  @@index([churchId])
+}
+
+model DashboardAuditLog {
+  id          String   @id @default(cuid())
+  churchId    String
+  actorUserId String?
+  actorEmail  String?
+  actorRole   String?
+  action      String // "dispute.evidence_submitted" | "export.disputes_csv" | "backfill.church_sync" | ...
+  entityType  String?
+  entityId    String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([churchId, createdAt])
+  @@index([entityType, entityId])
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  churchId    String
+  userId      String? // null = broadcast to all eligible users of the church
+  type        String // "dispute.new" | "dispute.evidence_required" | "dispute.deadline" | "dispute.won" | "dispute.lost"
+  // | "settlement.finalized" | "settlement.failed" | "settlement.adjusted"
+  // | "deposit.scheduled" | "deposit.completed" | "deposit.failed" | "deposit.returned"
+  entityType  String?
+  entityId    String?
+  title       String
+  body        String?
+  readAt      DateTime?
+  emailSentAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([churchId, userId, readAt])
+}
+
+model NotificationPreference {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  // { "dispute.new": {email:false,inApp:true}, ... } — opt-out-by-default: a missing key
+  // means the notification type is enabled on all channels.
+  prefsJson Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model FinixAuthorization {

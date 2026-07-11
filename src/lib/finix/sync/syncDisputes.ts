@@ -27,7 +27,12 @@ export async function syncDisputes(finixMerchantId: string, churchId?: string) {
         churchId: churchId ?? null,
         finixMerchantId,
         finixTransferId: dispute.transfer ?? null,
+        // `state` keeps its historical (mapped) value for backward compatibility with
+        // existing readers; processorState/displayStatus are the correct fields going
+        // forward — processorState is the raw Finix state, never overwritten.
         state: mapFinixDisputeStateToWgcStatus(dispute.state),
+        processorState: dispute.state ?? null,
+        displayStatus: mapFinixDisputeStateToWgcStatus(dispute.state),
         reason: dispute.reason ?? null,
         amountCents: dispute.amount ?? null,
         currency: dispute.currency ?? null,
@@ -38,6 +43,8 @@ export async function syncDisputes(finixMerchantId: string, churchId?: string) {
       },
       update: {
         state: mapFinixDisputeStateToWgcStatus(dispute.state),
+        processorState: dispute.state ?? null,
+        displayStatus: mapFinixDisputeStateToWgcStatus(dispute.state),
         rawJsonRedacted: redactFinixPayload(dispute),
         updatedAtFinix: dispute.updated_at ? new Date(dispute.updated_at) : null,
         lastSyncedAt: new Date(),
