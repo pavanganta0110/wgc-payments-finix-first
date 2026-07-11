@@ -6,6 +6,7 @@ import ClosePanelButton from "@/components/merchant/ClosePanelButton";
 import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { formatDateTime } from "@/lib/formatCentralTime";
+import { Row } from "@/components/merchant/detail/DetailDrawerPrimitives";
 
 export default async function DonorDetailPanel({
   donorId,
@@ -121,15 +122,6 @@ export default async function DonorDetailPanel({
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between text-sm py-1">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-semibold text-slate-700 text-right">{value}</span>
     </div>
   );
 }

@@ -6,6 +6,13 @@ const STATE_STYLES: Record<string, string> = {
   REFUNDED: "bg-amber-50 text-amber-700",
   PARTIALLY_REFUNDED: "bg-amber-50 text-amber-700",
   REFUND_PENDING: "bg-amber-50 text-amber-700",
+  // Disputes (FinixDispute.state / displayStatus)
+  WON: "bg-green-50 text-green-700",
+  LOST: "bg-red-50 text-red-700",
+  EXPIRED: "bg-slate-100 text-slate-600",
+  // Settlements
+  ACCRUING: "bg-amber-50 text-amber-700",
+  SETTLED: "bg-green-50 text-green-700",
 };
 
 export default function StateBadge({ state }: { state: string | null | undefined }) {

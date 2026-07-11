@@ -3,13 +3,21 @@ import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import { resolveDateRange } from "@/lib/dateRangePresets";
+import { buildCsvExport, csvResponse, type CsvColumn } from "@/lib/csvExport";
+import type { FinixDispute } from "@prisma/client";
 
-function csvEscape(value: string) {
-  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
+const COLUMNS: CsvColumn<FinixDispute>[] = [
+  { header: "ID", value: (d) => d.finixDisputeId },
+  { header: "Created", value: (d) => (d.createdAtFinix ? d.createdAtFinix.toISOString() : "") },
+  { header: "Payment ID", value: (d) => d.finixTransferId || "" },
+  { header: "Reason", value: (d) => d.reason || "" },
+  { header: "State", value: (d) => d.state || "UNKNOWN" },
+  { header: "Outcome", value: (d) => d.outcome || "" },
+  { header: "Evidence Due", value: (d) => (d.evidenceDueAt ? d.evidenceDueAt.toISOString() : "") },
+  { header: "Responded", value: (d) => (d.respondedAt ? d.respondedAt.toISOString() : "") },
+  { header: "Resolved", value: (d) => (d.resolvedAt ? d.resolvedAt.toISOString() : "") },
+  { header: "Amount", value: (d) => formatCents(d.amountCents ?? 0) },
+];
 
 export async function GET(req: Request) {
   const session = await getSession();
@@ -35,41 +43,6 @@ export async function GET(req: Request) {
     orderBy: { createdAtFinix: "desc" },
   });
 
-  const header = [
-    "ID",
-    "Created",
-    "Payment ID",
-    "Reason",
-    "State",
-    "Outcome",
-    "Evidence Due",
-    "Responded",
-    "Resolved",
-    "Amount",
-  ];
-  const lines = [header.join(",")];
-
-  for (const d of disputes) {
-    lines.push(
-      [
-        csvEscape(d.finixDisputeId),
-        csvEscape(d.createdAtFinix ? d.createdAtFinix.toISOString() : ""),
-        csvEscape(d.finixTransferId || ""),
-        csvEscape(d.reason || ""),
-        csvEscape(d.state || "UNKNOWN"),
-        csvEscape(d.outcome || ""),
-        csvEscape(d.evidenceDueAt ? d.evidenceDueAt.toISOString() : ""),
-        csvEscape(d.respondedAt ? d.respondedAt.toISOString() : ""),
-        csvEscape(d.resolvedAt ? d.resolvedAt.toISOString() : ""),
-        csvEscape(formatCents(d.amountCents ?? 0)),
-      ].join(",")
-    );
-  }
-
-  return new NextResponse(lines.join("\n"), {
-    headers: {
-      "Content-Type": "text/csv",
-      "Content-Disposition": `attachment; filename="disputes.csv"`,
-    },
-  });
+  const csv = buildCsvExport(disputes, COLUMNS);
+  return csvResponse(csv, "disputes.csv");
 }
