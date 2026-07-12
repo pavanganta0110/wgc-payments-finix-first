@@ -4,6 +4,9 @@ import { loadDonorRiskSignals } from "@/lib/donors/donorRiskSignals";
 import { resolveDonorDisplayStatus, resolveDonorNeedsAttentionReasons, type DonorDisplayStatus } from "@/lib/donors/donorStatus";
 import { DONOR_CANDIDATE_CAP } from "@/lib/donors/donorsList";
 import { formatPersonName } from "@/lib/formatPersonName";
+import { startOfDayCentral } from "@/lib/formatDateTimeCDT";
+
+const CENTRAL_TIME_ZONE = "America/Chicago";
 
 export interface NewVsReturning {
   newCount: number;
@@ -176,7 +179,7 @@ export async function loadDonorAnalyticsExtended(
     instrumentIds.length
       ? prisma.finixTransfer.findMany({
           where: { churchId, finixPaymentInstrumentId: { in: instrumentIds }, state: "SUCCEEDED", ...(dateFilter ? { createdAtFinix: dateFilter } : {}) },
-          select: { finixPaymentInstrumentId: true, amountCents: true },
+          select: { finixPaymentInstrumentId: true, amountCents: true, createdVia: true },
         })
       : Promise.resolve([]),
     instrumentIds.length
@@ -192,7 +195,11 @@ export async function loadDonorAnalyticsExtended(
   const oneTimeDonors = new Set<string>();
   const recurringDonors = new Set<string>();
   for (const t of transfers) {
-    const isRecurring = t.finixPaymentInstrumentId ? instrumentsWithSubscription.has(t.finixPaymentInstrumentId) : false;
+    // Exact signal when available: Finix's own createdVia === "SUBSCRIPTION"
+    // confirms this specific transfer was a subscription billing charge.
+    // Only falls back to the instrument-has-a-subscription approximation
+    // for older transfers synced before this field was captured.
+    const isRecurring = t.createdVia ? t.createdVia === "SUBSCRIPTION" : t.finixPaymentInstrumentId ? instrumentsWithSubscription.has(t.finixPaymentInstrumentId) : false;
     const donorId = t.finixPaymentInstrumentId ? instrumentToDonor.get(t.finixPaymentInstrumentId) : undefined;
     if (isRecurring) {
       recurringAmountCents += t.amountCents ?? 0;
@@ -233,4 +240,96 @@ export async function loadDonorAnalyticsExtended(
     attentionList: attentionList.slice(0, 10),
     candidateCapReached: candidates.length === DONOR_CANDIDATE_CAP,
   };
+}
+
+export interface DonorGrowthPoint {
+  period: string;
+  newDonors: number;
+  returningDonors: number;
+  totalActiveDonors: number;
+}
+
+/**
+ * Uses each donor's true first-ever successful donation date (across all
+ * time, not just the selected window) to classify New vs Returning per
+ * bucket — a donor whose first gift was years ago and gave again this
+ * period is returning, never new, even though this is the only donation of
+ * theirs inside the window. totalActiveDonors is the count of distinct
+ * donors who gave in that specific bucket (not a running/cumulative total).
+ */
+export async function loadDonorGrowth(
+  churchId: string,
+  dateFilter: DateRangeFilter | undefined,
+  granularity: "daily" | "weekly" | "monthly",
+): Promise<DonorGrowthPoint[]> {
+  const instruments = await prisma.finixPaymentInstrumentSnapshot.findMany({
+    where: { churchId, donorId: { not: null } },
+    select: { finixPaymentInstrumentId: true, donorId: true },
+  });
+  const instrumentToDonor = new Map(instruments.map((i) => [i.finixPaymentInstrumentId, i.donorId!]));
+  const instrumentIds = [...instrumentToDonor.keys()];
+  if (instrumentIds.length === 0) return [];
+
+  // All-time transfers (not date-filtered) — needed to compute each donor's
+  // true first-ever donation date, independent of the selected window.
+  const allTransfers = await prisma.finixTransfer.findMany({
+    where: { churchId, finixPaymentInstrumentId: { in: instrumentIds }, state: "SUCCEEDED" },
+    select: { finixPaymentInstrumentId: true, createdAtFinix: true },
+  });
+
+  const firstDonationByDonor = new Map<string, number>();
+  for (const t of allTransfers) {
+    const donorId = t.finixPaymentInstrumentId ? instrumentToDonor.get(t.finixPaymentInstrumentId) : undefined;
+    if (!donorId || !t.createdAtFinix) continue;
+    const ts = t.createdAtFinix.getTime();
+    if (!firstDonationByDonor.has(donorId) || ts < firstDonationByDonor.get(donorId)!) {
+      firstDonationByDonor.set(donorId, ts);
+    }
+  }
+
+  const windowTransfers = dateFilter
+    ? allTransfers.filter((t) => t.createdAtFinix && t.createdAtFinix >= dateFilter.gte && (!dateFilter.lte || t.createdAtFinix <= dateFilter.lte))
+    : allTransfers;
+
+  const bucketCount = granularity === "daily" ? 30 : granularity === "weekly" ? 12 : 12;
+  const stepDays = granularity === "daily" ? 1 : granularity === "weekly" ? 7 : 30;
+  const labelFormat: Intl.DateTimeFormatOptions =
+    granularity === "monthly" ? { month: "short", year: "2-digit" } : { month: "short", day: "numeric" };
+
+  const now = dateFilter?.lte ?? new Date();
+  const points: DonorGrowthPoint[] = [];
+
+  for (let i = bucketCount - 1; i >= 0; i--) {
+    const dayOffset = new Date(now);
+    dayOffset.setDate(now.getDate() - i * stepDays);
+    const periodStart = startOfDayCentral(dayOffset);
+    const periodEnd = new Date(periodStart);
+    periodEnd.setDate(periodEnd.getDate() + stepDays);
+
+    if (dateFilter?.gte && periodEnd < dateFilter.gte) continue;
+
+    const donorsInBucket = new Set<string>();
+    for (const t of windowTransfers) {
+      if (!t.createdAtFinix || t.createdAtFinix < periodStart || t.createdAtFinix >= periodEnd) continue;
+      const donorId = t.finixPaymentInstrumentId ? instrumentToDonor.get(t.finixPaymentInstrumentId) : undefined;
+      if (donorId) donorsInBucket.add(donorId);
+    }
+
+    let newDonors = 0;
+    let returningDonors = 0;
+    for (const donorId of donorsInBucket) {
+      const firstTs = firstDonationByDonor.get(donorId);
+      if (firstTs != null && firstTs >= periodStart.getTime() && firstTs < periodEnd.getTime()) newDonors += 1;
+      else returningDonors += 1;
+    }
+
+    points.push({
+      period: periodStart.toLocaleDateString("en-US", { ...labelFormat, timeZone: CENTRAL_TIME_ZONE }),
+      newDonors,
+      returningDonors,
+      totalActiveDonors: donorsInBucket.size,
+    });
+  }
+
+  return points;
 }

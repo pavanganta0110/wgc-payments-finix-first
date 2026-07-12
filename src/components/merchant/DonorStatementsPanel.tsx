@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import StateBadge from "@/components/merchant/StateBadge";
 import { formatCents } from "@/lib/format";
 import { formatDateTimeCDT } from "@/lib/formatDateTimeCDT";
+import StatementPreviewModal from "@/components/merchant/StatementPreviewModal";
 
 interface Statement {
   id: string;
@@ -19,16 +20,21 @@ interface Statement {
   recipientEmail: string | null;
   resendCount: number;
   supersededAt: string | null;
+  failureReason: string | null;
 }
 
 const currentYear = new Date().getFullYear();
 
 export default function DonorStatementsPanel({
   donorId,
+  donorName,
+  donorEmail,
   canGenerate,
   canSend,
 }: {
   donorId: string;
+  donorName: string;
+  donorEmail: string | null;
   canGenerate: boolean;
   canSend: boolean;
 }) {
@@ -36,6 +42,7 @@ export default function DonorStatementsPanel({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [year, setYear] = useState(currentYear - 1);
+  const [previewing, setPreviewing] = useState<Statement | null>(null);
 
   const load = async () => {
     try {
@@ -73,7 +80,7 @@ export default function DonorStatementsPanel({
     }
   };
 
-  const send = async (statementId: string) => {
+  const retrySend = async (statementId: string) => {
     setBusy(true);
     try {
       const res = await fetch(`/api/merchant/donors/${donorId}/statements/${statementId}/send`, { method: "POST" });
@@ -87,13 +94,6 @@ export default function DonorStatementsPanel({
       setBusy(false);
     }
   };
-
-  const latestByYear = new Map<number, Statement>();
-  for (const s of statements) {
-    if (!s.supersededAt && (!latestByYear.has(s.taxYear) || s.version > latestByYear.get(s.taxYear)!.version)) {
-      latestByYear.set(s.taxYear, s);
-    }
-  }
 
   return (
     <div>
@@ -118,36 +118,57 @@ export default function DonorStatementsPanel({
       ) : (
         <div className="space-y-3">
           {statements.map((s) => (
-            <div key={s.id} className="flex items-center justify-between border-b border-slate-50 last:border-0 pb-2 last:pb-0 text-sm">
-              <div>
-                <p className="font-semibold text-slate-800">
-                  {s.taxYear} · v{s.version} {s.supersededAt && <span className="text-xs text-slate-400">(superseded)</span>}
-                </p>
-                <p className="text-xs text-slate-500">
-                  {s.donationCount} donations · {formatCents(s.eligibleAmountCents)}
-                  {s.sentAt && ` · Sent ${formatDateTimeCDT(s.sentAt)}`}
-                  {s.resendCount > 0 && ` (resent ${s.resendCount}x)`}
-                </p>
+            <div key={s.id} className="border-b border-slate-50 last:border-0 pb-2 last:pb-0 text-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-slate-800">
+                    {s.taxYear} · v{s.version} {s.supersededAt && <span className="text-xs text-slate-400">(superseded)</span>}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {s.donationCount} donations · {formatCents(s.eligibleAmountCents)}
+                    {s.sentAt && ` · Sent ${formatDateTimeCDT(s.sentAt)}`}
+                    {s.resendCount > 0 && ` (resent ${s.resendCount}x)`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <StateBadge state={s.statementStatus} />
+                  <StateBadge state={s.deliveryStatus} />
+                  {!s.supersededAt && (
+                    <button onClick={() => setPreviewing(s)} className="text-xs font-semibold text-blue-600 hover:underline">
+                      Preview
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <StateBadge state={s.statementStatus} />
-                <StateBadge state={s.deliveryStatus} />
-                {!s.supersededAt && (
-                  <>
-                    <a href={`/api/merchant/donors/${donorId}/statements/${s.id}/download`} className="text-xs font-semibold text-blue-600 hover:underline">
-                      Download
-                    </a>
-                    {canSend && s.statementStatus !== "NEEDS_REVIEW" && (
-                      <button onClick={() => send(s.id)} disabled={busy} className="text-xs font-semibold text-blue-600 hover:underline">
-                        {s.sentAt ? "Resend" : "Send"}
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
+              {s.deliveryStatus === "FAILED" && canSend && !s.supersededAt && (
+                <div className="mt-1 flex items-center gap-2 bg-red-50 rounded-lg px-2 py-1.5">
+                  <p className="text-xs text-red-700 flex-1">
+                    Delivery failed{s.failureReason ? `: ${s.failureReason}` : ""}.
+                  </p>
+                  <button onClick={() => retrySend(s.id)} disabled={busy} className="text-xs font-semibold text-red-700 hover:underline shrink-0">
+                    Retry Send
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
+      )}
+
+      {previewing && (
+        <StatementPreviewModal
+          donorId={donorId}
+          statementId={previewing.id}
+          donorName={donorName}
+          donorEmail={donorEmail}
+          taxYear={previewing.taxYear}
+          donationCount={previewing.donationCount}
+          recordedTotalCents={previewing.eligibleAmountCents}
+          version={previewing.version}
+          canSend={canSend && previewing.statementStatus !== "NEEDS_REVIEW"}
+          onClose={() => setPreviewing(null)}
+          onSent={load}
+        />
       )}
     </div>
   );

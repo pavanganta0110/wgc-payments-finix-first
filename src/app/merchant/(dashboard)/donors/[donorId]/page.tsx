@@ -325,7 +325,13 @@ async function OverviewTab({ churchId, donor, aggregates, instruments, notes, ca
           <DonorNotesList donorId={donor.id} initialNotes={notes} editable={canAddNote} limit={3} />
         </Card>
         <Card title="Year-End Donation Statements">
-          <DonorStatementsPanel donorId={donor.id} canGenerate={canGenerateStatements} canSend={canSendStatements} />
+          <DonorStatementsPanel
+            donorId={donor.id}
+            donorName={donor.anonymousPreference ? "Anonymous Donor" : formatPersonName(donor.name)}
+            donorEmail={donor.email}
+            canGenerate={canGenerateStatements}
+            canSend={canSendStatements}
+          />
         </Card>
       </div>
     </div>

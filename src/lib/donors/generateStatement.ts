@@ -5,8 +5,9 @@ import { YearEndStatementPdf } from "@/lib/donors/pdf/YearEndStatementPdf";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { isValidEmail } from "@/lib/donors/donorContact";
 import { sendWgcEmail } from "@/lib/email";
+import { DEFAULT_THANK_YOU_MESSAGE, STATEMENT_DISCLAIMER, resolveStatementPdfSettings } from "@/lib/donors/generateStatementDefaults";
 
-export const DEFAULT_THANK_YOU_MESSAGE = "Thank you for your generosity this year — your support makes a real difference.";
+export { DEFAULT_THANK_YOU_MESSAGE };
 
 export interface GeneratedStatement {
   statementId: string;
@@ -101,7 +102,7 @@ export async function generateYearEndStatement(
       reference: l.reference,
       fundOrCampaignName: l.fundName,
       grossAmountCents: l.grossAmountCents,
-      donorCoveredFeeCents: 0,
+      donorCoveredFeeCents: l.donorCoveredFeeCents,
       refundedAmountCents: l.refundedAmountCents,
       returnedAmountCents: l.returnedAmountCents,
       disputeAdjustmentCents: 0,
@@ -121,6 +122,7 @@ export async function renderStatementPdf(statementId: string, churchId: string):
   const church = await prisma.church.findUnique({ where: { id: churchId } });
 
   const orgAddress = statement.organizationAddressSnapshot as any;
+  const settings = resolveStatementPdfSettings(church);
 
   const buffer = await renderToBuffer(
     YearEndStatementPdf({
@@ -128,6 +130,7 @@ export async function renderStatementPdf(statementId: string, churchId: string):
       organizationAddress: orgAddress?.formatted ?? null,
       organizationEmail: church?.primaryContactEmail ?? null,
       organizationPhone: church?.phone ?? null,
+      organizationTaxId: settings.organizationTaxId,
       donorName: statement.donorNameSnapshot || "Donor",
       donorEmail: statement.donorEmailSnapshot,
       taxYear: statement.taxYear,
@@ -136,17 +139,20 @@ export async function renderStatementPdf(statementId: string, churchId: string):
       refundedAmountCents: statement.refundedAmountCents,
       returnedAmountCents: statement.returnedAmountCents,
       recordedTotalCents: statement.eligibleAmountCents,
+      showDonorCoveredFees: settings.showDonorCoveredFees,
       lines: lines.map((l) => ({
         donationDate: l.donationDate!,
         reference: l.reference || "",
         fundName: l.fundOrCampaignName,
         grossAmountCents: l.grossAmountCents,
+        donorCoveredFeeCents: l.donorCoveredFeeCents,
         refundedAmountCents: l.refundedAmountCents,
         returnedAmountCents: l.returnedAmountCents,
         finalRecordedAmountCents: l.eligibleAmountCents,
         paymentMethodLabel: "",
       })),
-      thankYouMessage: DEFAULT_THANK_YOU_MESSAGE,
+      thankYouMessage: settings.thankYouMessage,
+      disclaimer: settings.disclaimer,
       generatedAt: statement.generatedAt || statement.createdAt,
     }),
   );
@@ -174,11 +180,15 @@ export async function sendYearEndStatementEmail(statementId: string, churchId: s
   const church = await prisma.church.findUnique({ where: { id: churchId } });
   const pdf = await renderStatementPdf(statementId, churchId);
   const donorName = donor.anonymousPreference ? "Anonymous Donor" : formatPersonName(donor.name);
-  const orgName = church?.name || statement.organizationNameSnapshot || "Organization";
+  const orgName = church?.statementSenderName || church?.name || statement.organizationNameSnapshot || "Organization";
+
+  const subject = church?.statementSubjectTemplate
+    ? church.statementSubjectTemplate.replace(/\[YEAR\]/g, String(statement.taxYear)).replace(/\[Organization Name\]/gi, orgName)
+    : `Your ${statement.taxYear} Year-End Donation Statement from ${orgName}`;
 
   const result = await sendWgcEmail({
     to: donor.email,
-    subject: `Your ${statement.taxYear} Year-End Donation Statement from ${orgName}`,
+    subject,
     title: `${statement.taxYear} Year-End Donation Statement`,
     badgeText: "Donation Statement",
     badgeColor: "#0B5DBC",

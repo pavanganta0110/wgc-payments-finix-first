@@ -1,7 +1,7 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { STATEMENT_DISCLAIMER } from "@/lib/donors/generateStatementDefaults";
 
-export const STATEMENT_DISCLAIMER =
-  "This statement summarizes donations recorded by the organization during the selected year. It is provided for record-keeping purposes only and does not constitute tax advice. Donors should consult a qualified tax professional regarding their individual circumstances.";
+export { STATEMENT_DISCLAIMER };
 
 const styles = StyleSheet.create({
   page: { padding: 36, fontSize: 10, fontFamily: "Helvetica" },
@@ -40,6 +40,7 @@ export interface StatementPdfProps {
   organizationAddress: string | null;
   organizationEmail: string | null;
   organizationPhone: string | null;
+  organizationTaxId: string | null;
   donorName: string;
   donorEmail: string | null;
   taxYear: number;
@@ -48,17 +49,20 @@ export interface StatementPdfProps {
   refundedAmountCents: number;
   returnedAmountCents: number;
   recordedTotalCents: number;
+  showDonorCoveredFees: boolean;
   lines: {
     donationDate: Date;
     reference: string;
     fundName: string | null;
     grossAmountCents: number;
+    donorCoveredFeeCents: number;
     refundedAmountCents: number;
     returnedAmountCents: number;
     finalRecordedAmountCents: number;
     paymentMethodLabel: string;
   }[];
   thankYouMessage: string;
+  disclaimer: string;
   generatedAt: Date;
 }
 
@@ -72,6 +76,7 @@ export function YearEndStatementPdf(props: StatementPdfProps) {
           <Text style={{ color: "#64748b" }}>
             {[props.organizationEmail, props.organizationPhone].filter(Boolean).join(" · ")}
           </Text>
+          {props.organizationTaxId && <Text style={{ color: "#94a3b8", fontSize: 8 }}>Tax ID: {props.organizationTaxId}</Text>}
           <Text style={styles.title}>Year-End Donation Statement — {props.taxYear}</Text>
         </View>
 
@@ -87,6 +92,12 @@ export function YearEndStatementPdf(props: StatementPdfProps) {
           <View style={styles.row}><Text style={styles.label}>Gross Donated</Text><Text style={styles.value}>{formatCents(props.grossDonatedCents)}</Text></View>
           <View style={styles.row}><Text style={styles.label}>Refunded</Text><Text style={styles.value}>{formatCents(props.refundedAmountCents)}</Text></View>
           <View style={styles.row}><Text style={styles.label}>ACH Returned</Text><Text style={styles.value}>{formatCents(props.returnedAmountCents)}</Text></View>
+          {props.showDonorCoveredFees && (
+            <View style={styles.row}>
+              <Text style={styles.label}>Donor-Covered Processing Fees</Text>
+              <Text style={styles.value}>{formatCents(props.lines.reduce((s, l) => s + l.donorCoveredFeeCents, 0))}</Text>
+            </View>
+          )}
           <View style={styles.row}><Text style={styles.label}>Recorded Annual Total</Text><Text style={styles.value}>{formatCents(props.recordedTotalCents)}</Text></View>
         </View>
 
@@ -120,7 +131,7 @@ export function YearEndStatementPdf(props: StatementPdfProps) {
 
         {props.thankYouMessage && <Text style={{ marginTop: 8 }}>{props.thankYouMessage}</Text>}
 
-        <Text style={styles.disclaimer}>{STATEMENT_DISCLAIMER}</Text>
+        <Text style={styles.disclaimer}>{props.disclaimer}</Text>
 
         <Text style={styles.footer} fixed>
           Generated {formatDate(props.generatedAt)}

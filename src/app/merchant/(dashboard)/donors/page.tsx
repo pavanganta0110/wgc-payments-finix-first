@@ -10,15 +10,17 @@ import DonorDetailPanel from "@/components/merchant/DonorDetailPanel";
 import DonorsFilterBar from "@/components/merchant/DonorsFilterBar";
 import DonorRowActions from "@/components/merchant/DonorRowActions";
 import AddDonorButton from "@/components/merchant/AddDonorButton";
+import ImportDonorsButton from "@/components/merchant/ImportDonorsButton";
 import Pagination from "@/components/merchant/Pagination";
 import DonationTrendChart from "@/components/merchant/DonationTrendChart";
+import DonorGrowthChart from "@/components/merchant/DonorGrowthChart";
 import TopDonorsCard from "@/components/merchant/TopDonorsCard";
 import { formatDateCDT, formatTimeCDT } from "@/lib/formatDateTimeCDT";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { loadDonorsList, type DonorsListSort } from "@/lib/donors/donorsList";
 import { loadDonorSummary } from "@/lib/donors/donorSummary";
 import { loadDonationTrend, loadTopDonors, type TopDonorMetric } from "@/lib/donors/donorAnalytics";
-import { loadDonorAnalyticsExtended } from "@/lib/donors/donorAnalyticsExtended";
+import { loadDonorAnalyticsExtended, loadDonorGrowth } from "@/lib/donors/donorAnalyticsExtended";
 import { loadDonorPaymentMethodMix } from "@/lib/donors/donorBreakdowns";
 import { prisma } from "@/lib/prisma";
 import DonorAnalyticsExtras from "@/components/merchant/DonorAnalyticsExtras";
@@ -107,6 +109,7 @@ export default async function DonorsPage({
     previousPeriodFilter = { gte: new Date(dateFilter.gte.getTime() - spanMs), lte: new Date(dateFilter.gte.getTime() - 1) };
   }
   const extended = await loadDonorAnalyticsExtended(churchId, dateFilter, previousPeriodFilter);
+  const growth = await loadDonorGrowth(churchId, dateFilter, "weekly");
   const orgInstruments = await prisma.finixPaymentInstrumentSnapshot.findMany({
     where: { churchId, donorId: { not: null } },
     select: { finixPaymentInstrumentId: true },
@@ -157,7 +160,8 @@ export default async function DonorsPage({
           Annual Donation Statements
         </Link>
         {permissions.canEdit && (
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <ImportDonorsButton />
             <AddDonorButton />
           </div>
         )}
@@ -183,7 +187,22 @@ export default async function DonorsPage({
         <TopDonorsCard rows={topDonors.rows} metric={topMetric} />
       </div>
 
+      <div className="grid grid-cols-1 gap-4 mb-6">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+          <DonorGrowthChart data={growth} />
+        </div>
+      </div>
+
       <DonorAnalyticsExtras extended={extended} paymentMethodMix={paymentMethodMix} />
+
+      <div className="flex justify-end mb-6">
+        <a
+          href={`/api/merchant/donors/analytics/export?${new URLSearchParams({ ...(sp.range ? { range: sp.range } : {}), ...(sp.from ? { from: sp.from } : {}), ...(sp.to ? { to: sp.to } : {}) }).toString()}`}
+          className="text-sm font-semibold text-blue-600 hover:underline"
+        >
+          Export Analytics Summary (CSV)
+        </a>
+      </div>
 
       <DonorsFilterBar exportHref="/api/merchant/donors/export" />
 

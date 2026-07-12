@@ -5,6 +5,7 @@ import Link from "next/link";
 import toast from "react-hot-toast";
 import { formatCents } from "@/lib/format";
 import StateBadge from "@/components/merchant/StateBadge";
+import StatementPreviewModal from "@/components/merchant/StatementPreviewModal";
 
 interface Row {
   donorId: string;
@@ -13,6 +14,7 @@ interface Row {
   donationCount: number;
   recordedTotalCents: number;
   statementId: string | null;
+  statementVersion: number;
   statementStatus: string;
   deliveryStatus: string;
   generatedAt: string | null;
@@ -32,18 +34,50 @@ interface Summary {
 
 const currentYear = new Date().getFullYear();
 
+interface Filters {
+  statementStatus: string;
+  deliveryStatus: string;
+  name: string;
+  missing: boolean;
+  minAmount: string;
+}
+
+const EMPTY_FILTERS: Filters = { statementStatus: "", deliveryStatus: "", name: "", missing: false, minAmount: "" };
+
+interface BulkJob {
+  id: string;
+  jobType: "GENERATE" | "SEND";
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+  totalCount: number;
+  processedCount: number;
+  succeededCount: number;
+  failedCount: number;
+  needsReviewCount: number;
+  skippedCount: number;
+}
+
 export default function AnnualStatementsClient() {
   const [year, setYear] = useState(currentYear - 1);
   const [rows, setRows] = useState<Row[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [previewing, setPreviewing] = useState<Row | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [nameInput, setNameInput] = useState("");
+  const [job, setJob] = useState<BulkJob | null>(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/merchant/donors/annual-statements?year=${year}`);
+      const params = new URLSearchParams({ year: String(year) });
+      if (filters.statementStatus) params.set("statementStatus", filters.statementStatus);
+      if (filters.deliveryStatus) params.set("deliveryStatus", filters.deliveryStatus);
+      if (filters.name) params.set("name", filters.name);
+      if (filters.missing) params.set("missing", "1");
+      if (filters.minAmount) params.set("minAmount", filters.minAmount);
+      const res = await fetch(`/api/merchant/donors/annual-statements?${params.toString()}`);
       const data = await res.json();
       setRows(data.rows ?? []);
       setSummary(data.summary ?? null);
@@ -58,7 +92,15 @@ export default function AnnualStatementsClient() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [year]);
+  }, [year, filters]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (nameInput !== filters.name) setFilters((f) => ({ ...f, name: nameInput }));
+    }, 400);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nameInput]);
 
   const toggleAll = () => {
     if (selected.size === rows.length) setSelected(new Set());
@@ -91,24 +133,46 @@ export default function AnnualStatementsClient() {
     }
   };
 
-  const generateAllEligible = async () => {
-    setSelected(new Set(rows.map((r) => r.donorId)));
+  /** Runs a job to completion by repeatedly calling the "process one chunk" route — no persistent background worker exists, so the browser tab drives progress while state lives in BulkStatementJob and survives a reload. */
+  const runJob = async (jobType: "GENERATE" | "SEND", targetIds: string[]) => {
+    if (targetIds.length === 0) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/merchant/donors/annual-statements/generate", {
+      const createRes = await fetch("/api/merchant/donors/annual-statements/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taxYear: year, donorIds: rows.map((r) => r.donorId) }),
+        body: JSON.stringify({ taxYear: year, jobType, targetIds }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to generate");
-      toast.success(`Generated ${data.generated} statement(s)`);
+      const createData = await createRes.json();
+      if (!createRes.ok) throw new Error(createData.error || "Failed to start job");
+      let current: BulkJob = createData.job;
+      setJob(current);
+
+      while (current.status === "PENDING" || current.status === "RUNNING") {
+        const stepRes = await fetch(`/api/merchant/donors/annual-statements/jobs/${current.id}/process`, { method: "POST" });
+        const stepData = await stepRes.json();
+        if (!stepRes.ok) throw new Error(stepData.error || "Job failed");
+        current = stepData.job;
+        setJob(current);
+      }
+
+      if (jobType === "GENERATE") {
+        toast.success(`Generated ${current.succeededCount} statement(s)${current.needsReviewCount ? ` (${current.needsReviewCount} need review)` : ""}${current.failedCount ? `, ${current.failedCount} failed` : ""}`);
+      } else {
+        toast.success(`Sent ${current.succeededCount}${current.failedCount ? `, ${current.failedCount} failed` : ""}${current.skippedCount ? `, ${current.skippedCount} need review` : ""}`);
+      }
       await load();
     } catch (err: any) {
-      toast.error(err.message || "Failed to generate statements");
+      toast.error(err.message || "Job failed");
     } finally {
       setBusy(false);
+      setJob(null);
     }
+  };
+
+  const generateAllEligible = async () => {
+    setSelected(new Set(rows.map((r) => r.donorId)));
+    await runJob("GENERATE", rows.map((r) => r.donorId));
   };
 
   const sendSelected = async () => {
@@ -118,22 +182,7 @@ export default function AnnualStatementsClient() {
       return;
     }
     if (!window.confirm(`Send ${statementIds.length} statement(s) by email? This cannot be undone.`)) return;
-    setBusy(true);
-    try {
-      const res = await fetch("/api/merchant/donors/annual-statements/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ statementIds }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to send");
-      toast.success(`Sent ${data.sent}${data.failed ? `, ${data.failed} failed` : ""}${data.skippedNeedsReview ? `, ${data.skippedNeedsReview} need review` : ""}`);
-      await load();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to send statements");
-    } finally {
-      setBusy(false);
-    }
+    await runJob("SEND", statementIds);
   };
 
   const generateOne = async (donorId: string) => {
@@ -155,21 +204,6 @@ export default function AnnualStatementsClient() {
     }
   };
 
-  const sendOne = async (donorId: string, statementId: string) => {
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/merchant/donors/${donorId}/statements/${statementId}/send`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to send");
-      toast.success(`Sent to ${data.recipientEmail}`);
-      await load();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to send statement");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
@@ -184,22 +218,76 @@ export default function AnnualStatementsClient() {
 
       {summary && (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
-          {[
-            ["Eligible Donors", summary.eligibleDonors],
-            ["Statements Generated", summary.statementsGenerated],
-            ["Statements Sent", summary.statementsSent],
-            ["Pending Review", summary.statementsPendingReview],
-            ["Missing Email", summary.missingEmail],
-            ["Failed Delivery", summary.failedDelivery],
-            ["Total Recorded", formatCents(summary.totalRecordedDonationsCents)],
-          ].map(([label, value]) => (
-            <div key={label as string} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-3">
+          {(
+            [
+              ["Eligible Donors", summary.eligibleDonors, null],
+              ["Statements Generated", summary.statementsGenerated, null],
+              ["Statements Sent", summary.statementsSent, { deliveryStatus: "SENT" }],
+              ["Pending Review", summary.statementsPendingReview, { statementStatus: "NEEDS_REVIEW" }],
+              ["Missing Email", summary.missingEmail, { missing: true }],
+              ["Failed Delivery", summary.failedDelivery, { deliveryStatus: "FAILED" }],
+              ["Total Recorded", formatCents(summary.totalRecordedDonationsCents), null],
+            ] as [string, string | number, Partial<Filters> | null][]
+          ).map(([label, value, filterPatch]) => (
+            <button
+              key={label}
+              onClick={() => filterPatch && setFilters({ ...EMPTY_FILTERS, ...filterPatch })}
+              disabled={!filterPatch}
+              className={`bg-white rounded-2xl border shadow-sm p-3 text-left ${
+                filterPatch ? "border-slate-100 hover:border-slate-300 cursor-pointer" : "border-slate-100 cursor-default"
+              }`}
+            >
               <p className="text-xs text-slate-500 mb-1">{label}</p>
               <p className="text-lg font-bold text-slate-900">{value}</p>
-            </div>
+            </button>
           ))}
         </div>
       )}
+
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <select value={filters.statementStatus} onChange={(e) => setFilters((f) => ({ ...f, statementStatus: e.target.value }))} className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm outline-none">
+          <option value="">Any Statement Status</option>
+          <option value="NOT_GENERATED">Not Generated</option>
+          <option value="NEEDS_REVIEW">Needs Review</option>
+          <option value="READY">Ready</option>
+          <option value="GENERATED">Generated</option>
+        </select>
+        <select value={filters.deliveryStatus} onChange={(e) => setFilters((f) => ({ ...f, deliveryStatus: e.target.value }))} className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm outline-none">
+          <option value="">Any Delivery Status</option>
+          <option value="NOT_SENT">Not Sent</option>
+          <option value="SENT">Sent</option>
+          <option value="FAILED">Failed</option>
+        </select>
+        <input
+          type="text"
+          placeholder="Donor name"
+          value={nameInput}
+          onChange={(e) => setNameInput(e.target.value)}
+          className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm outline-none w-40"
+        />
+        <input
+          type="text"
+          placeholder="Min amount ($)"
+          value={filters.minAmount}
+          onChange={(e) => setFilters((f) => ({ ...f, minAmount: e.target.value }))}
+          className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm outline-none w-32"
+        />
+        <label className="flex items-center gap-1.5 text-sm text-slate-700">
+          <input type="checkbox" checked={filters.missing} onChange={(e) => setFilters((f) => ({ ...f, missing: e.target.checked }))} />
+          Missing information only
+        </label>
+        {(filters.statementStatus || filters.deliveryStatus || filters.name || filters.missing || filters.minAmount) && (
+          <button
+            onClick={() => {
+              setFilters(EMPTY_FILTERS);
+              setNameInput("");
+            }}
+            className="text-sm font-semibold text-slate-500 hover:text-slate-800"
+          >
+            Clear Filters
+          </button>
+        )}
+      </div>
 
       <div className="flex items-center gap-2 mb-4">
         <button onClick={generateSelected} disabled={busy || selected.size === 0} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50">
@@ -212,6 +300,23 @@ export default function AnnualStatementsClient() {
           Send to Selected
         </button>
       </div>
+
+      {job && (
+        <div className="mb-4 bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+          <div className="flex items-center justify-between mb-2 text-sm">
+            <span className="font-semibold text-slate-800">
+              {job.jobType === "GENERATE" ? "Generating" : "Sending"} statements — {job.processedCount} of {job.totalCount}
+            </span>
+            <span className="text-slate-400">{job.status}</span>
+          </div>
+          <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+            <div
+              className="h-full bg-slate-900 transition-all"
+              style={{ width: `${job.totalCount ? Math.round((job.processedCount / job.totalCount) * 100) : 0}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
         {loading ? (
@@ -254,14 +359,7 @@ export default function AnnualStatementsClient() {
                       {!r.statementId ? (
                         <button onClick={() => generateOne(r.donorId)} disabled={busy} className="text-xs font-semibold text-blue-600 hover:underline">Generate</button>
                       ) : (
-                        <>
-                          <a href={`/api/merchant/donors/${r.donorId}/statements/${r.statementId}/download`} className="text-xs font-semibold text-blue-600 hover:underline">Download</a>
-                          {r.statementStatus !== "NEEDS_REVIEW" && (
-                            <button onClick={() => sendOne(r.donorId, r.statementId!)} disabled={busy} className="text-xs font-semibold text-blue-600 hover:underline">
-                              {r.sentAt ? "Resend" : "Send"}
-                            </button>
-                          )}
-                        </>
+                        <button onClick={() => setPreviewing(r)} className="text-xs font-semibold text-blue-600 hover:underline">Preview</button>
                       )}
                     </div>
                   </td>
@@ -271,6 +369,22 @@ export default function AnnualStatementsClient() {
           </table>
         )}
       </div>
+
+      {previewing && previewing.statementId && (
+        <StatementPreviewModal
+          donorId={previewing.donorId}
+          statementId={previewing.statementId}
+          donorName={previewing.donorName}
+          donorEmail={previewing.donorEmail}
+          taxYear={year}
+          donationCount={previewing.donationCount}
+          recordedTotalCents={previewing.recordedTotalCents}
+          version={previewing.statementVersion}
+          canSend={previewing.statementStatus !== "NEEDS_REVIEW"}
+          onClose={() => setPreviewing(null)}
+          onSent={load}
+        />
+      )}
     </div>
   );
 }

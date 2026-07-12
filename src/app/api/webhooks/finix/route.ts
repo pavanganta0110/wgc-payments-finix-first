@@ -190,6 +190,7 @@ export async function syncFinixDataFromWebhookEvent(
         traceId: data.trace_id ?? null,
         statementDescriptor: data.statement_descriptor ?? null,
         source,
+        createdVia: data.created_via ?? null,
         tagsJson: tags,
         rawJsonRedacted: redactFinixPayload(data),
         createdAtFinix: data.created_at ? new Date(data.created_at) : occurredAt,

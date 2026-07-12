@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { getDonorPermissions } from "@/lib/donors/donorPermissions";
-import { findEligibleDonorsForYear } from "@/lib/donors/yearEndStatements";
+import { findEligibleDonorsForYear, hasMissingStatementInfo } from "@/lib/donors/yearEndStatements";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { isValidEmail } from "@/lib/donors/donorContact";
 
@@ -37,7 +37,7 @@ export async function GET(req: Request) {
     const eligibility = eligibleByDonor.get(donor.id)!;
     const statement = statementByDonor.get(donor.id) ?? null;
     const name = donor.anonymousPreference ? "Anonymous Donor" : formatPersonName(donor.name);
-    const hasMissingInfo = !donor.email || !isValidEmail(donor.email) || (name === "—" && !donor.anonymousPreference);
+    const hasMissingInfo = hasMissingStatementInfo(donor, name, donor.anonymousPreference);
     return {
       donorId: donor.id,
       donorName: name,
@@ -48,6 +48,7 @@ export async function GET(req: Request) {
       returnedAmountCents: statement?.returnedAmountCents ?? null,
       recordedTotalCents: statement?.eligibleAmountCents ?? eligibility.recordedTotalCents,
       statementId: statement?.id ?? null,
+      statementVersion: statement?.version ?? 0,
       statementStatus: hasMissingInfo ? "NEEDS_REVIEW" : statement?.statementStatus ?? "NOT_GENERATED",
       deliveryStatus: statement?.deliveryStatus ?? "NOT_SENT",
       generatedAt: statement?.generatedAt ?? null,

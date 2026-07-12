@@ -22,15 +22,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ donorId:
     return NextResponse.json({ error: "Statement not found" }, { status: 404 });
   }
 
+  const { searchParams } = new URL(req.url);
+  const inline = searchParams.get("inline") === "1";
+
   try {
     const pdf = await renderStatementPdf(statementId, session.churchId);
 
+    // Preview (inline) requests are not logged as a download — they're a
+    // distinct, lighter-weight audit action so "how many times was this
+    // actually saved to disk" stays meaningful.
     await logDashboardAction({
       churchId: session.churchId,
       actorUserId: session.userId,
       actorEmail: session.email,
       actorRole: session.role,
-      action: "statement.downloaded",
+      action: inline ? "statement.previewed" : "statement.downloaded",
       entityType: "donor",
       entityId: donorId,
       metadata: { statementId },
@@ -40,7 +46,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ donorId:
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${statement.taxYear}-donation-statement.pdf"`,
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${statement.taxYear}-donation-statement.pdf"`,
       },
     });
   } catch (err: any) {

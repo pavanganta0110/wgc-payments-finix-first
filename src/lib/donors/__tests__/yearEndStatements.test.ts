@@ -1,4 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { hasMissingStatementInfo } from "@/lib/donors/yearEndStatements";
+
+describe("hasMissingStatementInfo", () => {
+  it("flags a donor with no email", () => {
+    expect(hasMissingStatementInfo({ email: null, name: "Jane Doe" }, "Jane Doe", false)).toBe(true);
+  });
+
+  it("flags a donor with an invalid email", () => {
+    expect(hasMissingStatementInfo({ email: "not-an-email", name: "Jane Doe" }, "Jane Doe", false)).toBe(true);
+  });
+
+  it("flags a non-anonymous donor with no resolvable display name", () => {
+    expect(hasMissingStatementInfo({ email: "jane@example.com", name: null }, "—", false)).toBe(true);
+  });
+
+  it("does not flag an anonymous donor for a missing display name", () => {
+    expect(hasMissingStatementInfo({ email: "jane@example.com", name: null }, "—", true)).toBe(false);
+  });
+
+  it("does not flag a donor with a valid email and resolvable name", () => {
+    expect(hasMissingStatementInfo({ email: "jane@example.com", name: "Jane Doe" }, "Jane Doe", false)).toBe(false);
+  });
+});
 
 function makePrismaMock(overrides: Record<string, any> = {}) {
   return {

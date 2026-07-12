@@ -216,31 +216,41 @@ model AuditLog {
 }
 
 model Church {
-  id                      String   @id @default(cuid())
-  name                    String
-  slug                    String   @unique
-  primaryContactEmail     String
-  onboardingApplicationId String?
-  finixMerchantId         String?
-  finixIdentityId         String?
-  finixApplicationId      String?
-  status                  String
+  id                            String   @id @default(cuid())
+  name                          String
+  slug                          String   @unique
+  primaryContactEmail           String
+  onboardingApplicationId       String?
+  finixMerchantId               String?
+  finixIdentityId               String?
+  finixApplicationId            String?
+  status                        String
   // Organization identity used on annual donation statements and the
   // organization profile — not required by onboarding/payments, so all
   // nullable. Intentionally not backfilled from OnboardingApplication:
   // Church.onboardingApplicationId isn't a dependable join, so these are
   // populated going forward via an explicit organization-profile edit.
-  addressLine1            String?
-  addressLine2            String?
-  city                    String?
-  state                   String?
-  postalCode              String?
-  country                 String?
-  logoUrl                 String?
-  taxId                   String?
-  phone                   String?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  addressLine1                  String?
+  addressLine2                  String?
+  city                          String?
+  state                         String?
+  postalCode                    String?
+  country                       String?
+  logoUrl                       String?
+  taxId                         String?
+  phone                         String?
+  // Year-End Donation Statement configuration (Settings -> Receipts &
+  // Annual Statements). All optional — generation falls back to sensible
+  // defaults (DEFAULT_THANK_YOU_MESSAGE, STATEMENT_DISCLAIMER) when unset.
+  statementSenderName           String?
+  statementReplyToEmail         String?
+  statementSubjectTemplate      String?
+  statementThankYouMessage      String?
+  statementDisclaimer           String?
+  statementShowDonorCoveredFees Boolean  @default(false)
+  statementShowTaxId            Boolean  @default(false)
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
 }
 
 model Donor {
@@ -495,6 +505,13 @@ model FinixTransfer {
   traceId                  String?
   statementDescriptor      String?
   source                   String? // "wgc_giving_page" | "finix_dashboard" | "unknown"
+  // Finix's own reported origin — confirmed real values include "SUBSCRIPTION",
+  // "PAYMENT_LINK", "VIRTUAL_TERMINAL", "UNKNOWN". This is the authoritative
+  // signal for "was this transfer a recurring-donation billing charge,"
+  // rather than inferring it from whether the payment instrument merely has
+  // a subscription attached (which a one-time gift on the same card would
+  // also match).
+  createdVia               String?
   tagsJson                 Json?
   rawJsonRedacted          Json?
   createdAtFinix           DateTime?
@@ -1084,6 +1101,36 @@ model AnnualDonationStatement {
   @@index([churchId])
   @@index([donorId])
   @@index([churchId, taxYear])
+}
+
+/// Background job for bulk statement generate/send. There is no persistent
+/// worker process in this app (serverless, no queue infra) — the client
+/// drives progress by repeatedly calling the "process one chunk" route while
+/// status is PENDING/RUNNING, and each call advances processedCount by one
+/// chunk. This is a real chunked-processing job (state lives in the DB and
+/// survives a page reload), not a UI-only fake progress bar.
+model BulkStatementJob {
+  id       String @id @default(cuid())
+  churchId String
+  taxYear  Int
+  jobType  String // GENERATE | SEND
+
+  targetIds  Json // donorIds for GENERATE, statementIds for SEND
+  totalCount Int
+
+  status String @default("PENDING") // PENDING | RUNNING | COMPLETED | FAILED
+
+  processedCount   Int @default(0)
+  succeededCount   Int @default(0)
+  failedCount      Int @default(0)
+  needsReviewCount Int @default(0)
+  skippedCount     Int @default(0)
+
+  createdByUserId String?
+  createdAt       DateTime  @default(now())
+  completedAt     DateTime?
+
+  @@index([churchId, status])
 }
 
 model AnnualDonationStatementLine {

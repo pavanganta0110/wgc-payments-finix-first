@@ -1,4 +1,10 @@
 import { prisma } from "@/lib/prisma";
+import { isValidEmail } from "@/lib/donors/donorContact";
+
+/** A statement can't be generated/sent with confidence until the donor has a valid email and a resolvable display name (anonymous donors are exempt from the name check by design). */
+export function hasMissingStatementInfo(donor: { email: string | null; name: string | null }, displayName: string, isAnonymous: boolean): boolean {
+  return !donor.email || !isValidEmail(donor.email) || (displayName === "—" && !isAnonymous);
+}
 
 /**
  * WGC does not calculate taxes and does not provide tax advice. This
@@ -13,6 +19,7 @@ export interface StatementLine {
   reference: string;
   fundName: string | null;
   grossAmountCents: number;
+  donorCoveredFeeCents: number;
   refundedAmountCents: number;
   returnedAmountCents: number;
   finalRecordedAmountCents: number;
@@ -77,7 +84,7 @@ export async function computeYearEndStatement(donorId: string, churchId: string,
       ? prisma.bankReturn.findMany({ where: { churchId, originalTransferId: { in: transferIds } }, select: { originalTransferId: true, amountCents: true } })
       : Promise.resolve([]),
     transferIds.length
-      ? prisma.payment.findMany({ where: { churchId, finixTransferId: { in: transferIds } }, select: { id: true, finixTransferId: true, fundId: true } })
+      ? prisma.payment.findMany({ where: { churchId, finixTransferId: { in: transferIds } }, select: { id: true, finixTransferId: true, fundId: true, feeCoveredCents: true } })
       : Promise.resolve([]),
   ]);
 
@@ -116,6 +123,7 @@ export async function computeYearEndStatement(donorId: string, churchId: string,
       reference: t.finixTransferId,
       fundName: payment?.fundId ? fundById.get(payment.fundId) ?? null : null,
       grossAmountCents: gross,
+      donorCoveredFeeCents: payment?.feeCoveredCents ?? 0,
       refundedAmountCents: refunded,
       returnedAmountCents: returned,
       finalRecordedAmountCents: final,

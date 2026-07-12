@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ArrowUpRight } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import SettingsForm from "@/components/merchant/SettingsForm";
@@ -34,6 +36,13 @@ export default async function SettingsPage() {
             No bank account on file yet. This was set during onboarding and updating it requires WGC support.
           </p>
         )}
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 max-w-xl">
+        <Link href="/merchant/settings/statements" className="flex items-center justify-between text-sm font-semibold text-slate-800 hover:text-blue-600">
+          Receipts &amp; Annual Statements
+          <ArrowUpRight className="w-4 h-4" />
+        </Link>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 max-w-xl">

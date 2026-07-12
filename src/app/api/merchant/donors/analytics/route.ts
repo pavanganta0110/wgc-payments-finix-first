@@ -4,7 +4,7 @@ import { getDonorPermissions } from "@/lib/donors/donorPermissions";
 import { resolveDateRange } from "@/lib/dateRangePresets";
 import { loadDonorSummary } from "@/lib/donors/donorSummary";
 import { loadDonationTrend, loadTopDonors, type TopDonorMetric } from "@/lib/donors/donorAnalytics";
-import { loadDonorAnalyticsExtended } from "@/lib/donors/donorAnalyticsExtended";
+import { loadDonorAnalyticsExtended, loadDonorGrowth } from "@/lib/donors/donorAnalyticsExtended";
 import { loadDonorPaymentMethodMix } from "@/lib/donors/donorBreakdowns";
 import { prisma } from "@/lib/prisma";
 
@@ -39,6 +39,7 @@ export async function GET(req: Request) {
   const trend = await loadDonationTrend(churchId, dateFilter, "weekly");
   const topDonors = await loadTopDonors(churchId, dateFilter, topDonorMetric, 10);
   const extended = await loadDonorAnalyticsExtended(churchId, dateFilter, previousPeriodFilter);
+  const growth = await loadDonorGrowth(churchId, dateFilter, "weekly");
 
   const allInstruments = await prisma.finixPaymentInstrumentSnapshot.findMany({
     where: { churchId, donorId: { not: null } },
@@ -59,6 +60,7 @@ export async function GET(req: Request) {
     retention: extended.retention,
     concentration: extended.concentration,
     attentionList: extended.attentionList,
+    growth,
     paymentMethodMix,
     candidateCapReached: extended.candidateCapReached,
   });
