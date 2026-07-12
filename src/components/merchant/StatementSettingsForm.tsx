@@ -35,7 +35,7 @@ export default function StatementSettingsForm({ initial }: { initial: Settings }
   const save = async () => {
     setSaving(true);
     try {
-      const res = await fetch("/api/merchant/settings/statements", {
+      const res = await fetch("/api/merchant/settings/annual-statements", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),

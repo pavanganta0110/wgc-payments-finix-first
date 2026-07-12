@@ -48,6 +48,17 @@ const STATE_STYLES: Record<string, string> = {
   OPENED: "bg-blue-50 text-blue-700",
   REVOKED: "bg-slate-100 text-slate-500",
   COMPLETING: "bg-amber-50 text-amber-700",
+  // Payment methods / verification / organization capability status
+  ENABLED: "bg-green-50 text-green-700",
+  DISABLED: "bg-slate-100 text-slate-500",
+  PENDING_APPROVAL: "bg-amber-50 text-amber-700",
+  REQUIRES_ACTION: "bg-red-50 text-red-700",
+  NOT_AVAILABLE: "bg-slate-100 text-slate-400",
+  VERIFIED: "bg-green-50 text-green-700",
+  REJECTED: "bg-red-50 text-red-700",
+  NOT_STARTED: "bg-slate-100 text-slate-400",
+  // Organization account status
+  LIMITED: "bg-amber-50 text-amber-700",
   // Annual statements
   NOT_GENERATED: "bg-slate-100 text-slate-500",
   GENERATED: "bg-green-50 text-green-700",
@@ -55,6 +66,17 @@ const STATE_STYLES: Record<string, string> = {
   QUEUED: "bg-amber-50 text-amber-700",
   DELIVERED: "bg-green-50 text-green-700",
   BOUNCED: "bg-red-50 text-red-700",
+  // Team & Access / Security
+  NOT_SUPPORTED: "bg-slate-100 text-slate-400",
+  // Support tickets
+  IN_PROGRESS: "bg-blue-50 text-blue-700",
+  WAITING_ON_ORGANIZATION: "bg-amber-50 text-amber-700",
+  WAITING_ON_SUPPORT: "bg-blue-50 text-blue-700",
+  RESOLVED: "bg-green-50 text-green-700",
+  // System status
+  OPERATIONAL: "bg-green-50 text-green-700",
+  DEGRADED: "bg-amber-50 text-amber-700",
+  OUTAGE: "bg-red-50 text-red-700",
 };
 
 export default function StateBadge({ state }: { state: string | null | undefined }) {

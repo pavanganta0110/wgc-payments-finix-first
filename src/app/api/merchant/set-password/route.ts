@@ -58,6 +58,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, autoLoginFailed: true });
     }
 
+    if (!user.passwordHash && user.invitedByUserId && user.churchId) {
+      const { notifyEvent } = await import("@/lib/settings/notificationDispatch");
+      await notifyEvent({
+        churchId: user.churchId,
+        eventKey: "TEAM_INVITE_ACCEPTED",
+        subject: "Team invitation accepted",
+        title: "Team Invitation Accepted",
+        badgeText: "Team Update",
+        badgeColor: "#0B5DBC",
+        bodyHtml: `<p><strong>${user.email}</strong> has accepted their invitation and set up their Organization Admin account.</p>`,
+      });
+    }
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("Set password failed:", error);

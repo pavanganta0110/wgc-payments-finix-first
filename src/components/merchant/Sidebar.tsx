@@ -55,7 +55,7 @@ const NAV_ITEMS: NavItem[] = [
   { name: "Billing Plan", href: "/merchant/subscription", icon: CreditCard },
   { name: "Settings", href: "/merchant/settings", icon: Settings },
   { name: "Support", href: "/merchant/support", icon: LifeBuoy },
-  { name: "Company", href: "/merchant/company", icon: Building2 },
+  { name: "Company", href: "/merchant/organization", icon: Building2 },
 ];
 
 const STORAGE_KEY = "wgc_merchant_sidebar_collapsed";

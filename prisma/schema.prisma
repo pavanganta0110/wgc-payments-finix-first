@@ -216,9 +216,9 @@ model AuditLog {
 }
 
 model Church {
-  id                            String   @id @default(cuid())
+  id                            String  @id @default(cuid())
   name                          String
-  slug                          String   @unique
+  slug                          String  @unique
   primaryContactEmail           String
   onboardingApplicationId       String?
   finixMerchantId               String?
@@ -247,10 +247,174 @@ model Church {
   statementSubjectTemplate      String?
   statementThankYouMessage      String?
   statementDisclaimer           String?
-  statementShowDonorCoveredFees Boolean  @default(false)
-  statementShowTaxId            Boolean  @default(false)
-  createdAt                     DateTime @default(now())
-  updatedAt                     DateTime @updatedAt
+  statementShowDonorCoveredFees Boolean @default(false)
+  statementShowTaxId            Boolean @default(false)
+
+  // General settings (Settings -> General). All optional/nullable —
+  // display falls back to existing fields (name, primaryContactEmail) or
+  // sensible defaults when unset, same pattern as statement settings above.
+  publicDisplayName     String?
+  organizationType      String? // NONPROFIT | MINISTRY | CHARITY | FAITH_BASED | COMMUNITY | FOUNDATION | RELIGIOUS | OTHER
+  website               String?
+  supportEmail          String?
+  financeEmail          String?
+  technicalContactEmail String?
+  mailingAddressLine1   String?
+  mailingAddressLine2   String?
+  mailingCity           String?
+  mailingState          String?
+  mailingPostalCode     String?
+  mailingCountry        String?
+  timezone              String? // IANA zone, e.g. "America/Chicago" — falls back to Central Time when unset
+  dateFormat            String? // e.g. "MM/DD/YYYY"
+  fiscalYearStartMonth  Int? // 1-12
+  publicSupportContact  String?
+
+  // Giving settings (Settings -> Giving) — only the genuinely org-wide
+  // pieces. Per-link amount/frequency/fee-cover config already lives on
+  // GivingLink itself and is never duplicated here.
+  defaultGivingLinkId String?
+  givingTermsUrl      String?
+  givingPrivacyUrl    String?
+  givingSupportEmail  String?
+
+  // Receipt settings (Settings -> Receipts). Mirrors the statement-settings
+  // pattern: nullable, falls back to DEFAULT_RECEIPT_* constants when unset.
+  receiptAutoSend                  Boolean @default(true)
+  receiptSenderName                String?
+  receiptReplyToEmail              String?
+  receiptSubjectTemplate           String?
+  receiptHeader                    String?
+  receiptThankYouMessage           String?
+  receiptFooter                    String?
+  receiptShowAddress               Boolean @default(true)
+  receiptShowPhone                 Boolean @default(false)
+  receiptShowEmail                 Boolean @default(true)
+  receiptShowFund                  Boolean @default(true)
+  receiptShowDonorCoveredFee       Boolean @default(false)
+  receiptShowPaymentMethodLastFour Boolean @default(true)
+  receiptShowRecurringSchedule     Boolean @default(true)
+  receiptShowDonationReference     Boolean @default(true)
+  receiptShowTaxId                 Boolean @default(false)
+  receiptDisclaimer                String?
+  receiptLanguage                  String? // default "en"
+  receiptSendCopyToOrg             Boolean @default(false)
+  receiptSupportContact            String?
+
+  // Branding (Settings -> Branding). logoUrl already existed; colors/favicon
+  // are net-new, no schema precedent before this.
+  faviconUrl     String?
+  primaryColor   String? // hex, e.g. "#0f172a"
+  secondaryColor String?
+  accentColor    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notificationPreferences NotificationPreference[]
+  organizationContacts    OrganizationContact[]
+  supportTickets          SupportTicket[]
+}
+
+/// One row per (organization, event type) — the org-wide notification
+/// preference for that event. No per-user targeting yet since there is
+/// currently only one real visible role (Organization Admin); recipients
+/// are simply "all Organization Admins for this organization" until a
+/// richer team model exists.
+model NotificationPreference {
+  id           String   @id @default(cuid())
+  churchId     String
+  eventKey     String // e.g. "NEW_DONATION", "FAILED_PAYMENT", ...
+  inAppEnabled Boolean  @default(true)
+  emailEnabled Boolean  @default(true)
+  frequency    String   @default("IMMEDIATE") // IMMEDIATE | DAILY_DIGEST | WEEKLY_DIGEST
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  church Church @relation(fields: [churchId], references: [id])
+
+  @@unique([churchId, eventKey])
+}
+
+/// A named contact role for the organization (Settings/Organization Profile
+/// -> Contacts). Distinct from User (login accounts) — a contact need not
+/// have dashboard access.
+model OrganizationContact {
+  id        String   @id @default(cuid())
+  churchId  String
+  role      String // PRIMARY | FINANCE | TECHNICAL | SUPPORT | AUTHORIZED_SIGNER | STATEMENT | SECURITY
+  name      String
+  email     String?
+  phone     String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  church Church @relation(fields: [churchId], references: [id])
+
+  @@index([churchId, role])
+}
+
+/// A support request from an Organization Admin to WGC. Entirely new —
+/// no prior support-ticket model existed anywhere in this schema.
+model SupportTicket {
+  id                     String    @id @default(cuid())
+  churchId               String
+  subject                String
+  category               String // PAYMENT | REFUND | BANK_RETURN | DISPUTE | SETTLEMENT | DEPOSIT | SUBSCRIPTION | RECURRING_DONOR | DONOR | GIVING_LINK | ANNUAL_STATEMENT | FEES | ACCOUNT_ACCESS | SECURITY | VERIFICATION | INTEGRATION | OTHER
+  description            String
+  priority               String    @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
+  status                 String    @default("OPEN") // OPEN | IN_PROGRESS | WAITING_ON_ORGANIZATION | WAITING_ON_SUPPORT | RESOLVED | CLOSED
+  preferredContactMethod String? // EMAIL | PHONE
+  contactEmail           String?
+  contactPhone           String?
+  relatedResourceType    String? // PAYMENT | REFUND | BANK_RETURN | DISPUTE | SETTLEMENT | DEPOSIT | SUBSCRIPTION | DONOR | GIVING_LINK | ANNUAL_STATEMENT
+  relatedResourceId      String?
+  diagnosticConsent      Boolean   @default(false)
+  diagnosticContextJson  Json? // safe context only: route, app version, recent sync status — never credentials/payloads
+  createdByUserId        String?
+  createdByEmail         String?
+  assignedTeam           String    @default("WGC Support")
+  resolvedAt             DateTime?
+  closedAt               DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  church   Church                 @relation(fields: [churchId], references: [id])
+  messages SupportTicketMessage[]
+
+  @@index([churchId, status])
+  @@index([churchId, createdAt])
+}
+
+model SupportTicketMessage {
+  id            String   @id @default(cuid())
+  ticketId      String
+  senderRole    String // church_admin | wgc_admin | system
+  senderUserId  String?
+  senderEmail   String?
+  body          String
+  isSystemEvent Boolean  @default(false) // status changes, ticket resolved/reopened, etc — rendered distinctly from a human reply
+  createdAt     DateTime @default(now())
+
+  ticket      SupportTicket             @relation(fields: [ticketId], references: [id])
+  attachments SupportTicketAttachment[]
+
+  @@index([ticketId, createdAt])
+}
+
+model SupportTicketAttachment {
+  id          String   @id @default(cuid())
+  messageId   String
+  fileName    String
+  fileSize    Int
+  mimeType    String
+  finixFileId String? // stored via the same Finix File Resource pattern used by onboarding document uploads — never a raw local/S3 path
+  createdAt   DateTime @default(now())
+
+  message SupportTicketMessage @relation(fields: [messageId], references: [id])
+
+  @@index([messageId])
 }
 
 model Donor {
@@ -1082,6 +1246,13 @@ model User {
   setPasswordTokenHash      String?
   setPasswordTokenExpiresAt DateTime?
   lastLoginAt               DateTime?
+  // Team & Access (Settings -> Team). A User with passwordHash null and a
+  // live setPasswordTokenHash is "invited, pending" — the exact same
+  // pattern already used by forgot-password, reused here rather than
+  // inventing a separate invitation concept.
+  invitedByUserId           String?
+  disabledAt                DateTime?
+  disabledByUserId          String?
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
 }

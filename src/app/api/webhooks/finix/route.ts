@@ -226,6 +226,24 @@ export async function syncFinixDataFromWebhookEvent(
       console.error("Fee sync failed:", err);
     }
 
+    if (
+      churchId &&
+      data.subscription &&
+      (data.state || "").toUpperCase() === "FAILED" &&
+      (priorTransfer?.state || "").toUpperCase() !== "FAILED"
+    ) {
+      const { notifyEvent } = await import("@/lib/settings/notificationDispatch");
+      await notifyEvent({
+        churchId,
+        eventKey: "SUBSCRIPTION_PAYMENT_FAILED",
+        subject: "A recurring donation payment failed",
+        title: "Recurring Payment Failed",
+        badgeText: "Action May Be Required",
+        badgeColor: "#DC2626",
+        bodyHtml: `<p>A scheduled recurring donation payment failed to process${data.failure_message ? `: ${data.failure_message}` : "."}</p><p><a href="https://wgcpayments.com/merchant/subscriptions">View subscriptions</a></p>`,
+      });
+    }
+
     // Attribute an async success/failure transition to the Giving Link that
     // generated this transfer (subtype REVERSAL/RETURN transfers are
     // handled by their own blocks below, not here).
@@ -419,6 +437,7 @@ export async function syncFinixDataFromWebhookEvent(
 
   if (entity === "DISPUTE" && data?.id) {
     const churchId = await resolveChurchIdForMerchant(data.merchant);
+    const existingDispute = await prisma.finixDispute.findUnique({ where: { finixDisputeId: data.id }, select: { id: true } });
 
     await prisma.finixDispute.upsert({
       where: { finixDisputeId: data.id },
@@ -454,6 +473,19 @@ export async function syncFinixDataFromWebhookEvent(
         lastSyncedAt: new Date(),
       },
     });
+
+    if (!existingDispute && churchId) {
+      const { notifyEvent } = await import("@/lib/settings/notificationDispatch");
+      await notifyEvent({
+        churchId,
+        eventKey: "DISPUTE_OPENED",
+        subject: "New payment dispute opened",
+        title: "New Dispute Opened",
+        badgeText: "Action May Be Required",
+        badgeColor: "#DC2626",
+        bodyHtml: `<p>A donor has disputed a payment. Review the dispute and, if evidence is requested, respond before the deadline.</p><p><a href="https://wgcpayments.com/merchant/disputes">View disputes</a></p>`,
+      });
+    }
     return;
   }
 
@@ -463,6 +495,7 @@ export async function syncFinixDataFromWebhookEvent(
     // "merchant"), and the fee total is "total_fee"/"total_fees" — there's
     // no separate refund_amount/dispute_amount at the settlement level.
     const churchId = await resolveChurchIdForMerchant(data.merchant_id);
+    const priorSettlement = await prisma.finixSettlement.findUnique({ where: { finixSettlementId: data.id }, select: { state: true } });
 
     await prisma.finixSettlement.upsert({
       where: { finixSettlementId: data.id },
@@ -509,6 +542,19 @@ export async function syncFinixDataFromWebhookEvent(
       await recomputeSettlementAggregates(data.id);
     } catch (err) {
       console.error("Failed to link transfers to settlement:", err);
+    }
+
+    if (churchId && data.status === "SETTLED" && priorSettlement?.state !== "SETTLED") {
+      const { notifyEvent } = await import("@/lib/settings/notificationDispatch");
+      await notifyEvent({
+        churchId,
+        eventKey: "SETTLEMENT_FUNDED",
+        subject: "Settlement funded",
+        title: "Settlement Funded",
+        badgeText: "Funds Deposited",
+        badgeColor: "#059669",
+        bodyHtml: `<p>A settlement batch has been funded to your bank account.</p><p><a href="https://wgcpayments.com/merchant/settlements">View settlements</a></p>`,
+      });
     }
     return;
   }
