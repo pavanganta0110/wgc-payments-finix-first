@@ -37,7 +37,7 @@ export default async function SubscriptionPage() {
 
   return (
     <div>
-      <h2 className="text-lg font-bold text-slate-900 mb-6">Subscription</h2>
+      <h2 className="text-lg font-bold text-slate-900 mb-6">Billing Plan</h2>
 
       {churchSubscription && (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6">
@@ -78,7 +78,7 @@ export default async function SubscriptionPage() {
             <div>
               <h3 className="text-sm font-bold text-slate-900">Processing Rates</h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Synced from your Finix fee profile
+                Synced from your processing fee profile
                 {pricing.updatedAt && (
                   <> · Last updated {formatDateTimeCDT(pricing.updatedAt)}</>
                 )}
@@ -108,9 +108,8 @@ export default async function SubscriptionPage() {
             </div>
           </div>
           <p className="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-50">
-            These are your WGC-negotiated card processing rates as configured in Finix.
-            If you recently updated your Finix Fee Profile and these values look stale,
-            click &ldquo;Refresh from Finix&rdquo; above to pull the latest.
+            These are your WGC processing rates. If your rates were recently updated and these
+            values appear outdated, click &ldquo;Refresh Rates&rdquo; above to retrieve the latest information.
           </p>
         </div>
       )}

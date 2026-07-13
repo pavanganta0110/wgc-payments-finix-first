@@ -39,7 +39,7 @@ export default function RefreshPricingButton({ onRefreshed }: Props) {
         className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
-        {loading ? "Refreshing…" : "Refresh from Finix"}
+        {loading ? "Refreshing…" : "Refresh Rates"}
       </button>
       {result === "error" && (
         <p className="text-xs text-red-500">Refresh failed. Try again shortly.</p>
