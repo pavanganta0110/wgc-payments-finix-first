@@ -129,7 +129,10 @@ export class FinixClient {
   async createFileResource(payload: { display_name: string; linked_to: string; type: string }) {
     return this.fetchApi("/files", {
       method: "POST",
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      headers: {
+        "Accept": "application/json"
+      }
     });
   }
 
