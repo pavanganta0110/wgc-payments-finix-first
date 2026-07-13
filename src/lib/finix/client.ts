@@ -168,6 +168,26 @@ export class FinixClient {
     return data;
   }
 
+  async getFileContent(fileId: string): Promise<{ data: ArrayBuffer; contentType: string | null }> {
+    const url = `${this.baseUrl}/files/${fileId}/download`;
+    const res = await fetch(url, {
+      headers: {
+        "Authorization": this.authHeader,
+        "Finix-Version": this.version,
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`Could not retrieve file content (${res.status})`);
+    }
+    return { data: await res.arrayBuffer(), contentType: res.headers.get("content-type") };
+  }
+
+  async deleteFile(fileId: string) {
+    return this.fetchApi(`/files/${fileId}`, {
+      method: "DELETE"
+    });
+  }
+
   async createVerification(identityId: string) {
     return this.fetchApi(`/identities/${identityId}/verifications`, {
       method: "POST",

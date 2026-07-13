@@ -115,5 +115,26 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     },
   });
 
+  const oldBranding = existing.brandingSettingsJson as any;
+  const oldLogoUrl = oldBranding?.light?.logoUrl;
+  const newLogoUrl = brandingSettings?.light?.logoUrl;
+
+  if (oldLogoUrl && oldLogoUrl !== newLogoUrl) {
+    // Run cleanup asynchronously so it doesn't block the API response
+    import("@/lib/givingLinks/logoCleanup").then(({ cleanupUnusedLogo }) => {
+      cleanupUnusedLogo(
+        oldLogoUrl,
+        id,
+        session!.churchId!,
+        session!.userId!,
+        session!.email!,
+        session!.role!,
+        req
+      );
+    }).catch(err => {
+      console.error("Failed to import logoCleanup utility:", err);
+    });
+  }
+
   return NextResponse.json({ link });
 }

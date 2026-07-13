@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Upload, X, AlertCircle } from "lucide-react";
 import { formatCents } from "@/lib/format";
 import GivingLinkPreviewPanel from "@/components/merchant/GivingLinkPreviewPanel";
 import {
@@ -168,6 +168,103 @@ export default function GivingLinkBuilderForm({
   const router = useRouter();
   const [state, setState] = useState<BuilderState>({ ...defaultState(), ...(initial || {}) });
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoMetadata, setLogoMetadata] = useState<{ fileName: string; fileSize: string } | null>(null);
+  const [isDragActive, setIsDragActive] = useState(false);
+
+  const getFileNameFromUrl = (url: string) => {
+    if (!url) return "";
+    const parts = url.split("/");
+    const last = parts[parts.length - 1];
+    return last.startsWith("FI") ? `logo_${last.substring(0, 8)}.png` : last;
+  };
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setIsDragActive(true);
+    } else if (e.type === "dragleave") {
+      setIsDragActive(false);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      await handleUploadFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      await handleUploadFile(e.target.files[0]);
+    }
+  };
+
+  const handleUploadFile = async (file: File) => {
+    const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Invalid file type. Only PNG, JPG, JPEG, and WEBP are supported.");
+      return;
+    }
+    const MAX_LOGO_SIZE = 5 * 1024 * 1024;
+    if (file.size > MAX_LOGO_SIZE) {
+      toast.error("File too large. Maximum size is 5MB.");
+      return;
+    }
+
+    setUploadingLogo(true);
+    const toastId = toast.loading("Uploading logo...");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/merchant/giving-links/logo-upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || "Failed to upload logo");
+      }
+
+      const data = await res.json();
+      
+      update("branding", {
+        ...state.branding,
+        light: { ...state.branding.light, logoUrl: data.logoUrl }
+      });
+
+      const formattedSize = file.size > 1024 * 1024 
+        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
+        : `${(file.size / 1024).toFixed(0)} KB`;
+      
+      setLogoMetadata({
+        fileName: file.name,
+        fileSize: formattedSize,
+      });
+
+      toast.success("Logo uploaded successfully", { id: toastId });
+    } catch (err: any) {
+      console.error("Logo upload error:", err);
+      toast.error(err.message || "Logo upload failed", { id: toastId });
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const isValid = 
+    state.internalName.trim() !== "" && 
+    state.publicTitle.trim() !== "" && 
+    (state.amountType !== "FIXED" || (state.fixedAmount !== "" && parseFloat(state.fixedAmount) >= 1)) && 
+    state.allowedPaymentMethods.length > 0;
 
   const update = <K extends keyof BuilderState>(key: K, value: BuilderState[K]) => {
     setState((prev) => ({ ...prev, [key]: value }));
@@ -225,6 +322,8 @@ export default function GivingLinkBuilderForm({
     }
 
     setSaving(true);
+    setSaveStatus("saving");
+    setSaveError(null);
 
     const payload = {
       internalName: state.internalName.trim(),
@@ -257,414 +356,523 @@ export default function GivingLinkBuilderForm({
       brandingSettings: state.branding,
     };
 
-    const res = await fetch(mode === "create" ? "/api/merchant/giving-links" : `/api/merchant/giving-links/${linkId}`, {
-      method: mode === "create" ? "POST" : "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    try {
+      const res = await fetch(mode === "create" ? "/api/merchant/giving-links" : `/api/merchant/giving-links/${linkId}`, {
+        method: mode === "create" ? "POST" : "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    setSaving(false);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const errMsg = data?.error || "Failed to save giving link";
+        setSaveError(errMsg);
+        setSaveStatus("error");
+        toast.error(errMsg);
+        setSaving(false);
+        return;
+      }
 
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      toast.error(data?.error || "Failed to save giving link");
-      return;
+      const data = await res.json();
+      setSaveStatus("success");
+      toast.success(mode === "create" ? "Giving link created" : "Giving link updated");
+      setTimeout(() => {
+        router.push(`/merchant/giving-links/${data.link.id}`);
+      }, 1000);
+    } catch (err: any) {
+      console.error("Save error:", err);
+      const errMsg = err.message || "An unexpected error occurred";
+      setSaveError(errMsg);
+      setSaveStatus("error");
+      toast.error(errMsg);
+      setSaving(false);
     }
-
-    const data = await res.json();
-    toast.success(mode === "create" ? "Giving link created" : "Giving link updated");
-    router.push(`/merchant/giving-links/${data.link.id}`);
   };
 
   return (
-    <div className="grid lg:grid-cols-2 gap-6">
-      {/* Left: configuration */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm divide-y divide-slate-100">
-        <Section title="Basic Link Information">
-          <div>
-            <FieldLabel>Internal Name *</FieldLabel>
-            <input
-              value={state.internalName}
-              onChange={(e) => update("internalName", e.target.value)}
-              placeholder="e.g. Building Fund Summer Campaign"
-              className={inputClass}
-            />
-            <p className="text-xs text-slate-400 mt-1">Not shown to donors.</p>
-          </div>
-          <div>
-            <FieldLabel>Public Title *</FieldLabel>
-            <input
-              value={state.publicTitle}
-              onChange={(e) => update("publicTitle", e.target.value)}
-              placeholder="e.g. Support Our Building Fund"
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <FieldLabel>Public Description</FieldLabel>
-            <textarea
-              value={state.description}
-              onChange={(e) => update("description", e.target.value)}
-              rows={2}
-              className={inputClass}
-            />
-          </div>
-
-          <div>
-            <FieldLabel>Amount Type</FieldLabel>
-            <div className="flex rounded-xl border border-slate-200 p-1">
-              <button
-                onClick={() => update("amountType", "FIXED")}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold ${state.amountType === "FIXED" ? "bg-slate-900 text-white" : "text-slate-600"}`}
-              >
-                Fixed Amount
-              </button>
-              <button
-                onClick={() => update("amountType", "VARIABLE")}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold ${state.amountType === "VARIABLE" ? "bg-slate-900 text-white" : "text-slate-600"}`}
-              >
-                Variable Amount
-              </button>
-            </div>
-          </div>
-
-          {state.amountType === "FIXED" ? (
+    <div className="flex flex-col lg:h-[calc(100vh-190px)] min-h-0 relative">
+      {/* Responsive Columns Wrapper */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start lg:flex-grow lg:h-0 lg:min-h-0 pb-6 overflow-y-auto lg:overflow-y-hidden">
+        
+        {/* Left: configuration */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm divide-y divide-slate-100 lg:h-full lg:overflow-y-auto pb-24 p-1">
+          <Section title="Basic Link Information">
             <div>
-              <FieldLabel>Amount ($) *</FieldLabel>
+              <FieldLabel>Internal Name *</FieldLabel>
               <input
-                type="number"
-                min="1"
-                step="0.01"
-                value={state.fixedAmount}
-                onChange={(e) => update("fixedAmount", e.target.value)}
+                value={state.internalName}
+                onChange={(e) => update("internalName", e.target.value)}
+                placeholder="e.g. Building Fund Summer Campaign"
+                className={inputClass}
+              />
+              <p className="text-xs text-slate-400 mt-1">Not shown to donors.</p>
+            </div>
+            <div>
+              <FieldLabel>Public Title *</FieldLabel>
+              <input
+                value={state.publicTitle}
+                onChange={(e) => update("publicTitle", e.target.value)}
+                placeholder="e.g. Support Our Building Fund"
                 className={inputClass}
               />
             </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <FieldLabel>Minimum Amount ($)</FieldLabel>
-                  <input type="number" min="1" step="0.01" value={state.minAmount} onChange={(e) => update("minAmount", e.target.value)} className={inputClass} />
+            <div>
+              <FieldLabel>Public Description</FieldLabel>
+              <textarea
+                value={state.description}
+                onChange={(e) => update("description", e.target.value)}
+                rows={2}
+                className={inputClass}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Amount Type</FieldLabel>
+              <div className="flex rounded-xl border border-slate-200 p-1">
+                <button
+                  onClick={() => update("amountType", "FIXED")}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold ${state.amountType === "FIXED" ? "bg-slate-900 text-white" : "text-slate-600"}`}
+                >
+                  Fixed Amount
+                </button>
+                <button
+                  onClick={() => update("amountType", "VARIABLE")}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold ${state.amountType === "VARIABLE" ? "bg-slate-900 text-white" : "text-slate-600"}`}
+                >
+                  Variable Amount
+                </button>
+              </div>
+            </div>
+
+            {state.amountType === "FIXED" ? (
+              <div>
+                <FieldLabel>Amount ($) *</FieldLabel>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  value={state.fixedAmount}
+                  onChange={(e) => update("fixedAmount", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel>Minimum Amount ($)</FieldLabel>
+                    <input type="number" min="1" step="0.01" value={state.minAmount} onChange={(e) => update("minAmount", e.target.value)} className={inputClass} />
+                  </div>
+                  <div>
+                    <FieldLabel>Maximum Amount ($)</FieldLabel>
+                    <input type="number" min="1" step="0.01" value={state.maxAmount} onChange={(e) => update("maxAmount", e.target.value)} className={inputClass} />
+                  </div>
                 </div>
                 <div>
-                  <FieldLabel>Maximum Amount ($)</FieldLabel>
-                  <input type="number" min="1" step="0.01" value={state.maxAmount} onChange={(e) => update("maxAmount", e.target.value)} className={inputClass} />
+                  <FieldLabel>Suggested Amounts ($, comma-separated)</FieldLabel>
+                  <input value={state.suggestedAmounts} onChange={(e) => update("suggestedAmounts", e.target.value)} className={inputClass} />
                 </div>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={state.allowCustomAmount} onChange={(e) => update("allowCustomAmount", e.target.checked)} />
+                  Allow custom amount
+                </label>
+              </>
+            )}
+
+            <div>
+              <FieldLabel>Link Type</FieldLabel>
+              <div className="flex rounded-xl border border-slate-200 p-1">
+                <button
+                  onClick={() => update("linkType", "ONE_TIME")}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold ${state.linkType === "ONE_TIME" ? "bg-slate-900 text-white" : "text-slate-600"}`}
+                >
+                  One-Time Link
+                </button>
+                <button
+                  onClick={() => update("linkType", "MULTI_USE")}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold ${state.linkType === "MULTI_USE" ? "bg-slate-900 text-white" : "text-slate-600"}`}
+                >
+                  Multi-Use Link
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <FieldLabel>Link Validity</FieldLabel>
+              <select value={state.validityKey} onChange={(e) => update("validityKey", e.target.value)} className={inputClass}>
+                {VALIDITY_PRESETS.map((p) => (
+                  <option key={p.key} value={p.key}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+            {state.validityKey === "custom" && (
+              <div>
+                <FieldLabel>Expiration Date/Time</FieldLabel>
+                <input type="datetime-local" value={state.customExpiresAt} onChange={(e) => update("customExpiresAt", e.target.value)} className={inputClass} />
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <FieldLabel>Max Successful Donations</FieldLabel>
+                <input type="number" min="1" value={state.maxSuccessfulUses} onChange={(e) => update("maxSuccessfulUses", e.target.value)} placeholder="Unlimited" className={inputClass} />
               </div>
               <div>
-                <FieldLabel>Suggested Amounts ($, comma-separated)</FieldLabel>
-                <input value={state.suggestedAmounts} onChange={(e) => update("suggestedAmounts", e.target.value)} className={inputClass} />
+                <FieldLabel>Max Total Collected ($)</FieldLabel>
+                <input type="number" min="1" value={state.maxCollectedAmount} onChange={(e) => update("maxCollectedAmount", e.target.value)} placeholder="Unlimited" className={inputClass} />
               </div>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={state.allowCustomAmount} onChange={(e) => update("allowCustomAmount", e.target.checked)} />
-                Allow custom amount
-              </label>
-            </>
-          )}
-
-          <div>
-            <FieldLabel>Link Type</FieldLabel>
-            <div className="flex rounded-xl border border-slate-200 p-1">
-              <button
-                onClick={() => update("linkType", "ONE_TIME")}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold ${state.linkType === "ONE_TIME" ? "bg-slate-900 text-white" : "text-slate-600"}`}
-              >
-                One-Time Link
-              </button>
-              <button
-                onClick={() => update("linkType", "MULTI_USE")}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold ${state.linkType === "MULTI_USE" ? "bg-slate-900 text-white" : "text-slate-600"}`}
-              >
-                Multi-Use Link
-              </button>
             </div>
-          </div>
 
-          <div>
-            <FieldLabel>Link Validity</FieldLabel>
-            <select value={state.validityKey} onChange={(e) => update("validityKey", e.target.value)} className={inputClass}>
-              {VALIDITY_PRESETS.map((p) => (
-                <option key={p.key} value={p.key}>{p.label}</option>
-              ))}
-            </select>
-          </div>
-          {state.validityKey === "custom" && (
             <div>
-              <FieldLabel>Expiration Date/Time</FieldLabel>
-              <input type="datetime-local" value={state.customExpiresAt} onChange={(e) => update("customExpiresAt", e.target.value)} className={inputClass} />
+              <FieldLabel>Fund / Designation</FieldLabel>
+              <input value={state.fundName} onChange={(e) => update("fundName", e.target.value)} placeholder="General Fund, Building Fund, Missions…" className={inputClass} />
             </div>
-          )}
+          </Section>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <FieldLabel>Max Successful Donations</FieldLabel>
-              <input type="number" min="1" value={state.maxSuccessfulUses} onChange={(e) => update("maxSuccessfulUses", e.target.value)} placeholder="Unlimited" className={inputClass} />
-            </div>
-            <div>
-              <FieldLabel>Max Total Collected ($)</FieldLabel>
-              <input type="number" min="1" value={state.maxCollectedAmount} onChange={(e) => update("maxCollectedAmount", e.target.value)} placeholder="Unlimited" className={inputClass} />
-            </div>
-          </div>
-
-          <div>
-            <FieldLabel>Fund / Designation</FieldLabel>
-            <input value={state.fundName} onChange={(e) => update("fundName", e.target.value)} placeholder="General Fund, Building Fund, Missions…" className={inputClass} />
-          </div>
-        </Section>
-
-        <Section title="Allowed Payment Methods">
-          <div className="space-y-2">
-            {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethodKey[]).map((m) => (
-              <label key={m} className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={state.allowedPaymentMethods.includes(m)} onChange={() => togglePaymentMethod(m)} />
-                {PAYMENT_METHOD_LABELS[m]}
-              </label>
-            ))}
-          </div>
-        </Section>
-
-        <Section title="Donor Details" defaultOpen={false}>
-          <div className="space-y-2">
-            {DONOR_FIELDS.map((field) => (
-              <div key={field} className="flex items-center justify-between gap-2">
-                <span className="text-sm text-slate-700">{DONOR_FIELD_LABELS[field]}</span>
-                <select
-                  value={state.donorFieldSettings[field]}
-                  onChange={(e) => toggleDonorField(field, e.target.value as "REQUIRED" | "OPTIONAL" | "HIDDEN")}
-                  className="px-2 py-1 rounded-lg border border-slate-200 text-xs outline-none"
-                >
-                  <option value="REQUIRED">Required</option>
-                  <option value="OPTIONAL">Optional</option>
-                  <option value="HIDDEN">Hidden</option>
-                </select>
-              </div>
-            ))}
-          </div>
-        </Section>
-
-        <Section title="Additional Donation Options" defaultOpen={false}>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={state.feeCoverEnabled} onChange={(e) => update("feeCoverEnabled", e.target.checked)} />
-            Allow donor to cover processing fees
-          </label>
-          {state.feeCoverEnabled && (
-            <label className="flex items-center gap-2 text-sm text-slate-700 ml-6">
-              <input type="checkbox" checked={state.feeCoverDefaultOn} onChange={(e) => update("feeCoverDefaultOn", e.target.checked)} />
-              Checked by default
-            </label>
-          )}
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={state.recurringEnabled} onChange={(e) => update("recurringEnabled", e.target.checked)} />
-            Allow recurring giving
-          </label>
-          {state.recurringEnabled && (
-            <div className="ml-6 space-y-1.5">
-              {FREQUENCIES.map((f) => (
-                <label key={f} className="flex items-center gap-2 text-sm text-slate-700">
-                  <input type="checkbox" checked={state.allowedFrequencies.includes(f)} onChange={() => toggleFrequency(f)} />
-                  {f.charAt(0) + f.slice(1).toLowerCase()}
+          <Section title="Allowed Payment Methods">
+            <div className="space-y-2">
+              {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethodKey[]).map((m) => (
+                <label key={m} className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={state.allowedPaymentMethods.includes(m)} onChange={() => togglePaymentMethod(m)} />
+                  {PAYMENT_METHOD_LABELS[m]}
                 </label>
               ))}
             </div>
-          )}
-        </Section>
+          </Section>
 
-        <Section title="Advanced Settings" defaultOpen={false}>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={state.receiptSettings.sendAutomatically}
-              onChange={(e) => update("receiptSettings", { ...state.receiptSettings, sendAutomatically: e.target.checked })}
-            />
-            Send receipt automatically
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <FieldLabel>Receipt Sender Name</FieldLabel>
+          <Section title="Donor Details" defaultOpen={false}>
+            <div className="space-y-2">
+              {DONOR_FIELDS.map((field) => (
+                <div key={field} className="flex items-center justify-between gap-2">
+                  <span className="text-sm text-slate-700">{DONOR_FIELD_LABELS[field]}</span>
+                  <select
+                    value={state.donorFieldSettings[field]}
+                    onChange={(e) => toggleDonorField(field, e.target.value as "REQUIRED" | "OPTIONAL" | "HIDDEN")}
+                    className="px-2 py-1 rounded-lg border border-slate-200 text-xs outline-none"
+                  >
+                    <option value="REQUIRED">Required</option>
+                    <option value="OPTIONAL">Optional</option>
+                    <option value="HIDDEN">Hidden</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+          </Section>
+
+          <Section title="Additional Donation Options" defaultOpen={false}>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={state.feeCoverEnabled} onChange={(e) => update("feeCoverEnabled", e.target.checked)} />
+              Allow donor to cover processing fees
+            </label>
+            {state.feeCoverEnabled && (
+              <label className="flex items-center gap-2 text-sm text-slate-700 ml-6">
+                <input type="checkbox" checked={state.feeCoverDefaultOn} onChange={(e) => update("feeCoverDefaultOn", e.target.checked)} />
+                Checked by default
+              </label>
+            )}
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={state.recurringEnabled} onChange={(e) => update("recurringEnabled", e.target.checked)} />
+              Allow recurring giving
+            </label>
+            {state.recurringEnabled && (
+              <div className="ml-6 space-y-1.5">
+                {FREQUENCIES.map((f) => (
+                  <label key={f} className="flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox" checked={state.allowedFrequencies.includes(f)} onChange={() => toggleFrequency(f)} />
+                    {f.charAt(0) + f.slice(1).toLowerCase()}
+                  </label>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          <Section title="Advanced Settings" defaultOpen={false}>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
-                value={state.receiptSettings.senderName}
-                onChange={(e) => update("receiptSettings", { ...state.receiptSettings, senderName: e.target.value })}
-                className={inputClass}
+                type="checkbox"
+                checked={state.receiptSettings.sendAutomatically}
+                onChange={(e) => update("receiptSettings", { ...state.receiptSettings, sendAutomatically: e.target.checked })}
               />
+              Send receipt automatically
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <FieldLabel>Receipt Sender Name</FieldLabel>
+                <input
+                  value={state.receiptSettings.senderName}
+                  onChange={(e) => update("receiptSettings", { ...state.receiptSettings, senderName: e.target.value })}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <FieldLabel>Receipt Reply-To</FieldLabel>
+                <input
+                  type="email"
+                  value={state.receiptSettings.replyTo}
+                  onChange={(e) => update("receiptSettings", { ...state.receiptSettings, replyTo: e.target.value })}
+                  className={inputClass}
+                />
+              </div>
             </div>
             <div>
-              <FieldLabel>Receipt Reply-To</FieldLabel>
+              <FieldLabel>Receipt Subject</FieldLabel>
               <input
-                type="email"
-                value={state.receiptSettings.replyTo}
+                value={state.receiptSettings.subject}
                 onChange={(e) => update("receiptSettings", { ...state.receiptSettings, replyTo: e.target.value })}
                 className={inputClass}
               />
             </div>
-          </div>
-          <div>
-            <FieldLabel>Receipt Subject</FieldLabel>
-            <input
-              value={state.receiptSettings.subject}
-              onChange={(e) => update("receiptSettings", { ...state.receiptSettings, subject: e.target.value })}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <FieldLabel>Custom Receipt Message</FieldLabel>
-            <textarea
-              value={state.receiptSettings.customMessage}
-              onChange={(e) => update("receiptSettings", { ...state.receiptSettings, customMessage: e.target.value })}
-              rows={2}
-              className={inputClass}
-            />
-          </div>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={state.receiptSettings.includeTaxLanguage}
-              onChange={(e) => update("receiptSettings", { ...state.receiptSettings, includeTaxLanguage: e.target.checked })}
-            />
-            Include tax-deductibility wording
-          </label>
-
-          <div>
-            <FieldLabel>Card Statement Descriptor</FieldLabel>
-            <input
-              value={state.statementDescriptor}
-              onChange={(e) => update("statementDescriptor", e.target.value.slice(0, 18))}
-              maxLength={18}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <FieldLabel>Internal Note (admins only)</FieldLabel>
-            <textarea value={state.internalNote} onChange={(e) => update("internalNote", e.target.value)} rows={2} className={inputClass} />
-          </div>
-          <div>
-            <FieldLabel>Reference Number</FieldLabel>
-            <input value={state.referenceNumber} onChange={(e) => update("referenceNumber", e.target.value)} className={inputClass} />
-          </div>
-
-          <div>
-            <FieldLabel>Success Return URL</FieldLabel>
-            <input value={state.successReturnUrl} onChange={(e) => update("successReturnUrl", e.target.value)} placeholder="https://yourchurch.org/thank-you" className={inputClass} />
-          </div>
-          <div>
-            <FieldLabel>Failure Return URL</FieldLabel>
-            <input value={state.failureReturnUrl} onChange={(e) => update("failureReturnUrl", e.target.value)} placeholder="https://yourchurch.org/try-again" className={inputClass} />
-          </div>
-          <div>
-            <FieldLabel>Cancel Return URL</FieldLabel>
-            <input value={state.cancelReturnUrl} onChange={(e) => update("cancelReturnUrl", e.target.value)} placeholder="https://yourchurch.org" className={inputClass} />
-          </div>
-        </Section>
-
-        <Section title="Customization Options" defaultOpen={false}>
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Light Mode Branding</p>
-          <div>
-            <FieldLabel>Logo URL</FieldLabel>
-            <input
-              value={state.branding.light.logoUrl}
-              onChange={(e) => update("branding", { ...state.branding, light: { ...state.branding.light, logoUrl: e.target.value } })}
-              className={inputClass}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <ColorField label="Header Background" value={state.branding.light.headerBackground} onChange={(v) => update("branding", { ...state.branding, light: { ...state.branding.light, headerBackground: v } })} />
-            <ColorField label="Page Background" value={state.branding.light.pageBackground} onChange={(v) => update("branding", { ...state.branding, light: { ...state.branding.light, pageBackground: v } })} />
-            <ColorField label="Button Background" value={state.branding.light.buttonBackground} onChange={(v) => update("branding", { ...state.branding, light: { ...state.branding.light, buttonBackground: v } })} />
-            <ColorField label="Button Text" value={state.branding.light.buttonText} onChange={(v) => update("branding", { ...state.branding, light: { ...state.branding.light, buttonText: v } })} />
-            <ColorField label="Heading Color" value={state.branding.light.headingColor} onChange={(v) => update("branding", { ...state.branding, light: { ...state.branding.light, headingColor: v } })} />
-            <ColorField label="Body Text Color" value={state.branding.light.bodyTextColor} onChange={(v) => update("branding", { ...state.branding, light: { ...state.branding.light, bodyTextColor: v } })} />
-          </div>
-
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide pt-2">Dark Mode Branding</p>
-          <div className="grid grid-cols-2 gap-3">
-            <ColorField label="Header Background" value={state.branding.dark.headerBackground} onChange={(v) => update("branding", { ...state.branding, dark: { ...state.branding.dark, headerBackground: v } })} />
-            <ColorField label="Page Background" value={state.branding.dark.pageBackground} onChange={(v) => update("branding", { ...state.branding, dark: { ...state.branding.dark, pageBackground: v } })} />
-            <ColorField label="Button Background" value={state.branding.dark.buttonBackground} onChange={(v) => update("branding", { ...state.branding, dark: { ...state.branding.dark, buttonBackground: v } })} />
-            <ColorField label="Heading Color" value={state.branding.dark.headingColor} onChange={(v) => update("branding", { ...state.branding, dark: { ...state.branding.dark, headingColor: v } })} />
-          </div>
-
-          <div>
-            <FieldLabel>Campaign Image URL</FieldLabel>
-            <input
-              value={state.branding.campaignImageUrl}
-              onChange={(e) => update("branding", { ...state.branding, campaignImageUrl: e.target.value })}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <FieldLabel>Custom Thank-You Message</FieldLabel>
-            <textarea
-              value={state.branding.thankYouMessage}
-              onChange={(e) => update("branding", { ...state.branding, thankYouMessage: e.target.value })}
-              rows={2}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <FieldLabel>Support Email</FieldLabel>
-            <input
-              type="email"
-              value={state.branding.supportEmail}
-              onChange={(e) => update("branding", { ...state.branding, supportEmail: e.target.value })}
-              className={inputClass}
-            />
-          </div>
-          <div className="space-y-1.5">
+            <div>
+              <FieldLabel>Custom Receipt Message</FieldLabel>
+              <textarea
+                value={state.receiptSettings.customMessage}
+                onChange={(e) => update("receiptSettings", { ...state.receiptSettings, customMessage: e.target.value })}
+                rows={2}
+                className={inputClass}
+              />
+            </div>
             <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={state.branding.hideFooter} onChange={(e) => update("branding", { ...state.branding, hideFooter: e.target.checked })} />
-              Hide WGC footer
+              <input
+                type="checkbox"
+                checked={state.receiptSettings.includeTaxLanguage}
+                onChange={(e) => update("receiptSettings", { ...state.receiptSettings, includeTaxLanguage: e.target.checked })}
+              />
+              Include tax-deductibility wording
             </label>
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={state.branding.hideChurchAddress} onChange={(e) => update("branding", { ...state.branding, hideChurchAddress: e.target.checked })} />
-              Hide church address
-            </label>
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={state.branding.hideContactInfo} onChange={(e) => update("branding", { ...state.branding, hideContactInfo: e.target.checked })} />
-              Hide contact information
-            </label>
-          </div>
-        </Section>
+            <div>
+              <FieldLabel>Card Statement Descriptor</FieldLabel>
+              <input
+                value={state.statementDescriptor}
+                onChange={(e) => update("statementDescriptor", e.target.value.slice(0, 18))}
+                maxLength={18}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <FieldLabel>Internal Note (admins only)</FieldLabel>
+              <textarea value={state.internalNote} onChange={(e) => update("internalNote", e.target.value)} rows={2} className={inputClass} />
+            </div>
+            <div>
+              <FieldLabel>Reference Number</FieldLabel>
+              <input value={state.referenceNumber} onChange={(e) => update("referenceNumber", e.target.value)} className={inputClass} />
+            </div>
+
+            <div>
+              <FieldLabel>Success Return URL</FieldLabel>
+              <input value={state.successReturnUrl} onChange={(e) => update("successReturnUrl", e.target.value)} placeholder="https://yourchurch.org/thank-you" className={inputClass} />
+            </div>
+            <div>
+              <FieldLabel>Failure Return URL</FieldLabel>
+              <input value={state.failureReturnUrl} onChange={(e) => update("failureReturnUrl", e.target.value)} placeholder="https://yourchurch.org/try-again" className={inputClass} />
+            </div>
+            <div>
+              <FieldLabel>Cancel Return URL</FieldLabel>
+              <input value={state.cancelReturnUrl} onChange={(e) => update("cancelReturnUrl", e.target.value)} placeholder="https://yourchurch.org" className={inputClass} />
+            </div>
+          </Section>
+
+          <Section title="Customization Options" defaultOpen={false}>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Light Mode Branding</p>
+            <div>
+              <FieldLabel>Organization Logo</FieldLabel>
+              {state.branding.light.logoUrl ? (
+                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-lg border border-slate-200 bg-white flex items-center justify-center p-1 overflow-hidden shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={state.branding.light.logoUrl} alt="Logo preview" className="max-w-full max-h-full object-contain" />
+                  </div>
+                  <div className="flex-grow min-w-0">
+                    <p className="text-xs font-semibold text-slate-800 truncate">
+                      {logoMetadata?.fileName || getFileNameFromUrl(state.branding.light.logoUrl)}
+                    </p>
+                    <p className="text-[10px] text-slate-500">
+                      {logoMetadata?.fileSize || "Saved logo"}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <button
+                        type="button"
+                        onClick={() => document.getElementById("logo-file-input")?.click()}
+                        className="text-[10px] font-bold text-blue-600 hover:text-blue-700"
+                      >
+                        Replace Logo
+                      </button>
+                      <span className="text-slate-300 text-[10px]">|</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          update("branding", { ...state.branding, light: { ...state.branding.light, logoUrl: "" } });
+                          setLogoMetadata(null);
+                        }}
+                        className="text-[10px] font-bold text-red-600 hover:text-red-700"
+                      >
+                        Remove Logo
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  onDragEnter={handleDrag}
+                  onDragOver={handleDrag}
+                  onDragLeave={handleDrag}
+                  onDrop={handleDrop}
+                  onClick={() => document.getElementById("logo-file-input")?.click()}
+                  className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors ${
+                    isDragActive ? "border-blue-500 bg-blue-50/50" : "border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  <Upload className="w-6 h-6 text-slate-400 mx-auto mb-1" />
+                  <p className="text-xs font-semibold text-slate-700">
+                    {uploadingLogo ? "Uploading logo..." : "Upload Logo"}
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Upload a logo from your computer.
+                  </p>
+                  <p className="text-[9px] text-slate-400">
+                    PNG, JPG, JPEG, WEBP up to 5MB
+                  </p>
+                </div>
+              )}
+              <input
+                id="logo-file-input"
+                type="file"
+                accept=".png,.jpg,.jpeg,.webp"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <ColorField label="Header Background" value={state.branding.light.headerBackground} onChange={(v) => update("branding", { ...state.branding, light: { ...state.branding.light, headerBackground: v } })} />
+              <ColorField label="Page Background" value={state.branding.light.pageBackground} onChange={(v) => update("branding", { ...state.branding, light: { ...state.branding.light, pageBackground: v } })} />
+              <ColorField label="Button Background" value={state.branding.light.buttonBackground} onChange={(v) => update("branding", { ...state.branding, light: { ...state.branding.light, buttonBackground: v } })} />
+              <ColorField label="Button Text" value={state.branding.light.buttonText} onChange={(v) => update("branding", { ...state.branding, light: { ...state.branding.light, buttonText: v } })} />
+              <ColorField label="Heading Color" value={state.branding.light.headingColor} onChange={(v) => update("branding", { ...state.branding, light: { ...state.branding.light, headingColor: v } })} />
+              <ColorField label="Body Text Color" value={state.branding.light.bodyTextColor} onChange={(v) => update("branding", { ...state.branding, light: { ...state.branding.light, bodyTextColor: v } })} />
+            </div>
+
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide pt-2">Dark Mode Branding</p>
+            <div className="grid grid-cols-2 gap-3">
+              <ColorField label="Header Background" value={state.branding.dark.headerBackground} onChange={(v) => update("branding", { ...state.branding, dark: { ...state.branding.dark, headerBackground: v } })} />
+              <ColorField label="Page Background" value={state.branding.dark.pageBackground} onChange={(v) => update("branding", { ...state.branding, dark: { ...state.branding.dark, pageBackground: v } })} />
+              <ColorField label="Button Background" value={state.branding.dark.buttonBackground} onChange={(v) => update("branding", { ...state.branding, dark: { ...state.branding.dark, buttonBackground: v } })} />
+              <ColorField label="Heading Color" value={state.branding.dark.headingColor} onChange={(v) => update("branding", { ...state.branding, dark: { ...state.branding.dark, headingColor: v } })} />
+            </div>
+
+            <div>
+              <FieldLabel>Campaign Image URL</FieldLabel>
+              <input
+                value={state.branding.campaignImageUrl}
+                onChange={(e) => update("branding", { ...state.branding, campaignImageUrl: e.target.value })}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <FieldLabel>Custom Thank-You Message</FieldLabel>
+              <textarea
+                value={state.branding.thankYouMessage}
+                onChange={(e) => update("branding", { ...state.branding, thankYouMessage: e.target.value })}
+                rows={2}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <FieldLabel>Support Email</FieldLabel>
+              <input
+                type="email"
+                value={state.branding.supportEmail}
+                onChange={(e) => update("branding", { ...state.branding, supportEmail: e.target.value })}
+                className={inputClass}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={state.branding.hideFooter} onChange={(e) => update("branding", { ...state.branding, hideFooter: e.target.checked })} />
+                Hide WGC footer
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={state.branding.hideChurchAddress} onChange={(e) => update("branding", { ...state.branding, hideChurchAddress: e.target.checked })} />
+                Hide church address
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={state.branding.hideContactInfo} onChange={(e) => update("branding", { ...state.branding, hideContactInfo: e.target.checked })} />
+                Hide contact information
+              </label>
+            </div>
+          </Section>
+        </div>
+
+        {/* Right: live preview */}
+        <div className="lg:h-full lg:overflow-y-auto pb-24">
+          <GivingLinkPreviewPanel
+            churchName={churchName}
+            light={state.branding.light}
+            amountType={state.amountType}
+            fixedAmountCents={state.fixedAmount ? Math.round(parseFloat(state.fixedAmount) * 100) : null}
+            minAmountCents={state.minAmount ? Math.round(parseFloat(state.minAmount) * 100) : null}
+            maxAmountCents={state.maxAmount ? Math.round(parseFloat(state.maxAmount) * 100) : null}
+            suggestedAmountsCents={amountsToCents(state.suggestedAmounts)}
+            allowCustomAmount={state.allowCustomAmount}
+            recurringEnabled={state.recurringEnabled}
+            allowedFrequencies={state.allowedFrequencies}
+            allowedPaymentMethods={state.allowedPaymentMethods}
+            feeCoverEnabled={state.feeCoverEnabled}
+            feeCoverDefaultOn={state.feeCoverDefaultOn}
+            donorFieldSettings={state.donorFieldSettings}
+            pricing={pricing}
+            thankYouMessage={state.receiptSettings.customMessage || "Thank you for your gift!"}
+            campaignImageUrl={state.branding.campaignImageUrl || undefined}
+            publicTitle={state.publicTitle}
+            description={state.description}
+            hideFooter={state.branding.hideFooter}
+          />
+        </div>
       </div>
 
-      {/* Right: live preview — renders the actual public GivingLinkForm component in a safe preview mode, so this can never drift from the real giving page. */}
-      <GivingLinkPreviewPanel
-        churchName={churchName}
-        light={state.branding.light}
-        amountType={state.amountType}
-        fixedAmountCents={state.fixedAmount ? Math.round(parseFloat(state.fixedAmount) * 100) : null}
-        minAmountCents={state.minAmount ? Math.round(parseFloat(state.minAmount) * 100) : null}
-        maxAmountCents={state.maxAmount ? Math.round(parseFloat(state.maxAmount) * 100) : null}
-        suggestedAmountsCents={amountsToCents(state.suggestedAmounts)}
-        allowCustomAmount={state.allowCustomAmount}
-        recurringEnabled={state.recurringEnabled}
-        allowedFrequencies={state.allowedFrequencies}
-        allowedPaymentMethods={state.allowedPaymentMethods}
-        feeCoverEnabled={state.feeCoverEnabled}
-        feeCoverDefaultOn={state.feeCoverDefaultOn}
-        donorFieldSettings={state.donorFieldSettings}
-        pricing={pricing}
-        thankYouMessage={state.receiptSettings.customMessage || "Thank you for your gift!"}
-        campaignImageUrl={state.branding.campaignImageUrl || undefined}
-        publicTitle={state.publicTitle}
-        description={state.description}
-        hideFooter={state.branding.hideFooter}
-      />
-
-      {/* Bottom actions */}
-      <div className="lg:col-span-2 flex items-center justify-end gap-3 pt-2">
-        <button
-          onClick={() => router.push("/merchant/giving-links")}
-          className="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-900"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleSubmit}
-          disabled={saving}
-          className="px-5 py-2.5 rounded-xl bg-blue-600 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {saving ? "Saving…" : mode === "create" ? "Create Giving Link" : "Save Changes"}
-        </button>
+      {/* Sticky Bottom Actions Bar */}
+      <div className="sticky bottom-0 bg-white border-t border-slate-200 py-4 px-6 md:px-10 flex items-center justify-between z-30 -mx-6 md:-mx-10 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] shrink-0 mt-auto">
+        <div className="flex items-center gap-2 text-sm min-w-0 flex-grow">
+          {saveStatus === "saving" && (
+            <span className="text-slate-500 flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin shrink-0" />
+              Saving…
+            </span>
+          )}
+          {saveStatus === "success" && (
+            <span className="text-green-600 font-semibold flex items-center gap-1.5">
+              Saved successfully
+            </span>
+          )}
+          {saveStatus === "error" && (
+            <div className="flex items-center gap-2 text-red-600 min-w-0">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+              <span className="text-red-700 font-medium truncate max-w-[200px] md:max-w-xs">{saveError || "Failed to save"}</span>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                className="font-bold text-blue-600 hover:underline shrink-0"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={() => router.push("/merchant/giving-links")}
+            className="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={saving || !isValid}
+            className="px-5 py-2.5 rounded-xl bg-blue-600 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition-all flex items-center gap-1.5"
+          >
+            {saveStatus === "saving" ? "Saving…" : saveStatus === "error" ? "Retry Save" : mode === "create" ? "Create Giving Link" : "Save Changes"}
+          </button>
+        </div>
       </div>
     </div>
   );
