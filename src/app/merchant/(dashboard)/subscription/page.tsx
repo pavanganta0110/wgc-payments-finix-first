@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import StateBadge from "@/components/merchant/StateBadge";
 import ComingSoon from "@/components/merchant/ComingSoon";
-import { formatDateCDT } from "@/lib/formatDateTimeCDT";
+import { formatDateCDT, formatDateTimeCDT } from "@/lib/formatDateTimeCDT";
+import RefreshPricingButton from "@/components/merchant/RefreshPricingButton";
 
 function titleCase(s: string | null | undefined) {
   if (!s) return "—";
@@ -73,8 +74,19 @@ export default async function SubscriptionPage() {
 
       {pricing && (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-          <h3 className="text-sm font-bold text-slate-900 mb-4">Processing Rates</h3>
-          <div className="grid grid-cols-3 gap-4 text-sm">
+          <div className="flex items-start justify-between mb-1">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Processing Rates</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Synced from your Finix fee profile
+                {pricing.updatedAt && (
+                  <> · Last updated {formatDateTimeCDT(pricing.updatedAt)}</>
+                )}
+              </p>
+            </div>
+            <RefreshPricingButton />
+          </div>
+          <div className="grid grid-cols-3 gap-4 text-sm mt-4">
             <div>
               <p className="text-xs text-slate-500 mb-1">Card Rate</p>
               <p className="text-lg font-bold text-slate-900">
@@ -95,6 +107,11 @@ export default async function SubscriptionPage() {
               <p className="text-lg font-bold text-slate-900">{pricing.pricingPlanName || "Standard"}</p>
             </div>
           </div>
+          <p className="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-50">
+            These are your WGC-negotiated card processing rates as configured in Finix.
+            If you recently updated your Finix Fee Profile and these values look stale,
+            click &ldquo;Refresh from Finix&rdquo; above to pull the latest.
+          </p>
         </div>
       )}
     </div>
