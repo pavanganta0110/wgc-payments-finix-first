@@ -26,59 +26,81 @@ export function isStaleEnoughToRefresh(lastSyncedAt: Date | null | undefined): b
 
 /**
  * Identifies the merchant's own bank-deposit funding transfer among
- * whatever Finix's settlement funding-transfer response returns — Finix
- * may include both a merchant-facing deposit and the platform's own
- * transfer in related resources, and the merchant dashboard must never
- * show the platform's. Matches defensively against every field name this
- * codebase's existing Finix response handling has confirmed or assumed
- * elsewhere (see the webhook handler's FUNDING_TRANSFER_ATTEMPT block):
- * `merchant`, `merchant_id`, and a `tags`/`type` marker if present. Falls
- * back to the first entry only when there is exactly one and no merchant
- * id to disambiguate against — never guesses between multiple candidates.
+ * Finix's settlement funding-transfer response — confirmed against a real
+ * sandbox settlement (GET /settlements/{id}/funding_transfers): the
+ * response's `_embedded.transfers` array contains one entry per deposit,
+ * each with a `subtype` of either "SETTLEMENT_MERCHANT" (the church's own
+ * payout) or "SETTLEMENT_PLATFORM" (WGC's own revenue transfer) — this is
+ * the authoritative field, not a guess. The merchant dashboard must never
+ * show the platform's transfer. `merchant` (confirmed real field) is used
+ * as a second check when available, purely as defense-in-depth.
  */
 export function selectMerchantFundingTransfer(fundingTransfers: any[], finixMerchantId: string | null): any | null {
   if (!Array.isArray(fundingTransfers) || fundingTransfers.length === 0) return null;
 
-  const isPlatformDeposit = (t: any) => {
-    const type = String(t?.type || t?.subtype || t?.deposit_type || "").toUpperCase();
-    return type.includes("PLATFORM");
-  };
-
-  const merchantCandidates = fundingTransfers.filter((t) => !isPlatformDeposit(t));
+  const merchantCandidates = fundingTransfers.filter((t) => t?.subtype === "SETTLEMENT_MERCHANT");
   if (merchantCandidates.length === 0) return null;
 
   if (finixMerchantId) {
-    const exact = merchantCandidates.find((t) => (t?.merchant ?? t?.merchant_id ?? t?.linked_to) === finixMerchantId);
+    const exact = merchantCandidates.find((t) => t?.merchant === finixMerchantId);
     if (exact) return exact;
   }
 
   // No merchant id to disambiguate, or none matched exactly — only safe to
-  // guess when there's just one non-platform candidate.
+  // guess when there's just one SETTLEMENT_MERCHANT candidate.
   return merchantCandidates.length === 1 ? merchantCandidates[0] : null;
 }
 
-/** Maps one raw Finix funding-transfer object to this app's DB field shape — defensive about field names since the exact response shape is unconfirmed (see client.ts's getSettlementFundingTransfers comment). */
+/**
+ * Maps one raw Finix funding-transfer object to this app's DB field shape.
+ * Confirmed against a real sandbox response: this Transfer object has no
+ * bank_name/masked_account_number/account_type/funding_speed fields at
+ * all — those were an earlier, incorrect assumption. Bank display info
+ * comes exclusively from resolving `destination` (a payment-instrument
+ * id) against OrganizationBankAccount (see settlementDetail.ts), never
+ * from this object directly.
+ */
 export function mapFundingTransferFields(transfer: any) {
   return {
-    state: transfer.state ?? transfer.status ?? null,
+    state: transfer.state ?? null,
     amountCents: transfer.amount ?? null,
-    netAmountCents: transfer.net_amount ?? transfer.amount ?? null,
+    netAmountCents: transfer.amount ?? null,
     currency: transfer.currency ?? null,
-    fundingSpeed: transfer.funding_speed ?? transfer.ready_to_settle_upon ?? null,
-    bankAccountLast4: transfer.masked_account_number ?? null,
-    bankAccountType: transfer.account_type ?? null,
-    bankName: transfer.bank_name ?? transfer.bank ?? null,
-    accountHolderName: transfer.name ?? transfer.account_holder_name ?? null,
-    destinationPaymentInstrumentId: transfer.destination ?? transfer.destination_instrument ?? null,
+    fundingSpeed: null,
+    bankAccountLast4: null,
+    bankAccountType: null,
+    bankName: null,
+    accountHolderName: null,
+    destinationPaymentInstrumentId: transfer.destination ?? null,
     failureCode: transfer.failure_code ?? null,
     failureMessage: transfer.failure_message ?? null,
     traceId: transfer.trace_id ?? null,
-    estimatedArrivalDate: transfer.estimated_arrival_date ? new Date(transfer.estimated_arrival_date) : null,
-    sentAt: transfer.sent_at ? new Date(transfer.sent_at) : null,
-    arrivedAt: transfer.arrived_at ? new Date(transfer.arrived_at) : null,
+    estimatedArrivalDate: null,
+    sentAt: null,
+    arrivedAt: null,
     createdAtFinix: transfer.created_at ? new Date(transfer.created_at) : null,
     updatedAtFinix: transfer.updated_at ? new Date(transfer.updated_at) : null,
   };
+}
+
+/**
+ * Looks for a funding-transfer/deposit-related HAL link on a settlement
+ * response's own `_links` object — Finix's dashboard clearly ties
+ * "Merchant Deposits"/"Platform Deposits" back to a settlement (confirmed
+ * visually against a real settlement's detail view), so the settlement
+ * resource itself is the most likely place to find the authoritative href
+ * for that related data, rather than guessing a REST sub-path. Matches any
+ * link key containing "funding" or "deposit", case-insensitively.
+ */
+export function findFundingTransfersHref(settlement: any): string | null {
+  const links = settlement?._links;
+  if (!links || typeof links !== "object") return null;
+  for (const [key, value] of Object.entries(links)) {
+    if (!/funding|deposit/i.test(key)) continue;
+    const href = (value as any)?.href;
+    if (typeof href === "string" && href) return href;
+  }
+  return null;
 }
 
 /**
@@ -143,8 +165,17 @@ export async function refreshSettlementAndDepositFromFinix(
 
     let hasFundingTransferData = false;
     try {
-      const response = await finixClient.getSettlementFundingTransfers(finixSettlementId);
-      const fundingTransfers: any[] = response?._embedded?.funding_transfers ?? response?.funding_transfers ?? (Array.isArray(response) ? response : []);
+      // Confirmed against a real sandbox settlement: the settlement's own
+      // _links.funding_transfers.href is real (GET .../funding_transfers),
+      // and its response envelope is _embedded.transfers (an array of
+      // Transfer objects, distinguished by `subtype` — see
+      // selectMerchantFundingTransfer). Prefer following the settlement's
+      // own href when present; fall back to the constructed path only if
+      // Finix ever omits that link.
+      const fundingHref = findFundingTransfersHref(settlement);
+      const response = fundingHref ? await finixClient.fetchByHref(fundingHref) : await finixClient.getSettlementFundingTransfers(finixSettlementId);
+      const fundingTransfers: any[] =
+        response?._embedded?.transfers ?? response?._embedded?.funding_transfers ?? response?.funding_transfers ?? (Array.isArray(response) ? response : []);
       hasFundingTransferData = true;
 
       const merchantTransfer = selectMerchantFundingTransfer(fundingTransfers, finixMerchantId);

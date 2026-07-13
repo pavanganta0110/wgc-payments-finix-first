@@ -16,9 +16,26 @@ export class FinixClient {
     this.version = process.env.FINIX_VERSION || "2022-02-01";
   }
 
-  private async fetchApi(path: string, options: RequestInit = {}) {
-    const url = `${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
-    
+  /**
+   * Follows a HAL `_links` href verbatim (e.g. from a settlement response's
+   * own `_links` object) instead of guessing a URL path — this codebase's
+   * responses are already HAL+JSON (see the Accept header below and the
+   * existing `_embedded.*` usage throughout), so `_links` entries are the
+   * most reliable way to find a related resource Finix actually exposes.
+   *
+   * Confirmed against a real sandbox response: Finix's `_links` hrefs use
+   * a different host (finix.sandbox-payments-api.com) than FINIX_BASE_URL
+   * (api-sandbox.finix.com) — both resolve the same API, but this means an
+   * href must be requested as an absolute URL, never reassembled onto
+   * this.baseUrl.
+   */
+  async fetchByHref(href: string) {
+    return this.fetchApi(href, {}, true);
+  }
+
+  private async fetchApi(path: string, options: RequestInit = {}, isAbsoluteUrl = false) {
+    const url = isAbsoluteUrl ? path : `${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+
     const headers = {
       "Authorization": this.authHeader,
       "Accept": "application/hal+json",
@@ -458,19 +475,17 @@ export class FinixClient {
 
   /**
    * Fetches the funding transfer(s) — the actual bank deposit/payout — for
-   * a given settlement. NOT verified against a live sandbox response in
-   * this codebase; added per explicit direction to call
-   * GET /settlements/{id}/funding_transfers. Note this codebase has a
-   * documented, unresolved internal contradiction about how Finix models
-   * payouts at all: syncPayouts.ts's own comment states Finix has "no
-   * separate funding-transfer-attempt resource" and that payouts are
-   * regular Transfers with operation_key "PUSH_TO_ACH", while the
-   * webhook handler's FUNDING_TRANSFER_ATTEMPT entity assumes the
-   * opposite. Callers of this method must treat its response defensively
-   * (see settlementFundingSync.ts) and must not crash the caller if this
-   * 404s or returns an unexpected shape — fall back to whatever the
-   * webhook has already populated rather than treating this as the only
-   * source of truth.
+   * a given settlement. CONFIRMED against a real sandbox response
+   * (GET /settlements/{id} returns this exact href under
+   * _links.funding_transfers): the response envelope is
+   * `_embedded.transfers`, an array of Transfer objects each carrying a
+   * `subtype` of "SETTLEMENT_MERCHANT" or "SETTLEMENT_PLATFORM" — see
+   * selectMerchantFundingTransfer() in settlementFundingSync.ts, which is
+   * the authoritative merchant-vs-platform distinction. Prefer calling via
+   * the settlement's own `_links.funding_transfers.href` when available
+   * (see findFundingTransfersHref) rather than this constructed path,
+   * since Finix's hrefs resolve on a different host than FINIX_BASE_URL —
+   * this method remains as a fallback for when that link is ever missing.
    */
   async getSettlementFundingTransfers(settlementId: string) {
     return this.fetchApi(`/settlements/${settlementId}/funding_transfers`);
