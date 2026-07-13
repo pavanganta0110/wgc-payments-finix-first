@@ -90,7 +90,8 @@ export async function POST(req: Request) {
     },
   });
 
-  const inviteLink = `https://wgcpayments.com/merchant/set-password/${rawToken}`;
+  const origin = req.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || "https://wgcpayments.com";
+  const inviteLink = `${origin}/merchant/set-password/${rawToken}`;
   await sendWgcEmail({
     to: email,
     subject: `You've been invited to join ${church?.name || "an organization"} on WGC Payments`,

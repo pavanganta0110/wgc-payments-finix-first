@@ -32,7 +32,8 @@ export async function POST(req: Request) {
       data: { setPasswordTokenHash: tokenHash, setPasswordTokenExpiresAt: expiresAt },
     });
 
-    const resetLink = `https://wgcpayments.com/merchant/set-password/${rawToken}`;
+    const origin = req.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || "https://wgcpayments.com";
+    const resetLink = `${origin}/merchant/set-password/${rawToken}`;
 
     await sendWgcEmail({
       to: user.email,
