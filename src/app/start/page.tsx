@@ -101,6 +101,53 @@ export default function StartOnboardingPage() {
 
   const [associatedOwners, setAssociatedOwners] = useState<any[]>([]);
 
+  // WGC-only 501(c)(3) IRS determination letter — held in memory until the
+  // main submission succeeds (no draft-save exists for this form; every
+  // other field has the same limitation), then uploaded as a separate,
+  // independent request that never affects the Finix submission above.
+  const [irsLetterFile, setIrsLetterFile] = useState<File | null>(null);
+  const [irsLetterError, setIrsLetterError] = useState<string | null>(null);
+  const [irsLetterUploadPhase, setIrsLetterUploadPhase] = useState<"idle" | "uploading" | "uploaded" | "failed">("idle");
+  const [submittedApplicationId, setSubmittedApplicationId] = useState<string | null>(null);
+
+  const IRS_LETTER_ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png"];
+  const IRS_LETTER_MAX_SIZE = 10 * 1024 * 1024;
+
+  const handleIrsLetterChange = (file: File | null) => {
+    setIrsLetterError(null);
+    if (!file) {
+      setIrsLetterFile(null);
+      return;
+    }
+    if (!IRS_LETTER_ALLOWED_TYPES.includes(file.type)) {
+      setIrsLetterError("Upload a PDF, JPG, JPEG, or PNG file.");
+      return;
+    }
+    if (file.size > IRS_LETTER_MAX_SIZE) {
+      setIrsLetterError("The selected file exceeds the allowed size.");
+      return;
+    }
+    setIrsLetterFile(file);
+  };
+
+  const uploadIrsLetterFile = async (applicationId: string): Promise<boolean> => {
+    if (!irsLetterFile) return true;
+    setIrsLetterUploadPhase("uploading");
+    try {
+      const uploadFormData = new FormData();
+      uploadFormData.append("file", irsLetterFile);
+      const res = await fetch(`/api/onboarding/${applicationId}/irs-letter`, { method: "POST", body: uploadFormData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "We could not upload the document. Please try again.");
+      setIrsLetterUploadPhase("uploaded");
+      return true;
+    } catch (err: any) {
+      setIrsLetterError(err.message || "We could not upload the document. Please try again.");
+      setIrsLetterUploadPhase("failed");
+      return false;
+    }
+  };
+
   const [legal, setLegal] = useState({
     wgcTerms: false,
     wgcFees: false,
@@ -206,12 +253,31 @@ export default function StartOnboardingPage() {
       }
 
       toast.success("Application started!");
+      setSubmittedApplicationId(data.applicationId);
+
+      if (irsLetterFile) {
+        const uploaded = await uploadIrsLetterFile(data.applicationId);
+        // Whether the optional WGC-only document upload succeeded or
+        // failed, the Finix onboarding submission above already
+        // succeeded and must not be rolled back — only block navigation
+        // when it failed, so the retry UI (rendered below) has a chance
+        // to show.
+        if (!uploaded) {
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       router.push(`/onboarding/success?applicationId=${data.applicationId}`);
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "An error occurred");
       setIsSubmitting(false);
     }
+  };
+
+  const continueToSuccess = () => {
+    if (submittedApplicationId) router.push(`/onboarding/success?applicationId=${submittedApplicationId}`);
   };
 
   return (
@@ -226,6 +292,30 @@ export default function StartOnboardingPage() {
         </div>
 
         <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+          {submittedApplicationId && irsLetterUploadPhase === "failed" ? (
+            <div className="text-center py-8">
+              <h2 className="text-xl font-bold text-slate-900 mb-2">Your application was submitted</h2>
+              <p className="text-slate-600 mb-4">
+                We could not upload your IRS determination letter. Your onboarding application was still submitted successfully — you can retry the
+                document upload now or continue and add it later.
+              </p>
+              {irsLetterError && <p className="text-sm text-red-600 mb-4">{irsLetterError}</p>}
+              <div className="flex justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => uploadIrsLetterFile(submittedApplicationId).then((ok) => ok && router.push(`/onboarding/success?applicationId=${submittedApplicationId}`))}
+                  disabled={irsLetterUploadPhase === ("uploading" as typeof irsLetterUploadPhase)}
+                  className="px-6 py-3 rounded-xl font-bold text-slate-900 metallic-gold shadow-lg disabled:opacity-50"
+                >
+                  Retry Upload
+                </button>
+                <button type="button" onClick={continueToSuccess} className="px-6 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">
+                  Continue Without Document
+                </button>
+              </div>
+            </div>
+          ) : (
+          <>
           <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
             {[1, 2, 3, 4, 5, 6].map((s) => (
               <div key={s} className={`h-2 flex-grow rounded-full ${step >= s ? 'bg-[#eab308]' : 'bg-slate-100'}`} />
@@ -279,6 +369,30 @@ export default function StartOnboardingPage() {
                     <div className="w-1/2"><label className="block text-sm font-semibold mb-2">Day</label><input required type="number" placeholder="DD" min="1" max="31" value={formData.incorporationDay} onChange={(e) => updateField("incorporationDay", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   </div>
                   <div className="md:col-span-2"><label className="block text-sm font-semibold mb-2">Organization Description</label><textarea required value={formData.businessDescription} onChange={(e) => updateField("businessDescription", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" rows={3} /></div>
+                  <div className="md:col-span-2 pt-4 border-t border-slate-100">
+                    <label className="block text-sm font-semibold mb-2">501(c)(3) IRS Determination Letter</label>
+                    <p className="text-xs text-slate-500 mb-2">
+                      Upload your organization&apos;s IRS determination letter, if available. This document is stored securely for WGC review and is
+                      not sent to the payment processor.
+                    </p>
+                    {irsLetterFile ? (
+                      <div className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-slate-50">
+                        <span className="text-sm text-slate-700 truncate">{irsLetterFile.name}</span>
+                        <button type="button" onClick={() => handleIrsLetterChange(null)} className="text-sm font-semibold text-red-600 hover:underline ml-3 shrink-0">
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <input
+                        type="file"
+                        accept="application/pdf,image/jpeg,image/png"
+                        onChange={(e) => handleIrsLetterChange(e.target.files?.[0] || null)}
+                        className="w-full text-sm"
+                      />
+                    )}
+                    {irsLetterError && <p className="text-xs text-red-600 mt-1">{irsLetterError}</p>}
+                    <p className="text-[11px] text-slate-400 mt-1">Optional. PDF, JPG, JPEG, or PNG, up to 10MB.</p>
+                  </div>
                 </div>
               </div>
             )}
@@ -488,6 +602,8 @@ export default function StartOnboardingPage() {
               )}
             </div>
           </form>
+          </>
+          )}
         </div>
       </main>
       <Footer />

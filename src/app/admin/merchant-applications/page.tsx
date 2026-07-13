@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import IrsLetterReviewModal from '@/components/admin/IrsLetterReviewModal';
 
 interface MerchantDocument {
   id: string;
@@ -39,6 +40,7 @@ export default function MerchantApplicationsPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [regenerating, setRegenerating] = useState<string | null>(null);
+  const [irsLetterModalApp, setIrsLetterModalApp] = useState<{ id: string; organizationName: string } | null>(null);
 
   const fetchApps = () => {
     fetch('/api/admin/merchant-applications')
@@ -150,6 +152,7 @@ export default function MerchantApplicationsPage() {
               <th className="px-6 py-4 font-semibold text-gray-900">Status</th>
               <th className="px-6 py-4 font-semibold text-gray-900 w-64">Required Info / Errors</th>
               <th className="px-6 py-4 font-semibold text-gray-900 w-64">Documents</th>
+              <th className="px-6 py-4 font-semibold text-gray-900">IRS Letter</th>
               <th className="px-6 py-4 font-semibold text-gray-900">Timestamps</th>
               <th className="px-6 py-4 font-semibold text-gray-900">Actions</th>
             </tr>
@@ -210,6 +213,14 @@ export default function MerchantApplicationsPage() {
                     <span className="text-xs text-gray-400">-</span>
                   )}
                 </td>
+                <td className="px-6 py-4">
+                  <button
+                    onClick={() => setIrsLetterModalApp({ id: app.id, organizationName: app.organizationName })}
+                    className="text-xs border border-gray-300 hover:bg-gray-50 text-gray-700 px-2 py-1.5 rounded transition-colors"
+                  >
+                    Review
+                  </button>
+                </td>
                 <td className="px-6 py-4 text-gray-500 text-xs space-y-1">
                   <div><strong>Updated:</strong> {app.lastStatusChangedAt ? new Date(app.lastStatusChangedAt).toLocaleString() : '-'}</div>
                   <div><strong>Submitted:</strong> {app.lastUpdateSubmittedAt ? new Date(app.lastUpdateSubmittedAt).toLocaleString() : '-'}</div>
@@ -255,7 +266,7 @@ export default function MerchantApplicationsPage() {
             ))}
             {apps.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                   No applications found.
                 </td>
               </tr>
@@ -301,6 +312,14 @@ export default function MerchantApplicationsPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {irsLetterModalApp && (
+        <IrsLetterReviewModal
+          applicationId={irsLetterModalApp.id}
+          organizationName={irsLetterModalApp.organizationName}
+          onClose={() => setIrsLetterModalApp(null)}
+        />
       )}
     </div>
   );

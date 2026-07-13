@@ -9,7 +9,7 @@ datasource db {
 }
 
 model OnboardingApplication {
-  id                                String             @id @default(cuid())
+  id                                String                       @id @default(cuid())
   organizationName                  String
   organizationType                  String
   contactName                       String
@@ -38,10 +38,10 @@ model OnboardingApplication {
   updateTokenHash                   String?
   updateTokenExpiresAt              DateTime?
   lastUpdateSubmittedAt             DateTime?
-  processingEnabled                 Boolean            @default(false)
-  settlementEnabled                 Boolean            @default(false)
-  createdAt                         DateTime           @default(now())
-  updatedAt                         DateTime           @updatedAt
+  processingEnabled                 Boolean                      @default(false)
+  settlementEnabled                 Boolean                      @default(false)
+  createdAt                         DateTime                     @default(now())
+  updatedAt                         DateTime                     @updatedAt
   achMaxTransactionAmountCents      Int?
   annualAchVolumeCents              Int?
   annualCardVolumeCents             Int?
@@ -50,7 +50,7 @@ model OnboardingApplication {
   bankAccountType                   String?
   bankCountry                       String?
   bankCurrency                      String?
-  bankInstrumentEnabled             Boolean            @default(false)
+  bankInstrumentEnabled             Boolean                      @default(false)
   bankInstrumentId                  String?
   bankLast4                         String?
   bankName                          String?
@@ -62,7 +62,7 @@ model OnboardingApplication {
   businessPhone                     String?
   businessPostalCode                String?
   businessState                     String?
-  businessTaxIdProvided             Boolean            @default(false)
+  businessTaxIdProvided             Boolean                      @default(false)
   businessToBusinessPercentage      Int?
   businessToConsumerPercentage      Int?
   businessType                      String?
@@ -74,7 +74,7 @@ model OnboardingApplication {
   finixPaymentInstrumentId          String?
   finixProcessor                    String?
   finixVerificationId               String?
-  hasAcceptedCreditCardsPreviously  Boolean            @default(false)
+  hasAcceptedCreditCardsPreviously  Boolean                      @default(false)
   incorporationDay                  Int?
   incorporationMonth                Int?
   incorporationYear                 Int?
@@ -99,7 +99,7 @@ model OnboardingApplication {
   principalPhone                    String?
   principalPostalCode               String?
   principalState                    String?
-  principalTaxIdProvided            Boolean            @default(false)
+  principalTaxIdProvided            Boolean                      @default(false)
   principalTitle                    String?
   refundPolicy                      String?
   // TODO: Confirm exact Finix termination/suspension API and webhook event with Finix.
@@ -111,6 +111,55 @@ model OnboardingApplication {
   suspensionReason                  String?
   associatedOwners                  AssociatedOwner[]
   documents                         MerchantDocument[]
+  internalDocuments                 OnboardingInternalDocument[]
+}
+
+// A WGC-only document collected during onboarding — never sent to Finix or
+// any processor-related service. Deliberately a separate model from
+// MerchantDocument (which always carries a finixFileId and is uploaded via
+// Finix's own File API): mixing WGC-internal review/versioning fields into
+// that table would risk an accidental Finix-facing code path picking up a
+// row that was never meant to leave WGC. See assertNeverSentToFinix() in
+// src/lib/onboarding/wgcInternalDocumentGuard.ts for the runtime guard.
+model OnboardingInternalDocument {
+  id                      String @id @default(cuid())
+  onboardingApplicationId String
+  documentType            String @default("IRS_501C3_DETERMINATION_LETTER")
+  category                String @default("WGC_INTERNAL")
+  title                   String @default("501(c)(3) IRS Determination Letter")
+
+  originalFilename String
+  storageProvider  String @default("supabase_storage")
+  // Private-bucket object path — never a public/signed URL. Access is only
+  // ever granted via a freshly generated, short-lived signed URL at
+  // view/download time (see the admin access route).
+  storageKey       String
+  mimeType         String
+  sizeBytes        Int
+  checksum         String // sha256 hex of the uploaded bytes
+
+  status String @default("UPLOADED") // UPLOADED | UNDER_REVIEW | VERIFIED_BY_WGC | NEEDS_REPLACEMENT | REJECTED
+
+  // Simple version chain per onboardingApplicationId — a replacement
+  // creates a new row and flips the prior current row's isCurrent to
+  // false rather than overwriting it, so review history is preserved.
+  version   Int     @default(1)
+  isCurrent Boolean @default(true)
+
+  uploadedByUserId String? // set for admin-on-behalf uploads; null for the organization's own pre-Church upload (no user session exists yet)
+  uploadedAt       DateTime @default(now())
+
+  reviewedByUserId          String?
+  reviewedAt                DateTime?
+  organizationFacingMessage String? // shown to the organization
+  internalReviewNotes       String? // wgc_admin only, never shown to the organization
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  onboardingApplication OnboardingApplication @relation(fields: [onboardingApplicationId], references: [id], onDelete: Cascade)
+
+  @@index([onboardingApplicationId])
 }
 
 model AssociatedOwner {
