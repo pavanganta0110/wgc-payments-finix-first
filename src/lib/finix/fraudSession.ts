@@ -20,6 +20,13 @@ export interface FinixTokenResponse {
     id: string;
     instrument_type: "PAYMENT_CARD" | "BANK_ACCOUNT";
     expires_at?: string;
+    // Mirrors the same field names Finix returns on the created Payment
+    // Instrument itself (see instrument.masked_account_number /
+    // instrument.account_type in the bank-account change route) — not
+    // guaranteed present on every token response, so callers must treat
+    // these as optional and fall back gracefully when absent.
+    masked_account_number?: string;
+    account_type?: string;
   };
 }
 

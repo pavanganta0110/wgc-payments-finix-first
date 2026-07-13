@@ -4,10 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { mountFinixPaymentForm } from "@/lib/finix/tokenize";
 import type { FinixPaymentFormInstance } from "@/lib/finix/fraudSession";
+import {
+  PAYOUT_PROOF_ALLOWED_MIME_TYPES,
+  PAYOUT_PROOF_ALLOWED_EXTENSIONS_LABEL,
+  PAYOUT_PROOF_MAX_FILE_SIZE_BYTES,
+  PAYOUT_PROOF_MAX_FILES,
+  PAYOUT_PROOF_MAX_TOTAL_SIZE_BYTES,
+} from "@/lib/uploads/payoutProofLimits";
 
 const APPLICATION_ID = process.env.NEXT_PUBLIC_FINIX_APPLICATION_ID || "";
 const CONSENT_TEXT =
-  "I confirm that I am authorized to change this organization's payout bank account. I understand that the change may require review and that payouts already scheduled or processing may continue to the current bank account.";
+  "I confirm that I am authorized to change this organization's payout bank account and that the submitted account and supporting documents are accurate.";
+const PROOF_HELP_TEXT =
+  "Upload proof of the payout account. Acceptable proof may include a recent bank statement or bank-issued document showing the account holder, account number, and routing number.";
 
 interface CurrentAccount {
   bankName: string | null;
@@ -22,6 +31,20 @@ interface PendingFunding {
   processingDeposits: number;
   failedOrReturnedDeposits: number;
   hasAnyPending: boolean;
+}
+
+interface NewAccountSummary {
+  last4: string | null;
+  accountType: string | null;
+}
+
+function formatAccountType(accountType: string | null): string {
+  if (!accountType) return "Bank account";
+  return accountType
+    .toLowerCase()
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
 }
 
 export default function ChangeBankAccountFlow({
@@ -40,6 +63,10 @@ export default function ChangeBankAccountFlow({
   const [changeReason, setChangeReason] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [pendingToken, setPendingToken] = useState<string | null>(null);
+  const [proofFiles, setProofFiles] = useState<File[]>([]);
+  const [proofError, setProofError] = useState<string | null>(null);
+  const [uploadWarning, setUploadWarning] = useState<string | null>(null);
+  const [newAccountSummary, setNewAccountSummary] = useState<NewAccountSummary | null>(null);
   const formInstanceRef = useRef<FinixPaymentFormInstance | null>(null);
   const idempotencyKeyRef = useRef<string>(`payout-change-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
@@ -60,9 +87,46 @@ export default function ChangeBankAccountFlow({
     };
   }, []);
 
+  const addProofFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const incoming = Array.from(files);
+    setProofError(null);
+
+    const combined = [...proofFiles];
+    for (const file of incoming) {
+      if (!PAYOUT_PROOF_ALLOWED_MIME_TYPES.includes(file.type)) {
+        setProofError(`"${file.name}" is not an accepted file type. Only ${PAYOUT_PROOF_ALLOWED_EXTENSIONS_LABEL} are allowed.`);
+        continue;
+      }
+      if (file.size > PAYOUT_PROOF_MAX_FILE_SIZE_BYTES) {
+        setProofError(`"${file.name}" is too large. Maximum size is ${PAYOUT_PROOF_MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB per file.`);
+        continue;
+      }
+      if (combined.length >= PAYOUT_PROOF_MAX_FILES) {
+        setProofError(`Maximum of ${PAYOUT_PROOF_MAX_FILES} files allowed.`);
+        continue;
+      }
+      const totalSize = combined.reduce((sum, f) => sum + f.size, 0) + file.size;
+      if (totalSize > PAYOUT_PROOF_MAX_TOTAL_SIZE_BYTES) {
+        setProofError("Total upload size limit exceeded.");
+        continue;
+      }
+      combined.push(file);
+    }
+    setProofFiles(combined);
+  };
+
+  const removeProofFile = (index: number) => {
+    setProofFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const tokenizeAndReview = () => {
     if (!formInstanceRef.current || !formReady) {
       toast.error("The secure form is still loading — please wait a moment");
+      return;
+    }
+    if (proofFiles.length === 0) {
+      setProofError("Upload at least one supporting document before continuing.");
       return;
     }
     formInstanceRef.current.submit((error, response) => {
@@ -71,6 +135,10 @@ export default function ChangeBankAccountFlow({
         return;
       }
       setPendingToken(response.data.id);
+      setNewAccountSummary({
+        last4: response.data.masked_account_number ?? null,
+        accountType: response.data.account_type ?? null,
+      });
       setStep("review");
     });
   };
@@ -78,6 +146,7 @@ export default function ChangeBankAccountFlow({
   const submitChange = async () => {
     if (!confirmed || !pendingToken) return;
     setStep("submitting");
+    setUploadWarning(null);
     try {
       const res = await fetch("/api/merchant/organization/bank-account/change", {
         method: "POST",
@@ -91,6 +160,30 @@ export default function ChangeBankAccountFlow({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to submit payout bank account change");
+
+      const accountId = data.account?.id;
+      if (accountId && proofFiles.length > 0) {
+        let failedCount = 0;
+        for (const file of proofFiles) {
+          try {
+            const formData = new FormData();
+            formData.append("file", file);
+            const uploadRes = await fetch(`/api/merchant/organization/bank-account/${accountId}/documents`, {
+              method: "POST",
+              body: formData,
+            });
+            if (!uploadRes.ok) failedCount += 1;
+          } catch {
+            failedCount += 1;
+          }
+        }
+        if (failedCount > 0) {
+          setUploadWarning(
+            `Your bank account change was submitted, but ${failedCount} of ${proofFiles.length} supporting document${proofFiles.length > 1 ? "s" : ""} could not be uploaded. Contact WGC Support to resend it.`
+          );
+        }
+      }
+
       setStep("done");
       onSubmitted();
     } catch (err: any) {
@@ -107,20 +200,6 @@ export default function ChangeBankAccountFlow({
           This securely submits a new payout bank account for verification. Your current payout account stays active until the change is approved.
         </p>
 
-        {pendingFunding.hasAnyPending && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-xs text-amber-800 space-y-1">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              {pendingFunding.accruingSettlements + pendingFunding.processingSettlements > 0 && (
-                <div>Pending Settlements: <strong>{pendingFunding.accruingSettlements + pendingFunding.processingSettlements}</strong></div>
-              )}
-              {pendingFunding.scheduledDeposits > 0 && <div>Pending Deposits: <strong>{pendingFunding.scheduledDeposits}</strong></div>}
-              {pendingFunding.processingDeposits > 0 && <div>Processing Deposits: <strong>{pendingFunding.processingDeposits}</strong></div>}
-              {pendingFunding.failedOrReturnedDeposits > 0 && <div>Failed Deposits: <strong>{pendingFunding.failedOrReturnedDeposits}</strong></div>}
-            </div>
-            <p className="pt-1">Payouts already scheduled or processing may still be deposited into the current bank account. Future eligible payouts will use the newly approved payout account.</p>
-          </div>
-        )}
-
         {step === "collect" && (
           <>
             <div className="mb-4">
@@ -130,6 +209,38 @@ export default function ChangeBankAccountFlow({
               </p>
             </div>
             <div id="change-bank-account-finix-form" className="min-h-[180px] border border-slate-200 rounded-xl p-3 mb-4" />
+
+            <div className="mb-4">
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Supporting Bank Proof</label>
+              <p className="text-xs text-slate-500 mb-2">{PROOF_HELP_TEXT}</p>
+              <input
+                type="file"
+                multiple
+                accept={PAYOUT_PROOF_ALLOWED_MIME_TYPES.join(",")}
+                onChange={(e) => {
+                  addProofFiles(e.target.files);
+                  e.target.value = "";
+                }}
+                className="text-xs w-full"
+              />
+              {proofFiles.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {proofFiles.map((file, i) => (
+                    <li key={`${file.name}-${i}`} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-2 py-1">
+                      <span className="truncate text-slate-700">{file.name}</span>
+                      <button type="button" onClick={() => removeProofFile(i)} className="text-slate-400 hover:text-red-600 ml-2 font-semibold">
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {proofError && <p className="text-xs text-red-600 mt-1">{proofError}</p>}
+              <p className="text-[11px] text-slate-400 mt-1">
+                Up to {PAYOUT_PROOF_MAX_FILES} files, {PAYOUT_PROOF_MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB each ({PAYOUT_PROOF_ALLOWED_EXTENSIONS_LABEL}).
+              </p>
+            </div>
+
             <div className="mb-4">
               <label className="block text-xs font-semibold text-slate-500 mb-1">Reason for Change (optional)</label>
               <textarea
@@ -143,8 +254,12 @@ export default function ChangeBankAccountFlow({
               <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600">
                 Cancel
               </button>
-              <button onClick={tokenizeAndReview} disabled={!formReady} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold disabled:opacity-50">
-                Continue
+              <button
+                onClick={tokenizeAndReview}
+                disabled={!formReady || proofFiles.length === 0}
+                className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold disabled:opacity-50"
+              >
+                Review Change
               </button>
             </div>
           </>
@@ -155,16 +270,35 @@ export default function ChangeBankAccountFlow({
             <div className="space-y-3 mb-4">
               <div>
                 <p className="text-xs font-semibold text-slate-500 mb-1">Current Payout Account</p>
-                <p className="text-sm text-slate-800">{current ? `${current.bankName || "Bank on file"} ••••${current.last4 || "----"}` : "None on file"}</p>
+                <p className="text-sm text-slate-800">
+                  {current
+                    ? `${current.bankName || "Bank on file"} · ${formatAccountType(current.accountType)} · ••••${current.last4 || "----"}`
+                    : "None on file"}
+                </p>
               </div>
               <div>
-                <p className="text-xs font-semibold text-slate-500 mb-1">New Account</p>
-                <p className="text-sm text-slate-800">Submitted securely — details tokenized, not stored in plain text.</p>
+                <p className="text-xs font-semibold text-slate-500 mb-1">New Payout Account</p>
+                <p className="text-sm text-slate-800">
+                  {formatAccountType(newAccountSummary?.accountType ?? null)}
+                  {newAccountSummary?.last4 ? ` · ••••${newAccountSummary.last4}` : " · tokenized securely"}
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {proofFiles.length} supporting document{proofFiles.length === 1 ? "" : "s"} attached
+                </p>
               </div>
               <div className="bg-slate-50 rounded-xl p-3 text-xs text-slate-600 space-y-1">
-                <p>This account requires processor verification before it can receive payouts. Verification alone does not make it active — a separate activation step follows.</p>
-                <p>Your new bank account will be used for future eligible payouts after it is approved and activated. Payouts already scheduled or processing may continue to your previous account.</p>
-                <p>Review may take some time — no action is needed from you while it's in progress.</p>
+                <p className="font-semibold text-slate-700">Payout Impact</p>
+                {pendingFunding.hasAnyPending && (
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                    {pendingFunding.accruingSettlements + pendingFunding.processingSettlements > 0 && (
+                      <div>Pending Settlements: <strong>{pendingFunding.accruingSettlements + pendingFunding.processingSettlements}</strong></div>
+                    )}
+                    {pendingFunding.scheduledDeposits > 0 && <div>Scheduled Deposits: <strong>{pendingFunding.scheduledDeposits}</strong></div>}
+                    {pendingFunding.processingDeposits > 0 && <div>Processing Deposits: <strong>{pendingFunding.processingDeposits}</strong></div>}
+                  </div>
+                )}
+                <p>Payouts already scheduled or processing may continue to the existing account.</p>
+                <p>The new account is used only after review and activation.</p>
               </div>
             </div>
             <label className="flex items-start gap-2 text-xs text-slate-600 mb-4">
@@ -176,7 +310,7 @@ export default function ChangeBankAccountFlow({
                 Back
               </button>
               <button onClick={submitChange} disabled={!confirmed} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold disabled:opacity-50">
-                Submit
+                Submit for Review
               </button>
             </div>
           </>
@@ -188,6 +322,7 @@ export default function ChangeBankAccountFlow({
           <div className="text-center py-6">
             <p className="text-sm font-semibold text-slate-900 mb-2">Your new payout bank account has been submitted</p>
             <p className="text-xs text-slate-500 mb-4">It's now under review. Your current payout account remains active until the new account is approved.</p>
+            {uploadWarning && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-4">{uploadWarning}</p>}
             <button onClick={onClose} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold">
               Done
             </button>
