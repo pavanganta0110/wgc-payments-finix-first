@@ -13,6 +13,13 @@ import { linkTransfersToSettlement, recomputeSettlementAggregates } from "@/lib/
 import { isFreshEnoughToApply } from "@/lib/finix/sync/settlementFundingSync";
 import { syncAllChurchesPricing, syncChurchPricingForMerchantProfile } from "@/lib/finix/sync/syncFeeProfiles";
 import { describeAchReturnReason } from "@/lib/finix/achReturnReasonCodes";
+import {
+  calculateFeeCoveredTotal,
+  isDynamicSupplementalFeesEnabled,
+  calculateDynamicSupplementalFee,
+  normalizeCardBrand,
+  checkPricingWarning,
+} from "@/lib/giving/feeCalculator";
 
 const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SECRET || process.env.FINIX_WEBHOOK_SIGNING_KEY;
 const BEARER_TOKEN = process.env.FINIX_WEBHOOK_BEARER_TOKEN;
@@ -223,6 +230,17 @@ export async function syncFinixDataFromWebhookEvent(
     }
     try {
       await syncFeesForTransfer(data.id, churchId ?? undefined);
+      const fees = await prisma.finixFee.findMany({
+        where: { linkedToId: data.id }
+      });
+      const processorFeesCents = fees
+        .filter(f => !String(f.feeType || "").toUpperCase().includes("APPLICATION"))
+        .reduce((sum, f) => sum + (f.amountCents ?? 0), 0);
+
+      await prisma.payment.updateMany({
+        where: { finixTransferId: data.id },
+        data: { actualFinixFeesCents: processorFeesCents }
+      });
     } catch (err) {
       console.error("Fee sync failed:", err);
     }
@@ -250,6 +268,91 @@ export async function syncFinixDataFromWebhookEvent(
     // handled by their own blocks below, not here).
     const isPrimaryDonationTransfer = data.subtype !== "REVERSAL" && !String(data.subtype || data.type || "").toUpperCase().includes("RETURN");
     if (isPrimaryDonationTransfer) {
+      if (data.subscription && churchId) {
+        try {
+          const existingPayment = await prisma.payment.findFirst({
+            where: { finixTransferId: data.id },
+          });
+          if (!existingPayment) {
+            const sub = await prisma.finixSubscription.findUnique({
+              where: { finixSubscriptionId: data.subscription },
+            });
+            if (sub) {
+              const instrument = await prisma.finixPaymentInstrumentSnapshot.findUnique({
+                where: { finixPaymentInstrumentId: data.source || "" },
+              });
+              const donationAmountCents = sub.donationAmountCents ?? data.amount ?? 0;
+              const donorCoversFee = sub.donorCoversFee ?? false;
+              const dynamicFeesEnabled = isDynamicSupplementalFeesEnabled(churchId);
+
+              let feeCoveredCents = 0;
+              let percentageBps: number | null = null;
+              let fixedFeeCents: number | null = null;
+              let cardBrandStr: string | null = null;
+              let merchantExpectedNetCents = donationAmountCents;
+
+              if (dynamicFeesEnabled) {
+                const brand = normalizeCardBrand(instrument?.cardBrand || data.card?.brand);
+                const isAch = instrument?.paymentMethodType === "bank" || data.payment_type === "bank_account";
+                const feeRes = calculateDynamicSupplementalFee({
+                  donationAmountCents,
+                  paymentMethod: isAch ? "ACH" : "CARD",
+                  cardBrand: brand,
+                  donorCoversFee,
+                });
+                feeCoveredCents = feeRes.supplementalFeeCents;
+                percentageBps = feeRes.percentageBps;
+                fixedFeeCents = feeRes.fixedFeeCents;
+                cardBrandStr = feeRes.normalizedCardBrand;
+                merchantExpectedNetCents = feeRes.merchantExpectedNetCents;
+              } else {
+                const pricing = await prisma.churchPricing.findUnique({ where: { churchId } });
+                const method = (instrument?.paymentMethodType === "bank" || data.payment_type === "bank_account") ? "bank" : "card";
+                const oldFee = donorCoversFee
+                  ? calculateFeeCoveredTotal(donationAmountCents, method, {
+                      cardPercentageFee: pricing?.cardPercentageFee ?? null,
+                      cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,
+                      achFixedFeeCents: pricing?.achFixedFeeCents ?? null,
+                    })
+                  : { totalCents: donationAmountCents };
+                feeCoveredCents = oldFee.totalCents - donationAmountCents;
+                merchantExpectedNetCents = donationAmountCents - (donorCoversFee ? 0 : feeCoveredCents);
+              }
+
+              const donorId = sub.donorId || instrument?.donorId || null;
+              await prisma.payment.create({
+                data: {
+                  churchId,
+                  donorId,
+                  givingLinkId: sub.givingLinkId || null,
+                  finixTransferId: data.id,
+                  finixBuyerIdentityId: sub.finixBuyerIdentityId || data.merchant_identity || null,
+                  finixPaymentInstrumentId: data.source || null,
+                  amountCents: data.amount ?? (donationAmountCents + (donorCoversFee ? feeCoveredCents : 0)),
+                  donationAmountCents,
+                  feeCoveredCents,
+                  paymentMethodType: (instrument?.paymentMethodType === "bank" || data.payment_type === "bank_account") ? "BANK_ACCOUNT" : "PAYMENT_CARD",
+                  status: (data.state || "PENDING").toUpperCase(),
+                  donorCoversFee,
+                  cardBrand: cardBrandStr,
+                  percentageBps,
+                  fixedFeeCents,
+                  feeCalculationVersion: dynamicFeesEnabled ? "v1" : null,
+                  merchantExpectedNetCents,
+                  finixSubscriptionId: sub.finixSubscriptionId,
+                },
+              });
+
+              if (dynamicFeesEnabled) {
+                await checkPricingWarning(churchId, sub.finixMerchantId);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Failed to auto-create Payment record for subscription transfer:", err);
+        }
+      }
+
       // A recurring payment generated later from a subscription may not
       // carry the original tags (unconfirmed Finix API shape) — fall back
       // to looking up the subscription's own givingLinkId so every

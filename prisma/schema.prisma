@@ -735,6 +735,14 @@ model Payment {
   isAnonymous                       Boolean   @default(false)
   createdByAdminUserId              String?
   paymentAttemptId                  String?
+  donorCoversFee                    Boolean?
+  cardBrand                         String?
+  percentageBps                     Int?
+  fixedFeeCents                     Int?
+  feeCalculationVersion             String?
+  merchantExpectedNetCents          Int?
+  actualFinixFeesCents              Int?
+  finixSubscriptionId               String?
   createdAt                         DateTime  @default(now())
   updatedAt                         DateTime  @updatedAt
 
@@ -1276,6 +1284,9 @@ model FinixSubscription {
   rawJsonRedacted            Json?
   createdAtFinix             DateTime?
   updatedAtFinix             DateTime?
+  donationAmountCents        Int?
+  donorCoversFee             Boolean?
+  feeCalculationVersion      String?
   createdAt                  DateTime  @default(now())
   updatedAt                  DateTime  @updatedAt
   lastSyncedAt               DateTime?

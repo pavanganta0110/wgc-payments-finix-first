@@ -2,13 +2,20 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
-import { calculateFeeCoveredTotal } from "@/lib/giving/feeCalculator";
+import {
+  calculateFeeCoveredTotal,
+  isDynamicSupplementalFeesEnabled,
+  calculateDynamicSupplementalFee,
+  normalizeCardBrand,
+  checkPricingWarning,
+} from "@/lib/giving/feeCalculator";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { sendDonationReceipt } from "@/lib/giving/generateReceipt";
 import { normalizeUSPhone, isValidEmail } from "@/lib/validation";
 import { toSafeErrorResponse } from "@/lib/utils/errorNormalizer";
 import { validateGoodsServicesInput, computeRecordedContributionAmountCents } from "@/lib/giving/goodsServices";
 import { logDashboardAction } from "@/lib/dashboardAudit";
+import crypto from "crypto";
 
 export async function POST(req: Request) {
   const session = await getSession();
@@ -76,6 +83,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Organization is not set up to accept payments" }, { status: 400 });
     }
 
+    const dynamicFeesEnabled = isDynamicSupplementalFeesEnabled(church.finixMerchantId);
+
     const existing = await prisma.paymentAttempt.findUnique({ where: { clientAttemptId } });
     if (existing) {
       if (existing.status === "SUCCEEDED" || existing.status === "PENDING") {
@@ -88,43 +97,9 @@ export async function POST(req: Request) {
       }
     }
 
-    const pricing = await prisma.churchPricing.findUnique({ where: { churchId: church.id } });
     const method: "card" | "bank" = paymentMethod === "bank" ? "bank" : "card";
 
-    const { totalCents } = coverFees
-      ? calculateFeeCoveredTotal(donationAmountCents, method, {
-          cardPercentageFee: pricing?.cardPercentageFee ?? null,
-          cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,
-          achFixedFeeCents: pricing?.achFixedFeeCents ?? null,
-        })
-      : { totalCents: donationAmountCents };
-    const feeCoveredCents = totalCents - donationAmountCents;
-
-    const idempotencyId = existing?.idempotencyId ?? crypto.randomUUID();
-
-    const attempt = existing
-      ? await prisma.paymentAttempt.update({
-          where: { id: existing.id },
-          data: { status: "PROCESSING", updatedAt: new Date() },
-        })
-      : await prisma.paymentAttempt.create({
-          data: {
-            churchId: church.id,
-            adminUserId: session.userId,
-            clientAttemptId,
-            idempotencyId,
-            amountCents: donationAmountCents,
-            feeCents: feeCoveredCents,
-            totalCents,
-            paymentMethodType: method === "card" ? "PAYMENT_CARD" : "BANK_ACCOUNT",
-            fundName: fundName || null,
-            note: note || null,
-            isAnonymous: isAnonymous ?? false,
-            fraudSessionId,
-            status: "PROCESSING",
-          },
-        });
-
+    // Create identity first
     const [firstName, ...rest] = String(donor.name).trim().split(" ");
     const lastName = rest.join(" ") || firstName;
 
@@ -146,6 +121,59 @@ export async function POST(req: Request) {
     });
     const instrumentId = instrument?.id;
     if (!instrumentId) throw new Error("Failed to create payment instrument");
+
+    // Perform Fee Calculation
+    let totalCents: number;
+    let feeCoveredCents: number;
+    let feeRes: any = null;
+
+    if (dynamicFeesEnabled) {
+      const brand = normalizeCardBrand(instrument.card?.brand);
+      feeRes = calculateDynamicSupplementalFee({
+        donationAmountCents,
+        paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
+        cardBrand: brand,
+        donorCoversFee: coverFees,
+      });
+      totalCents = feeRes.donorChargeAmountCents;
+      feeCoveredCents = feeRes.supplementalFeeCents;
+    } else {
+      const pricing = await prisma.churchPricing.findUnique({ where: { churchId: church.id } });
+      const oldFee = coverFees
+        ? calculateFeeCoveredTotal(donationAmountCents, method, {
+            cardPercentageFee: pricing?.cardPercentageFee ?? null,
+            cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,
+            achFixedFeeCents: pricing?.achFixedFeeCents ?? null,
+          })
+        : { totalCents: donationAmountCents };
+      totalCents = oldFee.totalCents;
+      feeCoveredCents = totalCents - donationAmountCents;
+    }
+
+    const idempotencyId = existing?.idempotencyId ?? crypto.randomUUID();
+
+    const attempt = existing
+      ? await prisma.paymentAttempt.update({
+          where: { id: existing.id },
+          data: { status: "PROCESSING", updatedAt: new Date(), feeCents: feeCoveredCents, totalCents },
+        })
+      : await prisma.paymentAttempt.create({
+          data: {
+            churchId: church.id,
+            adminUserId: session.userId,
+            clientAttemptId,
+            idempotencyId,
+            amountCents: donationAmountCents,
+            feeCents: feeCoveredCents,
+            totalCents,
+            paymentMethodType: method === "card" ? "PAYMENT_CARD" : "BANK_ACCOUNT",
+            fundName: fundName || null,
+            note: note || null,
+            isAnonymous: isAnonymous ?? false,
+            fraudSessionId,
+            status: "PROCESSING",
+          },
+        });
 
     const donorRecord = await prisma.donor.upsert({
       where: { finixIdentityId: identityId },
@@ -169,7 +197,7 @@ export async function POST(req: Request) {
       console.error("Failed to snapshot payment instrument for admin payment:", err);
     }
 
-    const transfer = await finixClient.createTransfer({
+    const transferPayload: any = {
       merchant: church.finixMerchantId,
       amount: totalCents,
       currency: "USD",
@@ -184,8 +212,29 @@ export async function POST(req: Request) {
         adminUserId: session.userId,
         ...(fundName ? { fundName } : {}),
       },
-      ...(feeCoveredCents > 0 ? { supplemental_fee: feeCoveredCents } : {}),
-    });
+    };
+
+    if (dynamicFeesEnabled) {
+      transferPayload.tags = {
+        ...transferPayload.tags,
+        donation_amount_cents: String(donationAmountCents),
+        processing_fee_cents: String(feeCoveredCents),
+        donor_covers_fee: String(coverFees),
+        card_brand: feeRes.normalizedCardBrand,
+        fee_percentage_bps: String(feeRes.percentageBps),
+        fee_fixed_cents: String(feeRes.fixedFeeCents),
+        fee_calculation_version: "v1",
+      };
+      if (feeCoveredCents > 0) {
+        transferPayload.supplemental_fee = feeCoveredCents;
+      }
+    } else {
+      if (feeCoveredCents > 0) {
+        transferPayload.supplemental_fee = feeCoveredCents;
+      }
+    }
+
+    const transfer = await finixClient.createTransfer(transferPayload);
 
     await prisma.paymentAttempt.update({
       where: { id: attempt.id },
@@ -208,12 +257,7 @@ export async function POST(req: Request) {
         amountCents: totalCents,
         currency: "USD",
         source: "wgc_admin_payment",
-        tagsJson: {
-          source: "wgc_admin_payment",
-          merchantId: church.finixMerchantId,
-          churchId: church.id,
-          adminUserId: session.userId,
-        },
+        tagsJson: transferPayload.tags,
         createdAtFinix: new Date(),
         lastSyncedAt: new Date(),
       },
@@ -223,9 +267,6 @@ export async function POST(req: Request) {
       },
     });
 
-    // Quid-pro-quo disclosure for this specific contribution (e.g. a gala
-    // ticket or event with a fair-market value) — entered by the admin
-    // taking the payment via the "Goods or Services" section of the form.
     const goodsServicesProvidedValue = Boolean(goodsServicesProvided);
     const goodsServicesFairMarketValueCentsValue = goodsServicesProvidedValue ? goodsServicesFairMarketValueCents ?? 0 : null;
     const recordedContributionAmountCents = goodsServicesProvidedValue
@@ -252,51 +293,52 @@ export async function POST(req: Request) {
         createdByAdminUserId: session.userId,
         paymentAttemptId: attempt.id,
         goodsServicesProvided: goodsServicesProvidedValue,
-        goodsServicesDescription: goodsServicesProvidedValue ? String(goodsServicesDescription).trim() : null,
+        goodsServicesDescription: goodsServicesProvidedValue ? goodsServicesDescription : null,
         goodsServicesFairMarketValueCents: goodsServicesFairMarketValueCentsValue,
-        goodsServicesInternalNote: typeof goodsServicesInternalNote === "string" ? goodsServicesInternalNote.trim() || null : null,
+        goodsServicesInternalNote: goodsServicesProvidedValue ? goodsServicesInternalNote : null,
         recordedContributionAmountCents,
-        acknowledgmentConfiguredByUserId: session.userId,
-        acknowledgmentConfiguredAt: new Date(),
+        donorCoversFee: coverFees,
+        cardBrand: dynamicFeesEnabled ? feeRes.normalizedCardBrand : null,
+        percentageBps: dynamicFeesEnabled ? feeRes.percentageBps : null,
+        fixedFeeCents: dynamicFeesEnabled ? feeRes.fixedFeeCents : null,
+        feeCalculationVersion: dynamicFeesEnabled ? "v1" : null,
+        merchantExpectedNetCents: dynamicFeesEnabled ? feeRes.merchantExpectedNetCents : (totalCents - feeCoveredCents),
       },
     });
+
+    if (dynamicFeesEnabled) {
+      await checkPricingWarning(church.id, church.finixMerchantId);
+    }
 
     await logDashboardAction({
       churchId: church.id,
       actorUserId: session.userId,
       actorEmail: session.email,
       actorRole: session.role,
-      action: "giving.goods_services_acknowledgment_set",
-      entityType: "payment",
+      action: "TAKE_PAYMENT",
+      entityType: "PAYMENT",
       entityId: newPayment.id,
       metadata: {
-        goodsServicesProvided: goodsServicesProvidedValue,
-        goodsServicesDescription: goodsServicesProvidedValue ? goodsServicesDescription : null,
-        goodsServicesFairMarketValueCents: goodsServicesFairMarketValueCentsValue,
-        recordedContributionAmountCents,
+        donorId: donorRecord.id,
+        amountCents: totalCents,
+        feeCents: feeCoveredCents,
+        fundName,
       },
-      req,
     });
 
     const succeeded = (transfer.state || "").toUpperCase() === "SUCCEEDED";
     if (succeeded) {
       try {
-        await sendDonationReceipt(newPayment.id, church.id, session.userId);
+        await sendDonationReceipt(newPayment.id, church.id);
       } catch (err) {
         console.error("Failed to send donation receipt:", err);
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      transferId: transfer.id,
-      state: transfer.state,
-    });
+    return NextResponse.json({ success: true, transferId: transfer.id, state: transfer.state });
   } catch (error: any) {
-    console.error("Take a Payment failed:", error);
+    console.error("Admin take-payment failed:", error);
     return toSafeErrorResponse(error, 402, {
-      userId: session.userId,
-      organizationId: session.churchId,
       route: `/api/merchant/transactions/payments/take-payment`,
       action: "TAKE_PAYMENT",
     });

@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
-import { calculateFeeCoveredTotal } from "@/lib/giving/feeCalculator";
+import {
+  calculateFeeCoveredTotal,
+  isDynamicSupplementalFeesEnabled,
+  calculateDynamicSupplementalFee,
+  normalizeCardBrand,
+  checkPricingWarning,
+} from "@/lib/giving/feeCalculator";
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { sendReceiptEmail } from "@/lib/giving/sendReceiptEmail";
@@ -10,27 +16,18 @@ import { normalizeUSPhone, isValidEmail } from "@/lib/validation";
 import { isGivingLinkUsable } from "@/lib/givingLinks/status";
 import { parseDonorFieldSettings, parseAllowedPaymentMethods, parseAllowedFrequencies } from "@/lib/givingLinks/types";
 import { toSafeErrorResponse } from "@/lib/utils/errorNormalizer";
+import crypto from "crypto";
 
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
 
-  // One-time links that got atomically claimed (status flipped ACTIVE ->
-  // INACTIVE below) but then failed before a Finix charge was attempted
-  // must be released back to ACTIVE so a failed/aborted attempt never
-  // permanently burns the link — tracked here so every early-return path
-  // below can release it.
   let claimedOneTimeLinkId: string | null = null;
 
   try {
     const body = await req.json();
     const {
       token,
-      // Digital-wallet flows (Apple Pay / Google Pay) bypass Finix.js's
-      // card/bank tokenization form entirely — the browser gets an
-      // already-encrypted wallet token directly from Apple/Google's own
-      // JS SDK, plus the billing contact the wallet collected. This is
-      // never written to the database; it's read once here and handed
-      // straight to Finix.
+      paymentInstrumentId,
       walletToken,
       walletBillingContact,
       donationAmountCents,
@@ -40,6 +37,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       paymentMethod,
       fraudSessionId,
       donor,
+      preview = false,
+      expectedTotalCents,
+      clientAttemptId,
     } = body;
 
     const isWallet = paymentMethod === "apple_pay" || paymentMethod === "google_pay";
@@ -47,7 +47,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     if (!donationAmountCents || donationAmountCents < 100) {
       return NextResponse.json({ error: "Invalid donation amount" }, { status: 400 });
     }
-    if (isWallet ? !walletToken : !token) {
+    if (isWallet ? !walletToken : (!token && !paymentInstrumentId)) {
       return NextResponse.json({ error: "Missing payment token" }, { status: 400 });
     }
     if (!fraudSessionId) {
@@ -74,6 +74,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     if (!church || !church.finixMerchantId) {
       return NextResponse.json({ error: "This organization cannot accept gifts right now" }, { status: 400 });
     }
+
+    const dynamicFeesEnabled = isDynamicSupplementalFeesEnabled(church.finixMerchantId);
 
     // Amount rules
     if (link.amountType === "FIXED") {
@@ -112,10 +114,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     const allowedFrequencies = parseAllowedFrequencies(link.allowedFrequenciesJson);
     const interval = allowedFrequencies.includes(billingInterval) ? billingInterval : allowedFrequencies[0];
 
-    // Donor-field validation, driven by this link's configured visibility.
-    // Wallet checkouts collect name/address from Apple/Google's own contact
-    // sheet rather than this link's donor-field form, so that's the fallback
-    // source of truth for fullName/email when the manual fields are empty.
     const fieldSettings = parseDonorFieldSettings(link.donorFieldSettingsJson);
     const fullName =
       [donor?.firstName, donor?.lastName].filter(Boolean).join(" ").trim() ||
@@ -143,22 +141,143 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       return NextResponse.json({ error: "Name and email are required" }, { status: 400 });
     }
 
-    // Server is the source of truth for the charged amount — never trust a
-    // client-supplied total, and reuse the same donor-cover formula as the
-    // main WGC giving page rather than a second implementation.
-    const pricing = await prisma.churchPricing.findUnique({ where: { churchId: church.id } });
-    const { totalCents } = link.feeCoverEnabled && coverFees
-      ? calculateFeeCoveredTotal(donationAmountCents, method, {
-          cardPercentageFee: pricing?.cardPercentageFee ?? null,
-          cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,
-          achFixedFeeCents: pricing?.achFixedFeeCents ?? null,
-        })
-      : { totalCents: donationAmountCents };
-    const feeCoveredCents = totalCents - donationAmountCents;
+    // 1. Resolve Identity and Payment Instrument
+    let identityId: string;
+    let instrumentId: string;
+    let cardBrand: string | null = null;
+    let donorRecord: any;
 
-    // One-time links: atomically claim the link before charging so two
-    // concurrent submits can't both succeed — only the request that flips
-    // ACTIVE -> INACTIVE proceeds; the loser sees "already used".
+    if (paymentInstrumentId) {
+      instrumentId = paymentInstrumentId;
+      const instrument = await finixClient.getPaymentInstrument(instrumentId);
+      if (!instrument?.id) {
+        return NextResponse.json({ error: "Payment method not found on Finix" }, { status: 404 });
+      }
+      identityId = instrument.identity;
+      cardBrand = instrument.card?.brand || null;
+
+      const existingDonor = await prisma.donor.findFirst({
+        where: { finixIdentityId: identityId, churchId: church.id },
+      });
+      if (existingDonor) {
+        donorRecord = existingDonor;
+      } else {
+        const [firstName, ...rest] = fullName.trim().split(" ");
+        const lastName = rest.join(" ") || firstName;
+        donorRecord = await prisma.donor.upsert({
+          where: { finixIdentityId: identityId },
+          create: { churchId: church.id, finixIdentityId: identityId, name: fullName, email: donor.email, phone: donor.phone || null },
+          update: { name: fullName, email: donor.email, phone: donor.phone || undefined },
+        });
+      }
+    } else {
+      const [firstName, ...rest] = fullName.trim().split(" ");
+      const lastName = rest.join(" ") || firstName;
+
+      const identity = await finixClient.createBuyerIdentity({
+        entity: {
+          first_name: firstName,
+          last_name: lastName,
+          email: donor.email,
+          phone: donor.phone || undefined,
+        },
+      });
+      identityId = identity?.id;
+      if (!identityId) throw new Error("Failed to create buyer identity");
+
+      const instrument = isWallet
+        ? await finixClient.createPaymentInstrument({
+            identity: identityId,
+            type: paymentMethod === "apple_pay" ? "APPLE_PAY" : "GOOGLE_PAY",
+            third_party_token: walletToken,
+            merchant_identity: process.env.FINIX_APPLICATION_OWNER_ID,
+            name: walletBillingContact.name,
+            address: walletBillingContact.address,
+          })
+        : await finixClient.createPaymentInstrument({ identity: identityId, token, type: "TOKEN" });
+      instrumentId = instrument?.id;
+      if (!instrumentId) throw new Error("Failed to create payment instrument");
+
+      cardBrand = instrument.card?.brand || null;
+
+      donorRecord = await prisma.donor.upsert({
+        where: { finixIdentityId: identityId },
+        create: { churchId: church.id, finixIdentityId: identityId, name: fullName, email: donor.email, phone: donor.phone || null },
+        update: { name: fullName, email: donor.email, phone: donor.phone || undefined },
+      });
+
+      try {
+        await syncPaymentInstrument(instrumentId, { churchId: church.id, donorId: donorRecord.id });
+      } catch (err) {
+        console.error("Failed to snapshot payment instrument for giving-link donation:", err);
+      }
+    }
+
+    // 2. Perform Fee Calculation
+    let totalCents: number;
+    let feeCoveredCents: number;
+    let feeRes: any = null;
+
+    if (dynamicFeesEnabled) {
+      const brand = normalizeCardBrand(cardBrand);
+      feeRes = calculateDynamicSupplementalFee({
+        donationAmountCents,
+        paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
+        cardBrand: brand,
+        donorCoversFee: link.feeCoverEnabled && coverFees,
+      });
+      totalCents = feeRes.donorChargeAmountCents;
+      feeCoveredCents = feeRes.supplementalFeeCents;
+    } else {
+      const pricing = await prisma.churchPricing.findUnique({ where: { churchId: church.id } });
+      const oldFee = link.feeCoverEnabled && coverFees
+        ? calculateFeeCoveredTotal(donationAmountCents, method, {
+            cardPercentageFee: pricing?.cardPercentageFee ?? null,
+            cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,
+            achFixedFeeCents: pricing?.achFixedFeeCents ?? null,
+          })
+        : { totalCents: donationAmountCents };
+      totalCents = oldFee.totalCents;
+      feeCoveredCents = totalCents - donationAmountCents;
+    }
+
+    // 3. Return Preview Response if requested
+    if (dynamicFeesEnabled && preview) {
+      return NextResponse.json({
+        preview: true,
+        paymentInstrumentId: instrumentId,
+        cardBrand: feeRes.normalizedCardBrand,
+        donationAmountCents,
+        processingFeeCents: feeRes.processingFeeCents,
+        donorChargeAmountCents: feeRes.donorChargeAmountCents,
+        supplementalFeeCents: feeRes.supplementalFeeCents,
+        merchantExpectedNetCents: feeRes.merchantExpectedNetCents,
+      });
+    }
+
+    // 4. Verify expected total matches recalculated server total
+    if (dynamicFeesEnabled && typeof expectedTotalCents === "number" && expectedTotalCents !== totalCents) {
+      return NextResponse.json({ error: "Payment amount has changed. Please confirm and try again." }, { status: 400 });
+    }
+
+    // 5. Check Idempotency
+    const idempotencyId = clientAttemptId || crypto.randomUUID();
+    const existingTransfer = await finixClient.findTransferByIdempotencyId(idempotencyId);
+    if (existingTransfer) {
+      const existingPayment = await prisma.payment.findFirst({
+        where: { finixTransferId: existingTransfer.id },
+      });
+      if (existingPayment) {
+        return NextResponse.json({
+          success: true,
+          transferId: existingTransfer.id,
+          state: existingTransfer.state,
+          duplicate: true,
+        });
+      }
+    }
+
+    // One-time link claim (after preview check passes, before charging)
     if ((link.linkType || "MULTI_USE").toUpperCase() === "ONE_TIME") {
       const claim = await prisma.givingLink.updateMany({
         where: { id: link.id, status: "ACTIVE" },
@@ -170,65 +289,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       claimedOneTimeLinkId = link.id;
     }
 
-    const [firstName, ...rest] = fullName.trim().split(" ");
-    const lastName = rest.join(" ") || firstName;
-
-    const identity = await finixClient.createBuyerIdentity({
-      entity: {
-        first_name: firstName,
-        last_name: lastName,
-        email: donor.email,
-        phone: donor.phone || undefined,
-      },
-    });
-    const identityId = identity?.id;
-    if (!identityId) throw new Error("Failed to create buyer identity");
-
-    // Wallet payment instruments are created from the encrypted token
-    // Apple/Google's SDK produced, per docs.finix.com/guides/online-payments/
-    // digital-wallets — third_party_token instead of Finix.js's `token`,
-    // and merchant_identity set to the Application Owner Identity (not this
-    // church's Finix Merchant ID) since WGC hosts every giving page on its
-    // own domain. walletToken is read once here and never assigned to any
-    // variable that gets logged or persisted.
-    const instrument = isWallet
-      ? await finixClient.createPaymentInstrument({
-          identity: identityId,
-          type: paymentMethod === "apple_pay" ? "APPLE_PAY" : "GOOGLE_PAY",
-          third_party_token: walletToken,
-          merchant_identity: process.env.FINIX_APPLICATION_OWNER_ID,
-          name: walletBillingContact.name,
-          address: walletBillingContact.address,
-        })
-      : await finixClient.createPaymentInstrument({ identity: identityId, token, type: "TOKEN" });
-    const instrumentId = instrument?.id;
-    if (!instrumentId) throw new Error("Failed to create payment instrument");
-
-    const donorRecord = await prisma.donor.upsert({
-      where: { finixIdentityId: identityId },
-      create: { churchId: church.id, finixIdentityId: identityId, name: fullName, email: donor.email, phone: donor.phone || null },
-      update: { name: fullName, email: donor.email, phone: donor.phone || undefined },
-    });
-
-    try {
-      await syncPaymentInstrument(instrumentId, { churchId: church.id, donorId: donorRecord.id });
-    } catch (err) {
-      console.error("Failed to snapshot payment instrument for giving-link donation:", err);
-    }
-
-    const tags = {
+    const tags: any = {
       source: "wgc_giving_link",
       merchantId: church.finixMerchantId,
       churchId: church.id,
       givingLinkId: link.id,
-      ...(link.fundName ? { fundId: link.fundName } : {}),
     };
 
+    if (dynamicFeesEnabled) {
+      tags.donation_amount_cents = String(donationAmountCents);
+      tags.processing_fee_cents = String(feeCoveredCents);
+      tags.donor_covers_fee = String(link.feeCoverEnabled && coverFees);
+      tags.card_brand = feeRes.normalizedCardBrand;
+      tags.fee_percentage_bps = String(feeRes.percentageBps);
+      tags.fee_fixed_cents = String(feeRes.fixedFeeCents);
+      tags.fee_calculation_version = "v1";
+    }
+
+    // 6. Handle Subscription flow
     if (isRecurring) {
       const subscription = await finixClient.createSubscription({
         amount: totalCents,
         currency: "USD",
-        billing_interval: interval,
+        billing_interval: interval as any,
         linked_to: church.finixMerchantId,
         linked_type: "MERCHANT",
         buyer_details: { identity_id: identityId, instrument_id: instrumentId },
@@ -251,6 +334,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
           collectionMethod: "BILL_AUTOMATICALLY",
           nextBillingDate: parseFinixDate(subscription.next_billing_date),
           startedAt: new Date(),
+          donationAmountCents,
+          donorCoversFee: link.feeCoverEnabled && coverFees,
+          feeCalculationVersion: dynamicFeesEnabled ? "v1" : null,
           lastSyncedAt: new Date(),
         },
         update: {
@@ -270,16 +356,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       return NextResponse.json({ success: true, subscriptionId: subscription.id, recurring: true });
     }
 
-    const transfer = await finixClient.createTransfer({
+    // 7. Handle Transfer flow
+    const transferPayload: any = {
       merchant: church.finixMerchantId,
       amount: totalCents,
       currency: "USD",
       source: instrumentId,
       fraud_session_id: fraudSessionId,
+      idempotency_id: idempotencyId,
       statement_descriptor: (link.statementDescriptor || church.name).slice(0, 18).toUpperCase(),
       tags,
-      ...(feeCoveredCents > 0 ? { supplemental_fee: feeCoveredCents } : {}),
-    });
+    };
+
+    if (feeCoveredCents > 0) {
+      transferPayload.supplemental_fee = feeCoveredCents;
+    }
+
+    const transfer = await finixClient.createTransfer(transferPayload);
 
     await prisma.finixTransfer.upsert({
       where: { finixTransferId: transfer.id },
@@ -320,11 +413,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
                 ? "PAYMENT_CARD"
                 : "BANK_ACCOUNT",
         status: transfer.state ?? "PENDING",
+        donorCoversFee: link.feeCoverEnabled && coverFees,
+        cardBrand: dynamicFeesEnabled ? feeRes.normalizedCardBrand : null,
+        percentageBps: dynamicFeesEnabled ? feeRes.percentageBps : null,
+        fixedFeeCents: dynamicFeesEnabled ? feeRes.fixedFeeCents : null,
+        feeCalculationVersion: dynamicFeesEnabled ? "v1" : null,
+        merchantExpectedNetCents: dynamicFeesEnabled ? feeRes.merchantExpectedNetCents : (totalCents - feeCoveredCents),
         fundName: link.fundName || null,
         isAnonymous: fieldSettings.anonymousDonation !== "HIDDEN" ? Boolean(donor.isAnonymous) : false,
         note: fieldSettings.donorNote !== "HIDDEN" ? donor.note?.trim() || null : null,
       },
     });
+
+    if (dynamicFeesEnabled) {
+      await checkPricingWarning(church.id, church.finixMerchantId);
+    }
 
     const succeeded = (transfer.state || "").toUpperCase() === "SUCCEEDED";
 
@@ -336,7 +439,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       linkUpdateData.successfulDonations = { increment: 1 };
       linkUpdateData.totalCollectedCents = { increment: totalCents };
     } else if (claimedOneTimeLinkId) {
-      // Failed attempts must not consume a one-time link — release the claim.
       linkUpdateData.status = "ACTIVE";
     }
     await prisma.givingLink.update({ where: { id: link.id }, data: linkUpdateData });
@@ -357,25 +459,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       donationAmountCents,
       feeCoveredCents,
       totalCents,
-      donorName: fullName,
-      churchName: church.name,
-      fundName: link.fundName,
-      last4: undefined,
     });
   } catch (error: any) {
-    // Any failure after a one-time link was claimed must release it so the
-    // link stays usable — only a real successful donation should consume it.
+    console.error("Giving Link donation failed:", error);
     if (claimedOneTimeLinkId) {
-      await prisma.givingLink.updateMany({
-        where: { id: claimedOneTimeLinkId, status: "INACTIVE" },
-        data: { status: "ACTIVE" },
-      }).catch(() => {});
+      try {
+        await prisma.givingLink.update({
+          where: { id: claimedOneTimeLinkId },
+          data: { status: "ACTIVE" },
+        });
+      } catch (releaseErr) {
+        console.error("Failed to release one-time giving link claim:", releaseErr);
+      }
     }
-
-    console.error("Giving link donation failed:", error);
     return toSafeErrorResponse(error, 402, {
       route: `/api/g/[slug]/donate`,
-      action: "DONATE",
+      action: "DONATE_LINK_LEGACY",
     });
   }
 }

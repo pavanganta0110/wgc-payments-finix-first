@@ -2,6 +2,12 @@ import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { formatPersonName } from "@/lib/formatPersonName";
+import {
+  calculateFeeCoveredTotal,
+  isDynamicSupplementalFeesEnabled,
+  calculateDynamicSupplementalFee,
+  normalizeCardBrand,
+} from "@/lib/giving/feeCalculator";
 
 const TERMS_VERSION = "2026-01-recurring-admin-update-v1";
 
@@ -28,17 +34,46 @@ export async function recreateSubscriptionWithChange(params: {
     throw new Error("This subscription is missing donor or payment method information");
   }
 
-  const [donor, instrument, church] = await Promise.all([
+  const [donor, instrument, church, oldSubRecord] = await Promise.all([
     prisma.donor.findFirst({ where: { id: oldSubscription.donorId, churchId } }),
     prisma.finixPaymentInstrumentSnapshot.findFirst({ where: { finixPaymentInstrumentId: oldSubscription.finixPaymentInstrumentId, churchId } }),
     prisma.church.findUnique({ where: { id: churchId } }),
+    prisma.finixSubscription.findUnique({ where: { id: oldSubscription.id } }),
   ]);
   if (!donor) throw new Error("Donor not found");
   if (!instrument?.finixIdentityId) throw new Error("Payment method not found");
   if (!church?.finixMerchantId) throw new Error("Organization is not fully onboarded");
 
-  const amountCents = newAmountCents ?? oldSubscription.amountCents ?? 0;
+  const donorCoversFee = oldSubRecord?.donorCoversFee ?? false;
+  const baseAmountCents = newAmountCents ?? oldSubRecord?.donationAmountCents ?? oldSubscription.amountCents ?? 0;
   const billingInterval = newBillingInterval ?? oldSubscription.billingInterval ?? "MONTHLY";
+
+  const dynamicFeesEnabled = isDynamicSupplementalFeesEnabled(church.finixMerchantId);
+
+  let finalAmountCents = baseAmountCents;
+
+  if (dynamicFeesEnabled) {
+    const isAch = instrument.paymentMethodType === "bank";
+    const brand = normalizeCardBrand(instrument.cardBrand);
+    const feeRes = calculateDynamicSupplementalFee({
+      donationAmountCents: baseAmountCents,
+      paymentMethod: isAch ? "ACH" : "CARD",
+      cardBrand: brand,
+      donorCoversFee,
+    });
+    finalAmountCents = feeRes.donorChargeAmountCents;
+  } else {
+    if (donorCoversFee) {
+      const pricing = await prisma.churchPricing.findUnique({ where: { churchId } });
+      const method = instrument.paymentMethodType === "bank" ? "bank" : "card";
+      const oldFee = calculateFeeCoveredTotal(baseAmountCents, method, {
+        cardPercentageFee: pricing?.cardPercentageFee ?? null,
+        cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,
+        achFixedFeeCents: pricing?.achFixedFeeCents ?? null,
+      });
+      finalAmountCents = oldFee.totalCents;
+    }
+  }
 
   // Cancel the old Finix subscription first — if this fails, nothing else
   // happens and the caller sees a clean failure with the original schedule
@@ -46,7 +81,7 @@ export async function recreateSubscriptionWithChange(params: {
   await finixClient.cancelSubscription(oldSubscription.finixSubscriptionId);
 
   const finixSubscription = await finixClient.createSubscription({
-    amount: amountCents,
+    amount: finalAmountCents,
     currency: "USD",
     billing_interval: billingInterval as any,
     linked_to: church.finixMerchantId,
@@ -72,7 +107,7 @@ export async function recreateSubscriptionWithChange(params: {
         finixBuyerIdentityId: instrument.finixIdentityId,
         finixPaymentInstrumentId: instrument.finixPaymentInstrumentId,
         state: finixSubscription.state ?? "ACTIVE",
-        amountCents,
+        amountCents: finalAmountCents,
         currency: "USD",
         billingInterval,
         collectionMethod: "BILL_AUTOMATICALLY",
@@ -81,6 +116,9 @@ export async function recreateSubscriptionWithChange(params: {
         createdByUserId: actorUserId,
         consentSource: "ADMIN_CONFIRMED",
         supersedesSubscriptionId: oldSubscription.id,
+        donationAmountCents: baseAmountCents,
+        donorCoversFee,
+        feeCalculationVersion: dynamicFeesEnabled ? "v1" : null,
         lastSyncedAt: new Date(),
       },
     }),
@@ -95,10 +133,10 @@ export async function recreateSubscriptionWithChange(params: {
       consentSource: "ADMIN_CONFIRMED",
       confirmedByUserId: actorUserId,
       termsVersion: TERMS_VERSION,
-      recurringTermsSnapshot: { amountCents, billingInterval, replacesFinixSubscriptionId: oldSubscription.finixSubscriptionId },
+      recurringTermsSnapshot: { amountCents: finalAmountCents, billingInterval, replacesFinixSubscriptionId: oldSubscription.finixSubscriptionId },
       donorNameSnapshot: donorName,
       donorEmailSnapshot: donor.email,
-      amountCentsSnapshot: amountCents,
+      amountCentsSnapshot: finalAmountCents,
       frequencySnapshot: billingInterval,
       startDateSnapshot: new Date(),
       paymentMethodLastFourSnapshot: instrument.cardLast4 || instrument.bankLast4 || null,

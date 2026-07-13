@@ -18,6 +18,8 @@ function makePrismaMock() {
     finixPaymentInstrumentSnapshot: { findFirst: vi.fn().mockResolvedValue({ finixIdentityId: "ID1", cardLast4: "1111", bankLast4: null }) },
     church: { findUnique: vi.fn().mockResolvedValue({ finixMerchantId: "MU1", name: "Test Org" }) },
     finixSubscription: {
+      findUnique: vi.fn(async ({ where }: any) => subscriptions.get(where.id)),
+      findFirst: vi.fn(async ({ where }: any) => subscriptions.get(where.id)),
       update: vi.fn(async ({ where, data }: any) => ({ id: where.id, ...subscriptions.get(where.id), ...data })),
       create: vi.fn(async ({ data }: any) => ({ id: "new-1", ...data })),
     },

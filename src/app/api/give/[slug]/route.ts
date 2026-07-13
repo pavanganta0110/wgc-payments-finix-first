@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
-import { calculateFeeCoveredTotal } from "@/lib/giving/feeCalculator";
+import {
+  calculateFeeCoveredTotal,
+  isDynamicSupplementalFeesEnabled,
+  calculateDynamicSupplementalFee,
+  normalizeCardBrand,
+  checkPricingWarning,
+} from "@/lib/giving/feeCalculator";
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { sendReceiptEmail } from "@/lib/giving/sendReceiptEmail";
 import { sendDonationReceipt } from "@/lib/giving/generateReceipt";
 import { normalizeUSPhone, isValidEmail } from "@/lib/validation";
 import { toSafeErrorResponse } from "@/lib/utils/errorNormalizer";
+import crypto from "crypto";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -18,6 +25,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     const body = await req.json();
     const {
       token,
+      paymentInstrumentId,
       donationAmountCents,
       coverFees,
       isRecurring,
@@ -25,9 +33,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       paymentMethod,
       fraudSessionId,
       donor,
+      preview = false,
+      expectedTotalCents,
+      clientAttemptId,
     } = body;
 
-    if (!token || !donationAmountCents || donationAmountCents < 100) {
+    if (!token && !paymentInstrumentId) {
+      return NextResponse.json({ error: "Invalid payment details" }, { status: 400 });
+    }
+    if (!donationAmountCents || donationAmountCents < 100) {
       return NextResponse.json({ error: "Invalid donation amount" }, { status: 400 });
     }
     if (!fraudSessionId) {
@@ -47,10 +61,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       donor.phone = normalized;
     }
 
-    if (isDev) {
-      console.log("[give] Donor from form →", { name: donor.name, email: donor.email, phone: donor.phone });
-    }
-
     const givingPage = await prisma.givingPage.findUnique({ where: { slug } });
     if (!givingPage || !givingPage.enabled) {
       return NextResponse.json({ error: "This giving page is not accepting gifts" }, { status: 404 });
@@ -61,78 +71,169 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       return NextResponse.json({ error: "This organization cannot accept gifts right now" }, { status: 400 });
     }
 
-    const pricing = await prisma.churchPricing.findUnique({ where: { churchId: church.id } });
-    const method: "card" | "bank" = paymentMethod === "bank" ? "bank" : "card";
+    const dynamicFeesEnabled = isDynamicSupplementalFeesEnabled(church.finixMerchantId);
 
-    // Server is the source of truth for the charged amount — never trust a
-    // client-supplied total, only the base donation amount and whether they
-    // opted to cover fees.
-    const { totalCents } = coverFees
-      ? calculateFeeCoveredTotal(donationAmountCents, method, {
-          cardPercentageFee: pricing?.cardPercentageFee ?? null,
-          cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,
-          achFixedFeeCents: pricing?.achFixedFeeCents ?? null,
-        })
-      : { totalCents: donationAmountCents };
-    const feeCoveredCents = totalCents - donationAmountCents;
+    // 1. Resolve Identity and Payment Instrument
+    let identityId: string;
+    let instrumentId: string;
+    let cardBrand: string | null = null;
+    let donorRecord: any;
 
-    const [firstName, ...rest] = String(donor.name).trim().split(" ");
-    const lastName = rest.join(" ") || firstName;
+    if (token) {
+      const [firstName, ...rest] = String(donor.name).trim().split(" ");
+      const lastName = rest.join(" ") || firstName;
 
-    const identity = await finixClient.createBuyerIdentity({
-      entity: {
-        first_name: firstName,
-        last_name: lastName,
-        email: donor.email,
-        phone: donor.phone || undefined,
-      },
-    });
-    const identityId = identity?.id;
-    if (!identityId) {
-      throw new Error("Failed to create buyer identity");
+      const identity = await finixClient.createBuyerIdentity({
+        entity: {
+          first_name: firstName,
+          last_name: lastName,
+          email: donor.email,
+          phone: donor.phone || undefined,
+        },
+      });
+      identityId = identity?.id;
+      if (!identityId) {
+        throw new Error("Failed to create buyer identity");
+      }
+
+      const instrument = await finixClient.createPaymentInstrument({
+        identity: identityId,
+        token,
+        type: "TOKEN",
+      });
+      instrumentId = instrument?.id;
+      if (!instrumentId) {
+        throw new Error("Failed to create payment instrument");
+      }
+
+      cardBrand = instrument.card?.brand || null;
+
+      donorRecord = await prisma.donor.upsert({
+        where: { finixIdentityId: identityId },
+        create: {
+          churchId: church.id,
+          finixIdentityId: identityId,
+          name: donor.name,
+          email: donor.email,
+          phone: donor.phone || null,
+        },
+        update: {
+          name: donor.name,
+          email: donor.email,
+          phone: donor.phone || undefined,
+        },
+      });
+
+      try {
+        await syncPaymentInstrument(instrumentId, { churchId: church.id, donorId: donorRecord.id });
+      } catch (err) {
+        console.error("Failed to snapshot payment instrument for giving-page donation:", err);
+      }
+    } else {
+      instrumentId = paymentInstrumentId;
+      const instrument = await finixClient.getPaymentInstrument(instrumentId);
+      if (!instrument?.id) {
+        return NextResponse.json({ error: "Payment method not found on Finix" }, { status: 404 });
+      }
+      identityId = instrument.identity;
+      cardBrand = instrument.card?.brand || null;
+
+      const existingDonor = await prisma.donor.findFirst({
+        where: { finixIdentityId: identityId, churchId: church.id },
+      });
+      if (existingDonor) {
+        donorRecord = existingDonor;
+      } else {
+        const [firstName, ...rest] = String(donor.name).trim().split(" ");
+        const lastName = rest.join(" ") || firstName;
+        donorRecord = await prisma.donor.upsert({
+          where: { finixIdentityId: identityId },
+          create: {
+            churchId: church.id,
+            finixIdentityId: identityId,
+            name: donor.name,
+            email: donor.email,
+            phone: donor.phone || null,
+          },
+          update: {
+            name: donor.name,
+            email: donor.email,
+            phone: donor.phone || undefined,
+          },
+        });
+      }
     }
 
-    const instrument = await finixClient.createPaymentInstrument({
-      identity: identityId,
-      token,
-      type: "TOKEN",
-    });
-    const instrumentId = instrument?.id;
-    if (!instrumentId) {
-      throw new Error("Failed to create payment instrument");
+    // 2. Perform Fee Calculation
+    let totalCents: number;
+    let feeCoveredCents: number;
+    let feeRes: any = null;
+
+    if (dynamicFeesEnabled) {
+      const brand = normalizeCardBrand(cardBrand);
+      feeRes = calculateDynamicSupplementalFee({
+        donationAmountCents,
+        paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
+        cardBrand: brand,
+        donorCoversFee: coverFees,
+      });
+      totalCents = feeRes.donorChargeAmountCents;
+      feeCoveredCents = feeRes.supplementalFeeCents;
+    } else {
+      const pricing = await prisma.churchPricing.findUnique({ where: { churchId: church.id } });
+      const method: "card" | "bank" = paymentMethod === "bank" ? "bank" : "card";
+      const oldFee = coverFees
+        ? calculateFeeCoveredTotal(donationAmountCents, method, {
+            cardPercentageFee: pricing?.cardPercentageFee ?? null,
+            cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,
+            achFixedFeeCents: pricing?.achFixedFeeCents ?? null,
+          })
+        : { totalCents: donationAmountCents };
+      totalCents = oldFee.totalCents;
+      feeCoveredCents = totalCents - donationAmountCents;
     }
 
-    const donorRecord = await prisma.donor.upsert({
-      where: { finixIdentityId: identityId },
-      create: {
-        churchId: church.id,
-        finixIdentityId: identityId,
-        name: donor.name,
-        email: donor.email,
-        phone: donor.phone || null,
-      },
-      update: {
-        name: donor.name,
-        email: donor.email,
-        phone: donor.phone || undefined,
-      },
-    });
+    // 3. Return Preview response if requested
+    if (dynamicFeesEnabled && preview) {
+      return NextResponse.json({
+        preview: true,
+        paymentInstrumentId: instrumentId,
+        cardBrand: feeRes.normalizedCardBrand,
+        donationAmountCents,
+        processingFeeCents: feeRes.processingFeeCents,
+        donorChargeAmountCents: feeRes.donorChargeAmountCents,
+        supplementalFeeCents: feeRes.supplementalFeeCents,
+        merchantExpectedNetCents: feeRes.merchantExpectedNetCents,
+      });
+    }
+
+    // 4. Verify client total matches recalculated server total
+    if (dynamicFeesEnabled && typeof expectedTotalCents === "number" && expectedTotalCents !== totalCents) {
+      return NextResponse.json({ error: "Payment amount has changed. Please confirm and try again." }, { status: 400 });
+    }
+
+    // 5. Check Idempotency
+    const idempotencyId = clientAttemptId || crypto.randomUUID();
+    const existingTransfer = await finixClient.findTransferByIdempotencyId(idempotencyId);
+    if (existingTransfer) {
+      const existingPayment = await prisma.payment.findFirst({
+        where: { finixTransferId: existingTransfer.id },
+      });
+      if (existingPayment) {
+        return NextResponse.json({
+          success: true,
+          transferId: existingTransfer.id,
+          state: existingTransfer.state,
+          duplicate: true,
+        });
+      }
+    }
 
     if (isDev) {
       console.log("[give] Donor saved to DB →", { id: donorRecord.id, name: donorRecord.name, email: donorRecord.email, phone: donorRecord.phone });
     }
 
-    // The dashboard's Donor columns everywhere (Payments, Recurring Donors,
-    // detail panels) join through FinixPaymentInstrumentSnapshot, not
-    // straight off the identity — without this the gift shows up but the
-    // donor name never does. donorId is passed directly since we already
-    // resolved it above.
-    try {
-      await syncPaymentInstrument(instrumentId, { churchId: church.id, donorId: donorRecord.id });
-    } catch (err) {
-      console.error("Failed to snapshot payment instrument for giving-page donation:", err);
-    }
-
+    // 6. Handle Subscription flow
     if (isRecurring) {
       const interval = ["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"].includes(billingInterval)
         ? billingInterval
@@ -163,6 +264,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
           collectionMethod: "BILL_AUTOMATICALLY",
           nextBillingDate: parseFinixDate(subscription.next_billing_date),
           startedAt: new Date(),
+          donationAmountCents,
+          donorCoversFee: coverFees,
+          feeCalculationVersion: dynamicFeesEnabled ? "v1" : null,
           lastSyncedAt: new Date(),
         },
         update: {
@@ -177,20 +281,44 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       return NextResponse.json({ success: true, subscriptionId: subscription.id });
     }
 
-    const transfer = await finixClient.createTransfer({
+    // 7. Handle Transfer flow
+    const transferPayload: any = {
       merchant: church.finixMerchantId,
       amount: totalCents,
       currency: "USD",
       source: instrumentId,
       fraud_session_id: fraudSessionId,
+      idempotency_id: idempotencyId,
       statement_descriptor: church.name.slice(0, 18).toUpperCase(),
-      tags: { source: "wgc_giving_page", merchantId: church.finixMerchantId, churchId: church.id, givingPageId: givingPage.id },
-      // Per docs.finix.com/guides/platform-payments/monetizing-payments/calculating-fees-dynamically:
-      // supplemental_fee is additive reporting on top of amount (amount alone
-      // is what's charged to the donor's card — this doesn't change that).
-      // Only sent when WGC computed the covered-fee portion itself.
-      ...(feeCoveredCents > 0 ? { supplemental_fee: feeCoveredCents } : {}),
-    });
+      tags: {
+        source: "wgc_giving_page",
+        merchantId: church.finixMerchantId,
+        churchId: church.id,
+        givingPageId: givingPage.id,
+      },
+    };
+
+    if (dynamicFeesEnabled) {
+      transferPayload.tags = {
+        ...transferPayload.tags,
+        donation_amount_cents: String(donationAmountCents),
+        processing_fee_cents: String(feeCoveredCents),
+        donor_covers_fee: String(coverFees),
+        card_brand: feeRes.normalizedCardBrand,
+        fee_percentage_bps: String(feeRes.percentageBps),
+        fee_fixed_cents: String(feeRes.fixedFeeCents),
+        fee_calculation_version: "v1",
+      };
+      if (feeCoveredCents > 0) {
+        transferPayload.supplemental_fee = feeCoveredCents;
+      }
+    } else {
+      if (feeCoveredCents > 0) {
+        transferPayload.supplemental_fee = feeCoveredCents;
+      }
+    }
+
+    const transfer = await finixClient.createTransfer(transferPayload);
 
     await prisma.finixTransfer.upsert({
       where: { finixTransferId: transfer.id },
@@ -204,7 +332,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         amountCents: totalCents,
         currency: "USD",
         source: "wgc_giving_page",
-        tagsJson: { source: "wgc_giving_page", merchantId: church.finixMerchantId, churchId: church.id, givingPageId: givingPage.id },
+        tagsJson: transferPayload.tags,
         createdAtFinix: new Date(),
         lastSyncedAt: new Date(),
       },
@@ -225,10 +353,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         amountCents: totalCents,
         donationAmountCents,
         feeCoveredCents,
-        paymentMethodType: method === "card" ? "PAYMENT_CARD" : "BANK_ACCOUNT",
+        currency: "USD",
+        paymentMethodType: paymentMethod === "bank" ? "BANK_ACCOUNT" : "PAYMENT_CARD",
         status: transfer.state ?? "PENDING",
+        donorCoversFee: coverFees,
+        cardBrand: dynamicFeesEnabled ? feeRes.normalizedCardBrand : null,
+        percentageBps: dynamicFeesEnabled ? feeRes.percentageBps : null,
+        fixedFeeCents: dynamicFeesEnabled ? feeRes.fixedFeeCents : null,
+        feeCalculationVersion: dynamicFeesEnabled ? "v1" : null,
+        merchantExpectedNetCents: dynamicFeesEnabled ? feeRes.merchantExpectedNetCents : (totalCents - feeCoveredCents),
       },
     });
+
+    if (dynamicFeesEnabled) {
+      await checkPricingWarning(church.id, church.finixMerchantId);
+    }
 
     const succeeded = (transfer.state || "").toUpperCase() === "SUCCEEDED";
     if (succeeded) {
@@ -239,7 +378,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       }
     }
 
-    return NextResponse.json({ success: true, transferId: transfer.id, state: transfer.state });
+    return NextResponse.json({
+      success: true,
+      transferId: transfer.id,
+      state: transfer.state,
+      donationAmountCents,
+      feeCoveredCents,
+      totalCents,
+    });
   } catch (error: any) {
     console.error("Giving page donation failed:", error);
     return toSafeErrorResponse(error, 402, {

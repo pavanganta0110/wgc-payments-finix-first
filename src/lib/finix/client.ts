@@ -365,6 +365,12 @@ export class FinixClient {
     return this.fetchApi(`/transfers/${transferId}`);
   }
 
+  async findTransferByIdempotencyId(idempotencyId: string) {
+    const response = await this.fetchApi(`/transfers?idempotency_id=${idempotencyId}`);
+    const transfers = response?._embedded?.transfers ?? [];
+    return transfers[0] || null;
+  }
+
   // ==========================================
   // Subscriptions (Recurring Giving)
   // ==========================================

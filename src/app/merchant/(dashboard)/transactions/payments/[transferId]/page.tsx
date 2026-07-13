@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
+import { reconcilePaymentFees } from "@/lib/payments/backfill";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import StateBadge from "@/components/merchant/StateBadge";
 import IssueRefundButton from "@/components/merchant/IssueRefundButton";
@@ -46,7 +47,7 @@ export default async function PaymentFullDetailPage({
     );
   }
 
-  const [instrument, refunds, disputes, fees, payment, bankReturns] = await Promise.all([
+  let [instrument, refunds, disputes, fees, payment, bankReturns] = await Promise.all([
     transfer.finixPaymentInstrumentId
       ? prisma.finixPaymentInstrumentSnapshot.findUnique({
           where: { finixPaymentInstrumentId: transfer.finixPaymentInstrumentId },
@@ -66,6 +67,13 @@ export default async function PaymentFullDetailPage({
       where: { originalTransferId: transfer.finixTransferId, churchId },
     }),
   ]);
+
+  if (payment && !payment.feeCalculationVersion) {
+    const reconciled = await reconcilePaymentFees(payment.id);
+    if (reconciled) {
+      payment = reconciled;
+    }
+  }
 
   const donor = instrument?.donorId ? await prisma.donor.findUnique({ where: { id: instrument.donorId } }) : null;
   const settlement = transfer.finixSettlementId
@@ -175,32 +183,84 @@ export default async function PaymentFullDetailPage({
             </p>
           </div>
 
-          {payment && (payment.donationAmountCents != null || payment.feeCoveredCents != null) && (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-              <h3 className="text-sm font-bold text-slate-900 mb-1">Donation Breakdown</h3>
-              <p className="text-xs text-slate-400 mb-4">
-                A donor-covered fee is an amount added to the donor's charge — separate from any processor fee shown under Associated Fees below.
-              </p>
-              <div className="space-y-2 text-sm">
-                {payment.donationAmountCents != null && (
+          {(() => {
+            const rawTransfer = transfer.rawJsonRedacted as any;
+            const rawSupplementalFee = rawTransfer?.supplemental_fee || 0;
+            const supplementalFeeCents = payment?.feeCoveredCents ?? rawSupplementalFee ?? 0;
+            const percentageBps = payment?.percentageBps ?? 0;
+            const fixedFeeCents = payment?.fixedFeeCents ?? 0;
+            const hasFeeData = supplementalFeeCents > 0 || percentageBps > 0 || fixedFeeCents > 0 || rawSupplementalFee > 0;
+
+            const totalCharged = transfer.amountCents ?? 0;
+            const intendedDonation = payment?.donationAmountCents ?? (
+              payment?.donorCoversFee === true
+                ? totalCharged - supplementalFeeCents
+                : totalCharged
+            );
+
+            let donorCoversFee = payment?.donorCoversFee;
+            if (donorCoversFee == null && hasFeeData) {
+              if (totalCharged > intendedDonation) {
+                donorCoversFee = true;
+              } else if (totalCharged === intendedDonation) {
+                donorCoversFee = false;
+              }
+            }
+
+            const estimatedNet = payment?.merchantExpectedNetCents ?? (
+              donorCoversFee === true
+                ? intendedDonation
+                : intendedDonation - supplementalFeeCents
+            );
+
+            if (!payment && !hasFeeData) return null;
+
+            return (
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+                <h3 className="text-sm font-bold text-slate-900 mb-4">Donation Breakdown</h3>
+                <div className="space-y-2 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="text-slate-500">Intended Donation Amount</span>
-                    <span className="font-semibold text-slate-900">{formatCents(payment.donationAmountCents)}</span>
+                    <span className="font-semibold text-slate-900">{formatCents(intendedDonation)}</span>
                   </div>
-                )}
-                {payment.feeCoveredCents != null && payment.feeCoveredCents > 0 && (
+
+                  {hasFeeData && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Processing Fee</span>
+                      <span className="font-semibold text-slate-900">{formatCents(supplementalFeeCents)}</span>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Donor-Covered Fee</span>
-                    <span className="font-semibold text-slate-900">{formatCents(payment.feeCoveredCents)}</span>
+                    <span className="text-slate-500">Paid By</span>
+                    <span className="font-semibold text-slate-900">
+                      {donorCoversFee === true
+                        ? "Donor"
+                        : donorCoversFee === false
+                          ? "Organization"
+                          : "Historical / Uncertain"}
+                    </span>
                   </div>
-                )}
-                <div className="flex items-center justify-between pt-2 border-t border-slate-100 font-bold">
-                  <span className="text-slate-900">Total Charged</span>
-                  <span className="text-slate-900">{formatCents(transfer.amountCents ?? 0)}</span>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 font-bold">
+                    <span className="text-slate-900">Total Charged to Donor</span>
+                    <span className="text-slate-900">{formatCents(totalCharged)}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 font-bold text-slate-900">
+                    <span className="text-slate-600">Estimated Organization Net</span>
+                    <span className="text-slate-900">{formatCents(estimatedNet)}</span>
+                  </div>
+
+                  {payment?.feeCalculationVersion === "historical_backfilled" && (
+                    <p className="text-[11px] text-amber-600 italic mt-2">
+                      * Reconciled from historical Finix Transfer metadata.
+                    </p>
+                  )}
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
             <h3 className="text-sm font-bold text-slate-900 mb-4">Transaction Flow</h3>
