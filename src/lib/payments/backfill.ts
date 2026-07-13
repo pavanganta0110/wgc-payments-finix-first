@@ -6,8 +6,11 @@ export async function reconcilePaymentFees(paymentId: string) {
   const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
   if (!payment) return null;
 
-  // If already calculated, do not overwrite unless calculation version is empty
   if (payment.feeCalculationVersion) {
+    return payment;
+  }
+
+  if (!payment.finixTransferId) {
     return payment;
   }
 
@@ -22,20 +25,23 @@ export async function reconcilePaymentFees(paymentId: string) {
     // Solve donorCoversFee safely:
     // If total charge is greater than the base donation amount, the donor covers it.
     // If total charge is exactly equal to the base donation amount, the organization covers it.
+    const intendedCents = payment.donationAmountCents ?? totalChargedCents;
     let donorCoversFee: boolean | null = null;
-    if (totalChargedCents > payment.donationAmountCents) {
-      donorCoversFee = true;
-    } else if (totalChargedCents === payment.donationAmountCents) {
-      donorCoversFee = false;
+    if (payment.donationAmountCents !== null) {
+      if (totalChargedCents > payment.donationAmountCents) {
+        donorCoversFee = true;
+      } else if (totalChargedCents === payment.donationAmountCents) {
+        donorCoversFee = false;
+      }
     }
 
     const config = CARD_FEE_CONFIG[brand as keyof typeof CARD_FEE_CONFIG] || CARD_FEE_CONFIG.DEFAULT;
     const percentageBps = config.percentageBps;
     const fixedFeeCents = config.fixedFeeCents;
 
-    let merchantExpectedNetCents = payment.donationAmountCents;
+    let merchantExpectedNetCents = intendedCents;
     if (donorCoversFee === false) {
-      merchantExpectedNetCents = payment.donationAmountCents - supplementalFeeCents;
+      merchantExpectedNetCents = intendedCents - supplementalFeeCents;
     } else if (donorCoversFee === null) {
       merchantExpectedNetCents = totalChargedCents - supplementalFeeCents;
     }
