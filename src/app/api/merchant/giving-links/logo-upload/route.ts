@@ -47,12 +47,40 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // 1. Create File Resource in Finix
-    const fileResource = await finixClient.createFileResource({
-      display_name: `logo_${Date.now()}_${file.name}`,
-      linked_to: linkedTo,
-      type: "ADDITIONAL_DOCUMENTATION"
-    });
+    // 1. Create File Resource in Finix with fallback search for supported type enum
+    const candidateTypes = [
+      "ADDITIONAL_DOCUMENTATION",
+      "SUPPORTING_DOCUMENT",
+      "BUSINESS_REGISTRATION_DOCUMENT",
+      "BANK_STATEMENT",
+      "OTHER",
+      "IDENTITY_DOCUMENT"
+    ];
+    let fileResource = null;
+    let lastError = null;
+
+    for (const type of candidateTypes) {
+      try {
+        console.log(`[Logo Upload] Trying file type: ${type}`);
+        fileResource = await finixClient.createFileResource({
+          display_name: `logo_${Date.now()}_${file.name}`,
+          linked_to: linkedTo,
+          type
+        });
+        console.log(`[Logo Upload] Successfully created file resource using type: ${type}`);
+        lastError = null;
+        break;
+      } catch (err: any) {
+        console.warn(`[Logo Upload] Type ${type} rejected:`, err.message);
+        lastError = err;
+      }
+    }
+
+    if (!fileResource) {
+      return NextResponse.json({
+        error: `Failed to create file resource in Finix. Last error: ${lastError?.message || "Unknown error"}`
+      }, { status: 502 });
+    }
 
     const finixFileId = fileResource.id;
     if (!finixFileId) {
