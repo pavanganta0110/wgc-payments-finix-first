@@ -1068,39 +1068,48 @@ model FinixSettlement {
 }
 
 model FinixFundingTransferAttempt {
-  id                            String    @id @default(cuid())
-  churchId                      String?
-  finixFundingTransferAttemptId String    @unique
-  finixSettlementId             String?
-  finixMerchantId               String?
-  state                         String?
-  amountCents                   Int?
-  netAmountCents                Int?
-  currency                      String?
-  fundingSpeed                  String? // NEXT_DAY | SAME_DAY | STANDARD | EXPRESS
-  settlementCount               Int?
-  paymentCount                  Int?
-  bankAccountLast4              String?
-  bankAccountType               String?
-  bankName                      String?
-  accountHolderName             String?
-  failureCode                   String?
-  failureMessage                String?
-  traceId                       String?
-  estimatedArrivalDate          DateTime?
-  sentAt                        DateTime?
-  arrivedAt                     DateTime?
-  rawJsonRedacted               Json?
-  createdAtFinix                DateTime?
-  updatedAtFinix                DateTime?
-  createdAt                     DateTime  @default(now())
-  updatedAt                     DateTime  @updatedAt
-  lastSyncedAt                  DateTime?
+  id                             String    @id @default(cuid())
+  churchId                       String?
+  finixFundingTransferAttemptId  String    @unique
+  finixSettlementId              String?
+  finixMerchantId                String?
+  state                          String?
+  amountCents                    Int?
+  netAmountCents                 Int?
+  currency                       String?
+  fundingSpeed                   String? // NEXT_DAY | SAME_DAY | STANDARD | EXPRESS
+  settlementCount                Int?
+  paymentCount                   Int?
+  bankAccountLast4               String?
+  bankAccountType                String?
+  bankName                       String?
+  accountHolderName              String?
+  // The payment-instrument ID funds were sent to — used to match this
+  // deposit back to the merchant's own OrganizationBankAccount row (via
+  // OrganizationBankAccount.finixPaymentInstrumentId) so the settlement
+  // detail view can safely display bank name/account type/masked number
+  // without re-deriving them from this table's own (sparser) fields.
+  destinationPaymentInstrumentId String?
+  failureCode                    String?
+  failureMessage                 String?
+  traceId                        String?
+  estimatedArrivalDate           DateTime?
+  sentAt                         DateTime?
+  arrivedAt                      DateTime?
+  rawJsonRedacted                Json?
+  createdAtFinix                 DateTime?
+  updatedAtFinix                 DateTime?
+  createdAt                      DateTime  @default(now())
+  updatedAt                      DateTime  @updatedAt
+  lastSyncedAt                   DateTime?
   // Failed-payout retry tracking (PUT /settlements/{id} recovery flow) —
   // never rewrites this row's own state; a retry creates a brand new
   // FinixFundingTransferAttempt row via the normal webhook sync.
-  retriedAt                     DateTime?
-  retriedByUserId               String?
+  retriedAt                      DateTime?
+  retriedByUserId                String?
+
+  @@index([churchId])
+  @@index([finixSettlementId])
 }
 
 model FinixDispute {

@@ -6,7 +6,8 @@ import { PanelNavArrows, ViewAllDetailsButton, PaymentMoreMenu, PinButton } from
 import { Section, Row } from "@/components/merchant/detail/DetailDrawerPrimitives";
 import { formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
 import { loadSettlementDetail } from "@/lib/finix/settlementDetail";
-import { resolveSettlementDisplayStatus, SETTLEMENT_DISPLAY_STATUS_LABELS } from "@/lib/finix/settlementStatus";
+import { resolveSettlementDisplayStatus, getSettlementStatusLabel } from "@/lib/finix/settlementStatus";
+import { resolveMerchantDepositMessage } from "@/lib/finix/merchantDepositMessage";
 
 export default async function SettlementDetailPanel({
   settlementId,
@@ -25,8 +26,10 @@ export default async function SettlementDetailPanel({
     );
   }
 
-  const { settlement, paymentRows, refunds, bankReturns, disputes, deposit } = detail;
+  const { settlement, paymentRows, refunds, bankReturns, disputes, deposit, depositBankAccount, hasFundingTransferData } = detail;
   const displayStatus = resolveSettlementDisplayStatus(settlement);
+  const depositMessage = resolveMerchantDepositMessage(deposit?.state, hasFundingTransferData);
+  const depositBankLast4 = depositBankAccount?.last4 || deposit?.bankAccountLast4 || null;
 
   return (
     <div className="w-full lg:w-[420px] shrink-0 bg-white border border-slate-100 rounded-2xl shadow-sm h-fit lg:sticky lg:top-6">
@@ -57,7 +60,7 @@ export default async function SettlementDetailPanel({
       </div>
 
       <Section title="Settlement Details">
-        <Row label="Status" value={SETTLEMENT_DISPLAY_STATUS_LABELS[displayStatus]} />
+        <Row label="Status" value={getSettlementStatusLabel(displayStatus)} />
         <Row label="Gross Amount" value={formatCents(settlement.totalAmountCents ?? 0)} />
         <Row label="Fee Amount" value={formatSignedCents(-(settlement.feeAmountCents ?? 0))} />
         <Row label="Refund Amount" value={formatSignedCents(-(settlement.refundAmountCents ?? 0))} />
@@ -136,12 +139,12 @@ export default async function SettlementDetailPanel({
 
       <Section title="Linked Deposit" last>
         {!deposit ? (
-          <p className="text-sm text-slate-500">No bank deposit has been sent for this settlement yet.</p>
+          <p className="text-sm text-slate-500">{depositMessage}</p>
         ) : (
           <div className="flex items-center justify-between text-sm">
             <div>
               <p className="font-semibold text-slate-700">
-                {deposit.bankAccountLast4 ? `•••• ${deposit.bankAccountLast4}` : "Bank Deposit"}
+                {depositBankLast4 ? `•••• ${depositBankLast4}` : "Bank Deposit"}
               </p>
               <p className="text-xs text-slate-400">{formatDateTime(deposit.sentAt ?? deposit.createdAtFinix)}</p>
             </div>

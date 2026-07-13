@@ -5,9 +5,9 @@ import { useState } from "react";
 import { Download, ChevronDown, SlidersHorizontal, X, Columns3 } from "lucide-react";
 import DateRangePicker from "@/components/merchant/DateRangePicker";
 import { SETTLEMENT_COLUMNS, parseVisibleSettlementColumns, type SettlementColumnKey } from "@/lib/settlementColumns";
-import { SETTLEMENT_DISPLAY_STATUS_LABELS, type SettlementDisplayStatus } from "@/lib/finix/settlementStatus";
+import { SETTLEMENT_FILTER_STATUSES, getSettlementStatusLabel } from "@/lib/finix/settlementStatus";
 
-const STATUSES = Object.keys(SETTLEMENT_DISPLAY_STATUS_LABELS) as SettlementDisplayStatus[];
+const STATUSES = SETTLEMENT_FILTER_STATUSES;
 const DEPOSIT_STATUSES = [
   { value: "linked", label: "Linked to Deposit" },
   { value: "unlinked", label: "Not Yet Linked" },
@@ -78,7 +78,7 @@ export default function SettlementsFilterBar({ exportHref }: { exportHref?: stri
             isStatusOpen ? "border-slate-900" : "border-slate-200"
           }`}
         >
-          {status ? SETTLEMENT_DISPLAY_STATUS_LABELS[status as SettlementDisplayStatus] : "Status"}
+          {status ? getSettlementStatusLabel(status) : "Status"}
           <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isStatusOpen ? "rotate-180" : ""}`} />
         </button>
         {isStatusOpen && (
@@ -90,7 +90,7 @@ export default function SettlementsFilterBar({ exportHref }: { exportHref?: stri
               </button>
               {STATUSES.map((s) => (
                 <button key={s} onClick={() => { setParam("status", s); setIsStatusOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                  {SETTLEMENT_DISPLAY_STATUS_LABELS[s]}
+                  {getSettlementStatusLabel(s)}
                 </button>
               ))}
             </div>

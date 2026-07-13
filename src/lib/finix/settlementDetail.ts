@@ -1,4 +1,12 @@
 import { prisma } from "@/lib/prisma";
+import { refreshSettlementAndDepositFromFinix } from "@/lib/finix/sync/settlementFundingSync";
+
+// Live-refresh throttle — a settlement detail view triggers a real Finix
+// API round trip (settlement + funding transfers) at most this often, so
+// rapid re-renders/navigation don't hammer Finix, while still being well
+// within the range where a merchant opening the page shortly after a
+// missed/delayed webhook sees corrected data rather than stale UNKNOWN.
+const LIVE_REFRESH_THROTTLE_MS = 30_000;
 
 /**
  * Shared data loader for a single settlement's full detail view — used by
@@ -6,12 +14,29 @@ import { prisma } from "@/lib/prisma";
  * loadDisputeDetail's pattern so the two never drift and every related
  * table is fetched with one batch query (by transferId list) instead of
  * per-row, no matter how many payments a settlement includes.
+ *
+ * Per the "do not rely only on webhooks" requirement: reads the local DB
+ * first, then — unless it was refreshed very recently — re-pulls the
+ * settlement and its merchant funding transfer straight from Finix and
+ * updates the DB before returning, so a missing/mis-scoped webhook row
+ * never permanently strands a settlement showing UNKNOWN/no deposit.
  */
 export async function loadSettlementDetail(finixSettlementId: string, churchId: string) {
-  const settlement = await prisma.finixSettlement.findFirst({
+  let settlement = await prisma.finixSettlement.findFirst({
     where: { finixSettlementId, churchId },
   });
   if (!settlement) return null;
+
+  const staleEnoughToRefresh = !settlement.lastSyncedAt || Date.now() - settlement.lastSyncedAt.getTime() > LIVE_REFRESH_THROTTLE_MS;
+  let hasFundingTransferData = true;
+  if (staleEnoughToRefresh) {
+    const refreshResult = await refreshSettlementAndDepositFromFinix(finixSettlementId, churchId, settlement.finixMerchantId);
+    hasFundingTransferData = refreshResult.hasFundingTransferData;
+    if (refreshResult.refreshed) {
+      settlement = await prisma.finixSettlement.findFirst({ where: { finixSettlementId, churchId } });
+      if (!settlement) return null;
+    }
+  }
 
   const church = await prisma.church.findUnique({ where: { id: churchId } });
 
@@ -61,7 +86,18 @@ export async function loadSettlementDetail(finixSettlementId: string, churchId: 
     transfer: transfers.find((t) => t.finixTransferId === payment.finixTransferId) ?? null,
   }));
 
-  return { settlement, church, transfers, paymentRows, refunds, bankReturns, disputes, fees, deposit };
+  // Enrich the deposit's bank display from the verified payout bank
+  // account (Organization Profile's own source of truth) whenever the
+  // funding-transfer row itself is missing bank name/type — matched via
+  // the destination payment-instrument id, never by guessing.
+  let depositBankAccount: Awaited<ReturnType<typeof prisma.organizationBankAccount.findFirst>> | null = null;
+  if (deposit?.destinationPaymentInstrumentId && (!deposit.bankName || !deposit.bankAccountType)) {
+    depositBankAccount = await prisma.organizationBankAccount.findFirst({
+      where: { churchId, finixPaymentInstrumentId: deposit.destinationPaymentInstrumentId },
+    });
+  }
+
+  return { settlement, church, transfers, paymentRows, refunds, bankReturns, disputes, fees, deposit, depositBankAccount, hasFundingTransferData };
 }
 
 export type SettlementDetail = NonNullable<Awaited<ReturnType<typeof loadSettlementDetail>>>;

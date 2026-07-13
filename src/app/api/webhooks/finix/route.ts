@@ -10,6 +10,7 @@ import { provisionChurchAccount } from "@/lib/auth/provisionChurchAccount";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { syncFeesForTransfer } from "@/lib/finix/sync/syncFees";
 import { linkTransfersToSettlement, recomputeSettlementAggregates } from "@/lib/finix/sync/syncSettlements";
+import { isFreshEnoughToApply } from "@/lib/finix/sync/settlementFundingSync";
 import { syncAllChurchesPricing, syncChurchPricingForMerchantProfile } from "@/lib/finix/sync/syncFeeProfiles";
 import { describeAchReturnReason } from "@/lib/finix/achReturnReasonCodes";
 
@@ -495,7 +496,14 @@ export async function syncFinixDataFromWebhookEvent(
     // "merchant"), and the fee total is "total_fee"/"total_fees" — there's
     // no separate refund_amount/dispute_amount at the settlement level.
     const churchId = await resolveChurchIdForMerchant(data.merchant_id);
-    const priorSettlement = await prisma.finixSettlement.findUnique({ where: { finixSettlementId: data.id }, select: { state: true } });
+    const priorSettlement = await prisma.finixSettlement.findUnique({ where: { finixSettlementId: data.id }, select: { state: true, updatedAtFinix: true } });
+
+    // An out-of-order webhook delivery must never overwrite a newer,
+    // already-applied state with an older one.
+    const incomingUpdatedAtFinix = data.updated_at ? new Date(data.updated_at) : occurredAt;
+    if (priorSettlement && !isFreshEnoughToApply(priorSettlement.updatedAtFinix, incomingUpdatedAtFinix)) {
+      return;
+    }
 
     await prisma.finixSettlement.upsert({
       where: { finixSettlementId: data.id },
@@ -562,6 +570,15 @@ export async function syncFinixDataFromWebhookEvent(
   if ((entity === "FUNDING_TRANSFER_ATTEMPT" || entity === "FUNDING_INSTRUMENT") && data?.id) {
     const churchId = await resolveChurchIdForMerchant(data.merchant);
 
+    const priorFundingTransfer = await prisma.finixFundingTransferAttempt.findUnique({
+      where: { finixFundingTransferAttemptId: data.id },
+      select: { updatedAtFinix: true },
+    });
+    const incomingFundingUpdatedAtFinix = data.updated_at ? new Date(data.updated_at) : occurredAt;
+    if (priorFundingTransfer && !isFreshEnoughToApply(priorFundingTransfer.updatedAtFinix, incomingFundingUpdatedAtFinix)) {
+      return;
+    }
+
     await prisma.finixFundingTransferAttempt.upsert({
       where: { finixFundingTransferAttemptId: data.id },
       create: {
@@ -597,11 +614,19 @@ export async function syncFinixDataFromWebhookEvent(
       },
       update: {
         churchId: churchId ?? undefined,
-        state: data.state ?? null,
+        // Fixed: previously fell back to `?? null`, violating this file's
+        // own partial-payload invariant — a later webhook without a
+        // `state` field would silently blank out an already-recorded
+        // SUCCEEDED/FAILED state.
+        state: data.state ?? undefined,
+        finixSettlementId: data.settlement ?? undefined,
+        destinationPaymentInstrumentId: data.destination ?? undefined,
         netAmountCents: data.net_amount ?? undefined,
         fundingSpeed: data.funding_speed ?? data.ready_to_settle_upon ?? undefined,
         settlementCount: data.settlement_count ?? undefined,
         paymentCount: data.transfer_count ?? data.payment_count ?? undefined,
+        bankAccountLast4: data.masked_account_number ?? undefined,
+        bankAccountType: data.account_type ?? undefined,
         bankName: data.bank_name ?? data.bank ?? undefined,
         accountHolderName: data.name ?? data.account_holder_name ?? undefined,
         traceId: data.trace_id ?? undefined,
@@ -610,10 +635,19 @@ export async function syncFinixDataFromWebhookEvent(
         sentAt: data.sent_at ? new Date(data.sent_at) : undefined,
         arrivedAt: data.arrived_at ? new Date(data.arrived_at) : undefined,
         rawJsonRedacted: redactFinixPayload(data),
-        updatedAtFinix: data.updated_at ? new Date(data.updated_at) : occurredAt,
+        updatedAtFinix: incomingFundingUpdatedAtFinix,
         lastSyncedAt: new Date(),
       },
     });
+
+    if (process.env.FINIX_SYNC_DEBUG === "true") {
+      console.info("Finix settlement sync", {
+        settlementId: data.settlement ?? null,
+        merchantId: data.merchant ?? null,
+        fundingTransferState: data.state ?? null,
+        destinationLast4: data.masked_account_number ?? null,
+      });
+    }
 
     // A completed deposit is real proof money landed in a bank account —
     // if this organization has no explicit active-destination mapping yet,

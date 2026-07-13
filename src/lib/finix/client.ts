@@ -457,6 +457,26 @@ export class FinixClient {
   }
 
   /**
+   * Fetches the funding transfer(s) — the actual bank deposit/payout — for
+   * a given settlement. NOT verified against a live sandbox response in
+   * this codebase; added per explicit direction to call
+   * GET /settlements/{id}/funding_transfers. Note this codebase has a
+   * documented, unresolved internal contradiction about how Finix models
+   * payouts at all: syncPayouts.ts's own comment states Finix has "no
+   * separate funding-transfer-attempt resource" and that payouts are
+   * regular Transfers with operation_key "PUSH_TO_ACH", while the
+   * webhook handler's FUNDING_TRANSFER_ATTEMPT entity assumes the
+   * opposite. Callers of this method must treat its response defensively
+   * (see settlementFundingSync.ts) and must not crash the caller if this
+   * 404s or returns an unexpected shape — fall back to whatever the
+   * webhook has already populated rather than treating this as the only
+   * source of truth.
+   */
+  async getSettlementFundingTransfers(settlementId: string) {
+    return this.fetchApi(`/settlements/${settlementId}/funding_transfers`);
+  }
+
+  /**
    * Retries a failed settlement funding transfer to a specific bank payment
    * instrument. Per Finix's documented failed-payout recovery flow: PUT
    * /settlements/{id} with a new destination + rail creates a NEW credit

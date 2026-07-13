@@ -13,7 +13,8 @@ import { TransactionTimeline } from "@/components/merchant/detail/TransactionTim
 import { RelatedResources } from "@/components/merchant/detail/RelatedResources";
 import { loadSettlementDetail } from "@/lib/finix/settlementDetail";
 import { buildSettlementTimeline } from "@/lib/finix/settlementTimeline";
-import { resolveSettlementDisplayStatus, SETTLEMENT_DISPLAY_STATUS_LABELS } from "@/lib/finix/settlementStatus";
+import { resolveSettlementDisplayStatus, getSettlementStatusLabel } from "@/lib/finix/settlementStatus";
+import { resolveMerchantDepositMessage } from "@/lib/finix/merchantDepositMessage";
 import { computeReconciliation } from "@/lib/finix/settlementReconciliation";
 import { getSettlementPermissions } from "@/lib/finix/settlementPermissions";
 import SettlementReconciliationPanel from "@/components/merchant/SettlementReconciliationPanel";
@@ -42,8 +43,12 @@ export default async function SettlementFullDetailPage({
     );
   }
 
-  const { settlement, church, paymentRows, refunds, bankReturns, disputes, fees, deposit } = detail;
+  const { settlement, church, paymentRows, refunds, bankReturns, disputes, fees, deposit, depositBankAccount, hasFundingTransferData } = detail;
   const displayStatus = resolveSettlementDisplayStatus(settlement);
+  const depositMessage = resolveMerchantDepositMessage(deposit?.state, hasFundingTransferData);
+  const depositBankLast4 = depositBankAccount?.last4 || deposit?.bankAccountLast4 || null;
+  const depositBankName = depositBankAccount?.bankName || deposit?.bankName || null;
+  const depositAccountType = depositBankAccount?.accountType || deposit?.bankAccountType || null;
   const timeline = buildSettlementTimeline(detail);
   const reconciliation = computeReconciliation(settlement);
 
@@ -127,7 +132,7 @@ export default async function SettlementFullDetailPage({
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
             <h3 className="text-sm font-bold text-slate-900 mb-4">Settlement Details</h3>
             <div className="grid grid-cols-2 gap-4 text-sm">
-              <Row label="Status" value={SETTLEMENT_DISPLAY_STATUS_LABELS[displayStatus]} />
+              <Row label="Status" value={getSettlementStatusLabel(displayStatus)} />
               <Row label="Gross Amount" value={formatCents(settlement.totalAmountCents ?? 0)} />
               <Row label="Fee Amount" value={formatSignedCents(-(settlement.feeAmountCents ?? 0))} />
               <Row label="Refund Amount" value={formatSignedCents(-(settlement.refundAmountCents ?? 0))} />
@@ -325,16 +330,15 @@ export default async function SettlementFullDetailPage({
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
             <h3 className="text-sm font-bold text-slate-900 mb-4">Linked Deposit</h3>
             {!deposit ? (
-              <p className="text-sm text-slate-500">
-                No bank deposit has been linked yet. Deposits are linked automatically once the processor reports a
-                funding transfer for this settlement.
-              </p>
+              <p className="text-sm text-slate-500">{depositMessage}</p>
             ) : (
               <>
                 <Row label="Deposit ID" value={<CopyableIdBadge id={deposit.finixFundingTransferAttemptId} />} />
                 <Row label="State" value={titleCase(deposit.state)} />
                 <Row label="Amount" value={formatCents(deposit.amountCents ?? 0)} />
-                <Row label="Bank Account" value={deposit.bankAccountLast4 ? `•••• ${deposit.bankAccountLast4}` : "—"} />
+                {depositBankName && <Row label="Bank Name" value={depositBankName} />}
+                {depositAccountType && <Row label="Account Type" value={titleCase(depositAccountType)} />}
+                <Row label="Bank Account" value={depositBankLast4 ? `•••• ${depositBankLast4}` : "—"} />
                 <Row label="Sent" value={formatDateTime(deposit.sentAt)} />
                 <Row label="Arrived" value={formatDateTime(deposit.arrivedAt)} />
               </>

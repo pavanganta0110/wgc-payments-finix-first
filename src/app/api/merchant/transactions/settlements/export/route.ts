@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import { resolveDateRange } from "@/lib/dateRangePresets";
 import { buildCsvExport, csvResponse, type CsvColumn } from "@/lib/csvExport";
-import { resolveSettlementDisplayStatus, SETTLEMENT_DISPLAY_STATUS_LABELS } from "@/lib/finix/settlementStatus";
+import { resolveSettlementDisplayStatus, getSettlementStatusLabel } from "@/lib/finix/settlementStatus";
 import { getSettlementPermissions } from "@/lib/finix/settlementPermissions";
 import { logDashboardAction } from "@/lib/dashboardAudit";
 
@@ -18,7 +18,7 @@ function baseColumns(): CsvColumn<SettlementExportRow>[] {
     { header: "Settlement ID", value: (r) => r.settlement.finixSettlementId },
     { header: "Created", value: (r) => (r.settlement.createdAtFinix ? r.settlement.createdAtFinix.toISOString() : "") },
     { header: "Updated", value: (r) => (r.settlement.updatedAtFinix ? r.settlement.updatedAtFinix.toISOString() : "") },
-    { header: "Status", value: (r) => SETTLEMENT_DISPLAY_STATUS_LABELS[resolveSettlementDisplayStatus(r.settlement)] },
+    { header: "Status", value: (r) => getSettlementStatusLabel(resolveSettlementDisplayStatus(r.settlement)) },
     { header: "Gross Amount", value: (r) => formatCents(r.settlement.totalAmountCents ?? 0) },
     { header: "Fee Amount", value: (r) => formatCents(r.settlement.feeAmountCents ?? 0) },
     { header: "Refund Amount", value: (r) => formatCents(r.settlement.refundAmountCents ?? 0) },
