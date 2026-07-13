@@ -1,21 +1,19 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { getCurrentIrsLetter, reviewIrsLetter } from "@/lib/onboarding/irsLetterService";
 
 /**
- * wgc_admin-only: full document metadata for the admin review card,
- * plus review actions. This review is informational/internal only — it
- * does not change OnboardingApplication.onboardingStatus or any Finix
- * approval state (per the explicit business rule that automatic
- * cross-linking is out of scope for now).
+ * Admin-only: full document metadata for the admin review card, plus
+ * review actions. This review is informational/internal only — it does
+ * not change OnboardingApplication.onboardingStatus or any Finix approval
+ * state (per the explicit business rule that automatic cross-linking is
+ * out of scope for now).
+ *
+ * Auth: gated by middleware.ts's HTTP Basic Auth on /api/admin/* — see
+ * the access route's comment for why this route doesn't do its own
+ * session check (matches every other existing /api/admin/* route).
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ applicationId: string }> }) {
-  const session = await getSession();
-  if (!session || session.role !== "wgc_admin") {
-    return NextResponse.json({ error: "You do not have permission to access this document." }, { status: 401 });
-  }
-
   const { applicationId } = await params;
   const [app, document] = await Promise.all([
     prisma.onboardingApplication.findUnique({ where: { id: applicationId }, select: { id: true, organizationName: true } }),
@@ -51,11 +49,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ applica
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ applicationId: string }> }) {
-  const session = await getSession();
-  if (!session || session.role !== "wgc_admin") {
-    return NextResponse.json({ error: "You do not have permission to access this document." }, { status: 401 });
-  }
-
   const { applicationId } = await params;
   const body = await req.json().catch(() => ({}));
   const document = await getCurrentIrsLetter(applicationId);
@@ -70,7 +63,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ applic
       status: body.status,
       internalReviewNotes: typeof body.internalReviewNotes === "string" ? body.internalReviewNotes : undefined,
       organizationFacingMessage: typeof body.organizationFacingMessage === "string" ? body.organizationFacingMessage : undefined,
-      reviewedByUserId: session.userId,
+      reviewedByUserId: "wgc_admin",
     });
     return NextResponse.json({ success: true, status: updated.status });
   } catch (err: any) {
