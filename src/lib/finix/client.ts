@@ -173,16 +173,38 @@ export class FinixClient {
 
   async getFileContent(fileId: string): Promise<{ data: ArrayBuffer; contentType: string | null }> {
     const url = `${this.baseUrl}/files/${fileId}/download`;
+    
+    // Set redirect to manual to prevent forwarding Basic Auth headers to the S3 bucket URL
     const res = await fetch(url, {
+      redirect: "manual",
       headers: {
         "Authorization": this.authHeader,
         "Finix-Version": this.version,
       },
     });
+
+    if (res.status === 302 || res.status === 301 || res.status === 307 || res.status === 308) {
+      const redirectUrl = res.headers.get("location");
+      if (!redirectUrl) {
+        throw new Error(`Finix download redirect response missing Location header`);
+      }
+      
+      // Fetch from S3 target URL without sending Authorization header
+      const s3Res = await fetch(redirectUrl);
+      if (!s3Res.ok) {
+        throw new Error(`Could not download file from redirect storage link (${s3Res.status})`);
+      }
+      const data = await s3Res.arrayBuffer();
+      const contentType = s3Res.headers.get("content-type");
+      return { data, contentType };
+    }
+
     if (!res.ok) {
       throw new Error(`Could not retrieve file content (${res.status})`);
     }
-    return { data: await res.arrayBuffer(), contentType: res.headers.get("content-type") };
+    const data = await res.arrayBuffer();
+    const contentType = res.headers.get("content-type");
+    return { data, contentType };
   }
 
   async deleteFile(fileId: string) {
