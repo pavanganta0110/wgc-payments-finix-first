@@ -100,7 +100,7 @@ export default function GivingLinkPreviewPanel({
           {/* Mobile preview uses a real narrow viewport container (not a scaled-down desktop frame) so responsive Tailwind breakpoints inside the shared form actually engage. */}
           <div
             className={`mx-auto border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 transition-all ${
-              previewDevice === "mobile" ? "w-[375px]" : "w-full"
+              previewDevice === "mobile" ? "w-[375px]" : "w-full max-w-md"
             }`}
           >
             <div className="overflow-y-auto max-h-[720px] py-8 px-4" style={{ backgroundColor: light.pageBackground }}>

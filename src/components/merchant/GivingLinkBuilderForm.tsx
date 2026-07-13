@@ -392,12 +392,12 @@ export default function GivingLinkBuilderForm({
   };
 
   return (
-    <div className="flex flex-col lg:h-[calc(100vh-190px)] min-h-0 relative">
+    <div className="flex flex-col h-[calc(100vh-240px)] sm:h-[calc(100vh-220px)] lg:h-[calc(100vh-190px)] min-h-0 relative">
       {/* Responsive Columns Wrapper */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start lg:flex-grow lg:h-0 lg:min-h-0 pb-6 overflow-y-auto lg:overflow-y-hidden">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start flex-grow h-auto lg:h-0 lg:min-h-0 pb-6 overflow-y-auto lg:overflow-y-hidden">
         
         {/* Left: configuration */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm divide-y divide-slate-100 lg:h-full lg:overflow-y-auto pb-24 p-1">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm divide-y divide-slate-100 lg:h-full lg:overflow-y-auto pb-32 p-1">
           <Section title="Basic Link Information">
             <div>
               <FieldLabel>Internal Name *</FieldLabel>
@@ -804,7 +804,7 @@ export default function GivingLinkBuilderForm({
         </div>
 
         {/* Right: live preview */}
-        <div className="lg:h-full lg:overflow-y-auto pb-24">
+        <div className="lg:h-full lg:overflow-y-auto pb-32">
           <GivingLinkPreviewPanel
             churchName={churchName}
             light={state.branding.light}
@@ -832,7 +832,7 @@ export default function GivingLinkBuilderForm({
       </div>
 
       {/* Sticky Bottom Actions Bar */}
-      <div className="sticky bottom-0 bg-white border-t border-slate-200 py-4 px-6 md:px-10 flex items-center justify-between z-30 -mx-6 md:-mx-10 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] shrink-0 mt-auto">
+      <div className="sticky bottom-0 bg-white border-t border-slate-200 py-4 px-6 md:px-10 flex items-center justify-between z-40 -mx-6 md:-mx-10 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] shrink-0 mt-auto">
         <div className="flex items-center gap-2 text-sm min-w-0 flex-grow">
           {saveStatus === "saving" && (
             <span className="text-slate-500 flex items-center gap-1.5">
