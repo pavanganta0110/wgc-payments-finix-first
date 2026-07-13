@@ -157,12 +157,14 @@ export default function GivingLinkBuilderForm({
   linkId,
   initial,
   churchName,
+  churchLogoUrl,
   pricing,
 }: {
   mode: "create" | "edit";
   linkId?: string;
   initial?: Partial<BuilderState> & { publicSlug?: string };
   churchName: string;
+  churchLogoUrl?: string | null;
   pricing: { cardPercentageFee: number | null; cardFixedFeeCents: number | null; achFixedFeeCents: number | null };
 }) {
   const router = useRouter();
@@ -806,6 +808,7 @@ export default function GivingLinkBuilderForm({
           <GivingLinkPreviewPanel
             churchName={churchName}
             light={state.branding.light}
+            churchLogoUrl={churchLogoUrl}
             amountType={state.amountType}
             fixedAmountCents={state.fixedAmount ? Math.round(parseFloat(state.fixedAmount) * 100) : null}
             minAmountCents={state.minAmount ? Math.round(parseFloat(state.minAmount) * 100) : null}

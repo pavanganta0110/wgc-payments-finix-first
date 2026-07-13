@@ -8,6 +8,7 @@ import {
   parseAllowedPaymentMethods,
   parseAllowedFrequencies,
   parseBrandingSettings,
+  resolveGivingPageLogo,
 } from "@/lib/givingLinks/types";
 
 export default async function GivingLinkPublicPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -74,6 +75,11 @@ export default async function GivingLinkPublicPage({ params }: { params: Promise
     GOOGLE_PAY: { enabledForOrganization: availability.find((a) => a.method === "GOOGLE_PAY")?.enabledForOrganization ?? false },
   };
 
+  const logoUrl = resolveGivingPageLogo({
+    givingPageLogoUrl: light.logoUrl,
+    organizationLogoUrl: church.logoUrl,
+  });
+
   return (
     <div className="min-h-screen py-12 px-4" style={{ backgroundColor: light.pageBackground }}>
       <div
@@ -83,6 +89,16 @@ export default async function GivingLinkPublicPage({ params }: { params: Promise
         {branding.campaignImageUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={branding.campaignImageUrl} alt="" className="w-full h-32 object-cover rounded-xl mb-6" />
+        )}
+        {logoUrl && (
+          <div className="flex justify-center mb-6">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={logoUrl}
+              alt={`${church.name} Logo`}
+              className="max-w-[160px] max-h-[96px] object-contain"
+            />
+          </div>
         )}
         <h1 className="text-lg font-bold text-center mb-1" style={{ color: light.headingColor }}>
           {link.publicTitle}

@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { Monitor, Smartphone, AlertCircle } from "lucide-react";
 import GivingLinkForm from "@/components/giving/GivingLinkForm";
+import { resolveGivingPageLogo } from "@/lib/givingLinks/types";
 import type { DonorFieldSettings, FrequencyKey, PaymentMethodKey, BrandingModeSettings } from "@/lib/givingLinks/types";
 
 export default function GivingLinkPreviewPanel({
   churchName,
   light,
+  churchLogoUrl,
   amountType,
   fixedAmountCents,
   minAmountCents,
@@ -29,6 +31,7 @@ export default function GivingLinkPreviewPanel({
 }: {
   churchName: string;
   light: BrandingModeSettings;
+  churchLogoUrl?: string | null;
   amountType: "FIXED" | "VARIABLE";
   fixedAmountCents: number | null;
   minAmountCents: number | null;
@@ -121,10 +124,22 @@ export default function GivingLinkPreviewPanel({
               className="max-w-md mx-auto bg-white rounded-2xl shadow-sm border p-8"
               style={{ borderColor: light.borderColor, backgroundColor: light.headerBackground }}
             >
-              {light.logoUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={light.logoUrl} alt="Logo" className="h-12 mb-6 mx-auto object-contain" />
-              )}
+              {(() => {
+                const resolvedLogo = resolveGivingPageLogo({
+                  givingPageLogoUrl: light.logoUrl,
+                  organizationLogoUrl: churchLogoUrl,
+                });
+                return resolvedLogo ? (
+                  <div className="flex justify-center mb-6">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={resolvedLogo}
+                      alt={`${churchName} Logo`}
+                      className="max-w-[160px] max-h-[96px] object-contain"
+                    />
+                  </div>
+                ) : null;
+              })()}
               {campaignImageUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={campaignImageUrl} alt="" className="w-full h-32 object-cover rounded-xl mb-6" />

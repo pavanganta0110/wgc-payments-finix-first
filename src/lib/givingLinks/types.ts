@@ -154,3 +154,20 @@ export function parseBrandingSettings(json: unknown): BrandingSettings {
     dark: { ...DEFAULT_DARK_BRANDING, ...(parsed.dark ?? {}) },
   };
 }
+export function resolveGivingPageLogo({
+  givingPageLogoUrl,
+  organizationLogoUrl,
+  fallbackLogoUrl = "/wgc-logo.png"
+}: {
+  givingPageLogoUrl?: string | null;
+  organizationLogoUrl?: string | null;
+  fallbackLogoUrl?: string | null;
+}) {
+  if (givingPageLogoUrl && givingPageLogoUrl.trim() !== "") {
+    return givingPageLogoUrl;
+  }
+  if (organizationLogoUrl && organizationLogoUrl.trim() !== "") {
+    return organizationLogoUrl;
+  }
+  return fallbackLogoUrl || "/wgc-logo.png";
+}

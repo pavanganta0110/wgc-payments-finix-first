@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { isValidReturnUrl } from "@/lib/givingLinks/validation";
@@ -114,6 +115,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       ...(brandingSettings !== undefined ? { brandingSettingsJson: brandingSettings } : {}),
     },
   });
+
+  revalidatePath(`/g/${link.publicSlug}`);
 
   const oldBranding = existing.brandingSettingsJson as any;
   const oldLogoUrl = oldBranding?.light?.logoUrl;

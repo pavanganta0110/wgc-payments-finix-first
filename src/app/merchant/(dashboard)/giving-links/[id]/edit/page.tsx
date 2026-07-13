@@ -13,7 +13,7 @@ export default async function EditGivingLinkPage({ params }: { params: Promise<{
 
   const [link, church, pricing] = await Promise.all([
     prisma.givingLink.findFirst({ where: { id, churchId } }),
-    prisma.church.findUnique({ where: { id: churchId }, select: { name: true } }),
+    prisma.church.findUnique({ where: { id: churchId }, select: { name: true, logoUrl: true } }),
     prisma.churchPricing.findUnique({ where: { churchId } }),
   ]);
   if (!link) notFound();
@@ -65,6 +65,7 @@ export default async function EditGivingLinkPage({ params }: { params: Promise<{
         linkId={id}
         initial={initial}
         churchName={church?.name || "Your Organization"}
+        churchLogoUrl={church?.logoUrl}
         pricing={{
           cardPercentageFee: pricing?.cardPercentageFee ?? null,
           cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,

@@ -7,7 +7,7 @@ import GivingLinkBuilderForm from "@/components/merchant/GivingLinkBuilderForm";
 export default async function CreateGivingLinkPage() {
   const session = await getSession();
   const [church, pricing] = await Promise.all([
-    prisma.church.findUnique({ where: { id: session!.churchId! }, select: { name: true } }),
+    prisma.church.findUnique({ where: { id: session!.churchId! }, select: { name: true, logoUrl: true } }),
     prisma.churchPricing.findUnique({ where: { churchId: session!.churchId! } }),
   ]);
 
@@ -20,6 +20,7 @@ export default async function CreateGivingLinkPage() {
       <GivingLinkBuilderForm
         mode="create"
         churchName={church?.name || "Your Organization"}
+        churchLogoUrl={church?.logoUrl}
         pricing={{
           cardPercentageFee: pricing?.cardPercentageFee ?? null,
           cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,
