@@ -1,12 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { refreshSettlementAndDepositFromFinix } from "@/lib/finix/sync/settlementFundingSync";
-
-// Live-refresh throttle — a settlement detail view triggers a real Finix
-// API round trip (settlement + funding transfers) at most this often, so
-// rapid re-renders/navigation don't hammer Finix, while still being well
-// within the range where a merchant opening the page shortly after a
-// missed/delayed webhook sees corrected data rather than stale UNKNOWN.
-const LIVE_REFRESH_THROTTLE_MS = 30_000;
+import { refreshSettlementAndDepositFromFinix, isStaleEnoughToRefresh } from "@/lib/finix/sync/settlementFundingSync";
 
 /**
  * Shared data loader for a single settlement's full detail view — used by
@@ -27,7 +20,7 @@ export async function loadSettlementDetail(finixSettlementId: string, churchId: 
   });
   if (!settlement) return null;
 
-  const staleEnoughToRefresh = !settlement.lastSyncedAt || Date.now() - settlement.lastSyncedAt.getTime() > LIVE_REFRESH_THROTTLE_MS;
+  const staleEnoughToRefresh = isStaleEnoughToRefresh(settlement.lastSyncedAt);
   let hasFundingTransferData = true;
   if (staleEnoughToRefresh) {
     const refreshResult = await refreshSettlementAndDepositFromFinix(finixSettlementId, churchId, settlement.finixMerchantId);

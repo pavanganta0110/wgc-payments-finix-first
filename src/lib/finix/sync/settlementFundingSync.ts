@@ -7,10 +7,22 @@ import { toSettlementFieldsForCreate, toSettlementFieldsForUpdate, linkTransfers
  * Live settlement + merchant-deposit refresh, following the same
  * "webhook is the primary mechanism, this is the self-healing fallback"
  * pattern as reconcilePendingPayoutAccountsForChurch — called whenever a
- * merchant opens a settlement's detail view (see settlementDetail.ts), so
- * a missing/stale/mis-scoped webhook row is never the only chance to get
- * this right.
+ * merchant opens a settlement's detail view (see settlementDetail.ts) or
+ * the settlements list (see settlementsList.ts), so a missing/stale/
+ * mis-scoped webhook row is never the only chance to get this right.
  */
+
+// Shared throttle — a settlement triggers a real Finix API round trip
+// (settlement + funding transfers) at most this often across every caller
+// (detail view, list view), so rapid re-renders/navigation/pagination
+// don't hammer Finix, while staying well within the range where a
+// merchant sees corrected data shortly after a missed/delayed webhook
+// instead of a permanently stale UNKNOWN/unlinked row.
+export const LIVE_REFRESH_THROTTLE_MS = 30_000;
+
+export function isStaleEnoughToRefresh(lastSyncedAt: Date | null | undefined): boolean {
+  return !lastSyncedAt || Date.now() - lastSyncedAt.getTime() > LIVE_REFRESH_THROTTLE_MS;
+}
 
 /**
  * Identifies the merchant's own bank-deposit funding transfer among

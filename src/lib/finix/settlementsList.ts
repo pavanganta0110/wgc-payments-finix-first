@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { refreshSettlementAndDepositFromFinix, isStaleEnoughToRefresh } from "@/lib/finix/sync/settlementFundingSync";
 
 export interface SettlementsListFilters {
   dateFilter?: { gte: Date; lte?: Date };
@@ -71,10 +72,42 @@ export async function loadSettlementsList(
   ]);
 
   const settlementIds = settlements.map((s) => s.finixSettlementId);
-  const deposits = settlementIds.length
+  let deposits = settlementIds.length
     ? await prisma.finixFundingTransferAttempt.findMany({ where: { finixSettlementId: { in: settlementIds } } })
     : [];
-  const depositBySettlement = new Map(deposits.map((d) => [d.finixSettlementId, d]));
+  let depositBySettlement = new Map(deposits.map((d) => [d.finixSettlementId, d]));
+
+  // Do not rely only on webhooks: a settlement on this page that looks
+  // unresolved (no status, or no linked deposit yet) and hasn't been
+  // checked recently gets a live Finix refresh before the page renders —
+  // the same self-healing path the detail view uses (see
+  // settlementFundingSync.ts) — so the list never permanently shows
+  // "Not Yet Linked" for a settlement whose webhook was missed or
+  // mis-scoped. Bounded to just this page's rows, and only the rows that
+  // actually look wrong, so pagination stays fast.
+  const settlementsNeedingRefresh = settlements.filter((s) => {
+    const looksUnresolved = !s.processorState || s.processorState === "UNKNOWN" || !depositBySettlement.has(s.finixSettlementId);
+    return looksUnresolved && isStaleEnoughToRefresh(s.lastSyncedAt);
+  });
+
+  if (settlementsNeedingRefresh.length > 0) {
+    await Promise.allSettled(
+      settlementsNeedingRefresh.map((s) => refreshSettlementAndDepositFromFinix(s.finixSettlementId, churchId, s.finixMerchantId)),
+    );
+
+    const refreshedIds = settlementsNeedingRefresh.map((s) => s.finixSettlementId);
+    const [refreshedSettlements, refreshedDeposits] = await Promise.all([
+      prisma.finixSettlement.findMany({ where: { finixSettlementId: { in: refreshedIds } } }),
+      prisma.finixFundingTransferAttempt.findMany({ where: { finixSettlementId: { in: refreshedIds } } }),
+    ]);
+    const refreshedSettlementById = new Map(refreshedSettlements.map((s) => [s.finixSettlementId, s]));
+    for (let i = 0; i < settlements.length; i++) {
+      const refreshed = refreshedSettlementById.get(settlements[i].finixSettlementId);
+      if (refreshed) settlements[i] = refreshed;
+    }
+    deposits = [...deposits.filter((d) => !refreshedIds.includes(d.finixSettlementId!)), ...refreshedDeposits];
+    depositBySettlement = new Map(deposits.map((d) => [d.finixSettlementId, d]));
+  }
 
   const rows = settlements.map((settlement) => ({
     settlement,
