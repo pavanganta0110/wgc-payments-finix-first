@@ -385,7 +385,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       fee_profile: feeStrategy.feeProfileId,
       ...(paymentMethod !== "bank" && { fraud_session_id: fraudSessionId }),
       idempotency_id: idempotencyId,
-      statement_descriptor: (link.statementDescriptor || church.name).slice(0, 18).toUpperCase(),
+      statement_descriptor: (link.statementDescriptor || church.name).slice(0, paymentMethod === "bank" ? 10 : 18).toUpperCase(),
       tags: {
         source: "wgc_giving_link",
         givingLinkId: link.id,
