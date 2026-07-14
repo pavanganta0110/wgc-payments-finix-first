@@ -2,12 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { formatPersonName } from "@/lib/formatPersonName";
-import {
-  calculateFeeCoveredTotal,
-  isDynamicSupplementalFeesEnabled,
-  calculateDynamicSupplementalFee,
-  normalizeCardBrand,
-} from "@/lib/giving/feeCalculator";
+import { calculateWgcFeeAmounts } from "@/lib/giving/feeCalculator";
 
 const TERMS_VERSION = "2026-01-recurring-admin-update-v1";
 
@@ -48,32 +43,13 @@ export async function recreateSubscriptionWithChange(params: {
   const baseAmountCents = newAmountCents ?? oldSubRecord?.donationAmountCents ?? oldSubscription.amountCents ?? 0;
   const billingInterval = newBillingInterval ?? oldSubscription.billingInterval ?? "MONTHLY";
 
-  const dynamicFeesEnabled = isDynamicSupplementalFeesEnabled(church.finixMerchantId);
-
-  let finalAmountCents = baseAmountCents;
-
-  if (dynamicFeesEnabled) {
-    const isAch = instrument.paymentMethodType === "bank";
-    const brand = normalizeCardBrand(instrument.cardBrand);
-    const feeRes = calculateDynamicSupplementalFee({
-      donationAmountCents: baseAmountCents,
-      paymentMethod: isAch ? "ACH" : "CARD",
-      cardBrand: brand,
-      donorCoversFee,
-    });
-    finalAmountCents = feeRes.donorChargeAmountCents;
-  } else {
-    if (donorCoversFee) {
-      const pricing = await prisma.churchPricing.findUnique({ where: { churchId } });
-      const method = instrument.paymentMethodType === "bank" ? "bank" : "card";
-      const oldFee = calculateFeeCoveredTotal(baseAmountCents, method, {
-        cardPercentageFee: pricing?.cardPercentageFee ?? null,
-        cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,
-        achFixedFeeCents: pricing?.achFixedFeeCents ?? null,
-      });
-      finalAmountCents = oldFee.totalCents;
-    }
-  }
+  const feeRes = calculateWgcFeeAmounts({
+    donationAmountCents: baseAmountCents,
+    paymentMethod: instrument.paymentMethodType === "bank" ? "ACH" : "CARD",
+    cardBrand: instrument.cardBrand || null,
+    donorCoversFee,
+  });
+  const finalAmountCents = donorCoversFee ? feeRes.amountToChargeCents : baseAmountCents;
 
   // Cancel the old Finix subscription first — if this fails, nothing else
   // happens and the caller sees a clean failure with the original schedule
@@ -118,7 +94,7 @@ export async function recreateSubscriptionWithChange(params: {
         supersedesSubscriptionId: oldSubscription.id,
         donationAmountCents: baseAmountCents,
         donorCoversFee,
-        feeCalculationVersion: dynamicFeesEnabled ? "v1" : null,
+        feeCalculationVersion: "v1",
         lastSyncedAt: new Date(),
       },
     }),

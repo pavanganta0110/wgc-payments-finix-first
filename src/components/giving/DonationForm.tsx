@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { getFraudSessionId } from "@/lib/finix/fraudSession";
 import { mountFinixPaymentForm } from "@/lib/finix/tokenize";
-import { calculateFeeCoveredTotal } from "@/lib/giving/feeCalculator";
+import { calculateWgcFeeAmounts } from "@/lib/giving/feeCalculator";
 import { formatCents } from "@/lib/format";
 import type { FinixPaymentFormInstance } from "@/lib/finix/fraudSession";
 
@@ -18,6 +18,8 @@ export default function DonationForm({
   allowRecurring,
   allowFeeCoverage,
   pricing,
+  givingPageType,
+  people,
 }: {
   slug: string;
   finixMerchantId: string;
@@ -86,10 +88,15 @@ export default function DonationForm({
   }, [paymentMethod]);
 
   const effectiveAmountCents = customAmount ? Math.round(parseFloat(customAmount) * 100) : amountCents;
-  const projectedFee = calculateFeeCoveredTotal(effectiveAmountCents || 0, paymentMethod, pricing);
-  const { totalCents, feeCoveredCents } = coverFees
-    ? projectedFee
-    : { totalCents: effectiveAmountCents || 0, feeCoveredCents: 0 };
+  const feeResult = calculateWgcFeeAmounts({
+    donationAmountCents: effectiveAmountCents || 0,
+    paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
+    cardBrand: null, // Before submission, we don't know if it's Amex
+    donorCoversFee: coverFees,
+  });
+  
+  const totalCents = coverFees ? feeResult.amountToChargeCents : (effectiveAmountCents || 0);
+  const feeCoveredCents = coverFees ? feeResult.supplementalFeeCents : 0;
 
   const handleSubmit = async () => {
     if (!effectiveAmountCents || effectiveAmountCents < 100) {
@@ -334,7 +341,7 @@ export default function DonationForm({
         <label className="flex items-start gap-2 text-sm text-slate-600">
           <input type="checkbox" checked={coverFees} onChange={(e) => setCoverFees(e.target.checked)} className="mt-0.5" />
           <span>
-            I'll cover the {formatCents(projectedFee.feeCoveredCents)} processing fee so my full{" "}
+            I'll cover the {formatCents(feeCoveredCents || feeResult.expectedFeeCents)} processing fee so my full{" "}
             {formatCents(effectiveAmountCents)} gift goes to the organization.
           </span>
         </label>

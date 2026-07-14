@@ -48,8 +48,8 @@ describe("reconcilePaymentFees backfill", () => {
       data: {
         donorCoversFee: true,
         cardBrand: "VISA",
-        percentageBps: 230,
-        fixedFeeCents: 30,
+        percentageBps: 300,
+        fixedFeeCents: 0,
         feeCalculationVersion: "historical_backfilled",
         merchantExpectedNetCents: 5000,
         feeCoveredCents: 145,

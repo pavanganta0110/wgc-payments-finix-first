@@ -36,7 +36,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     newGivingPageType = body.givingPageType;
   }
 
-  const personIds = Array.isArray(body.personIds) ? body.personIds : null;
+  const personIds = Array.isArray(body.personIds) ? (body.personIds as string[]) : null;
 
   if (newGivingPageType === "PERSON" && personIds && personIds.length === 0) {
     return NextResponse.json({ error: "At least one person must be selected for a Person Giving Page" }, { status: 400 });

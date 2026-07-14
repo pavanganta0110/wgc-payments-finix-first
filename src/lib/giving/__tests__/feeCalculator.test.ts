@@ -13,7 +13,7 @@
  *   Org covers,   ACH            → $0.25 flat
  */
 import { describe, it, expect } from "vitest";
-import { calculateDynamicSupplementalFee, normalizeCardBrand } from "../feeCalculator";
+import { calculateWgcFeeAmounts, normalizeCardBrand } from "../feeCalculator";
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 
@@ -23,11 +23,11 @@ function calc(
   paymentMethod: "CARD" | "ACH",
   cardBrand?: string
 ) {
-  return calculateDynamicSupplementalFee({
+  return calculateWgcFeeAmounts({
     donationAmountCents,
     donorCoversFee,
     paymentMethod,
-    cardBrand,
+    cardBrand: cardBrand || null,
   });
 }
 
@@ -56,56 +56,51 @@ describe("DONOR COVERS FEE — $25.00 donations", () => {
   // Test 1: Visa, donor covers → 3.00%, no $0.30
   it("1. $25 Visa, donor covers: fee=$0.75, charge=$25.75, supplemental=75, fixed=$0", () => {
     const r = calc(2500, true, "CARD", "VISA");
-    expect(r.processingFeeCents).toBe(75);          // Math.round(2500*300/10000)
-    expect(r.donorChargeAmountCents).toBe(2575);
+    expect(r.expectedFeeCents).toBe(75);          // Math.round(2500*300/10000)
+    expect(r.amountToChargeCents).toBe(2575);
     expect(r.supplementalFeeCents).toBe(75);
     expect(r.fixedFeeCents).toBe(0);
-    expect(r.percentageBps).toBe(300);
-    expect(r.merchantExpectedNetCents).toBe(2500);
+    expect(r.percentageBasisPoints).toBe(300);
   });
 
   // Test 2: Mastercard, donor covers → 3.00% (same as Visa), no $0.30
   it("2. $25 Mastercard, donor covers: fee=$0.75, charge=$25.75, supplemental=75, fixed=$0", () => {
     const r = calc(2500, true, "CARD", "MASTERCARD");
-    expect(r.processingFeeCents).toBe(75);
-    expect(r.donorChargeAmountCents).toBe(2575);
+    expect(r.expectedFeeCents).toBe(75);
+    expect(r.amountToChargeCents).toBe(2575);
     expect(r.supplementalFeeCents).toBe(75);
     expect(r.fixedFeeCents).toBe(0);
-    expect(r.percentageBps).toBe(300);
-    expect(r.merchantExpectedNetCents).toBe(2500);
+    expect(r.percentageBasisPoints).toBe(300);
   });
 
   // Test 3: Discover, donor covers → 3.00%, no $0.30
   it("3. $25 Discover, donor covers: fee=$0.75, charge=$25.75, supplemental=75, fixed=$0", () => {
     const r = calc(2500, true, "CARD", "DISCOVER");
-    expect(r.processingFeeCents).toBe(75);
-    expect(r.donorChargeAmountCents).toBe(2575);
+    expect(r.expectedFeeCents).toBe(75);
+    expect(r.amountToChargeCents).toBe(2575);
     expect(r.supplementalFeeCents).toBe(75);
     expect(r.fixedFeeCents).toBe(0);
-    expect(r.percentageBps).toBe(300);
-    expect(r.merchantExpectedNetCents).toBe(2500);
+    expect(r.percentageBasisPoints).toBe(300);
   });
 
   // Test 4: Amex, donor covers → 3.50%, no $0.30 (Math.round(2500*350/10000)=88)
   it("4. $25 Amex, donor covers: fee=$0.88, charge=$25.88, supplemental=88, fixed=$0", () => {
     const r = calc(2500, true, "CARD", "AMERICAN_EXPRESS");
-    expect(r.processingFeeCents).toBe(88);
-    expect(r.donorChargeAmountCents).toBe(2588);
+    expect(r.expectedFeeCents).toBe(88);
+    expect(r.amountToChargeCents).toBe(2588);
     expect(r.supplementalFeeCents).toBe(88);
     expect(r.fixedFeeCents).toBe(0);
-    expect(r.percentageBps).toBe(350);
-    expect(r.merchantExpectedNetCents).toBe(2500);
+    expect(r.percentageBasisPoints).toBe(350);
   });
 
   // Test 5: ACH, donor covers → $0.25 flat
   it("5. $25 ACH, donor covers: fee=$0.25, charge=$25.25, supplemental=25", () => {
     const r = calc(2500, true, "ACH");
-    expect(r.processingFeeCents).toBe(25);
-    expect(r.donorChargeAmountCents).toBe(2525);
+    expect(r.expectedFeeCents).toBe(25);
+    expect(r.amountToChargeCents).toBe(2525);
     expect(r.supplementalFeeCents).toBe(25);
-    expect(r.percentageBps).toBe(0);
+    expect(r.percentageBasisPoints).toBe(0);
     expect(r.fixedFeeCents).toBe(25);
-    expect(r.merchantExpectedNetCents).toBe(2500);
   });
 });
 
@@ -116,33 +111,30 @@ describe("ORG COVERS FEE — $25.00 donations", () => {
   // Math.round(2500*230/10000)=58; 58+30=88 cents
   it("6. $25 Visa, org covers: fee=$0.88, charge=$25.00, no supplemental, net=$24.12", () => {
     const r = calc(2500, false, "CARD", "VISA");
-    expect(r.processingFeeCents).toBe(88);
-    expect(r.donorChargeAmountCents).toBe(2500);
+    expect(r.expectedFeeCents).toBe(88);
+    expect(r.amountToChargeCents).toBe(2500);
     expect(r.supplementalFeeCents).toBe(0);        // MUST be 0
-    expect(r.merchantExpectedNetCents).toBe(2412); // 2500-88
-    expect(r.percentageBps).toBe(230);
+    expect(r.percentageBasisPoints).toBe(230);
     expect(r.fixedFeeCents).toBe(30);
   });
 
   // Test 7: Mastercard, org covers → 2.30%+$0.30 (same as Visa on org path)
   it("7. $25 Mastercard, org covers: fee=$0.88, charge=$25.00, no supplemental, net=$24.12", () => {
     const r = calc(2500, false, "CARD", "MASTERCARD");
-    expect(r.processingFeeCents).toBe(88);
-    expect(r.donorChargeAmountCents).toBe(2500);
+    expect(r.expectedFeeCents).toBe(88);
+    expect(r.amountToChargeCents).toBe(2500);
     expect(r.supplementalFeeCents).toBe(0);
-    expect(r.merchantExpectedNetCents).toBe(2412);
-    expect(r.percentageBps).toBe(230);
+    expect(r.percentageBasisPoints).toBe(230);
     expect(r.fixedFeeCents).toBe(30);
   });
 
   // Test 8: Discover, org covers → 2.30%+$0.30
   it("8. $25 Discover, org covers: fee=$0.88, charge=$25.00, no supplemental, net=$24.12", () => {
     const r = calc(2500, false, "CARD", "DISCOVER");
-    expect(r.processingFeeCents).toBe(88);
-    expect(r.donorChargeAmountCents).toBe(2500);
+    expect(r.expectedFeeCents).toBe(88);
+    expect(r.amountToChargeCents).toBe(2500);
     expect(r.supplementalFeeCents).toBe(0);
-    expect(r.merchantExpectedNetCents).toBe(2412);
-    expect(r.percentageBps).toBe(230);
+    expect(r.percentageBasisPoints).toBe(230);
     expect(r.fixedFeeCents).toBe(30);
   });
 
@@ -150,22 +142,20 @@ describe("ORG COVERS FEE — $25.00 donations", () => {
   // Math.round(2500*350/10000)=88; 88+30=118 cents
   it("9. $25 Amex, org covers: fee=$1.18, charge=$25.00, no supplemental, net=$23.82", () => {
     const r = calc(2500, false, "CARD", "AMERICAN_EXPRESS");
-    expect(r.processingFeeCents).toBe(118);
-    expect(r.donorChargeAmountCents).toBe(2500);
+    expect(r.expectedFeeCents).toBe(118);
+    expect(r.amountToChargeCents).toBe(2500);
     expect(r.supplementalFeeCents).toBe(0);
-    expect(r.merchantExpectedNetCents).toBe(2382); // 2500-118
-    expect(r.percentageBps).toBe(350);
+    expect(r.percentageBasisPoints).toBe(350);
     expect(r.fixedFeeCents).toBe(30);
   });
 
   // Test 10: ACH, org covers → $0.25 flat, donor charged donation only
   it("10. $25 ACH, org covers: fee=$0.25, charge=$25.00, no supplemental, net=$24.75", () => {
     const r = calc(2500, false, "ACH");
-    expect(r.processingFeeCents).toBe(25);
-    expect(r.donorChargeAmountCents).toBe(2500);
+    expect(r.expectedFeeCents).toBe(25);
+    expect(r.amountToChargeCents).toBe(2500);
     expect(r.supplementalFeeCents).toBe(0);
-    expect(r.merchantExpectedNetCents).toBe(2475);
-    expect(r.percentageBps).toBe(0);
+    expect(r.percentageBasisPoints).toBe(0);
     expect(r.fixedFeeCents).toBe(25);
   });
 });
@@ -194,22 +184,22 @@ describe("INVARIANT FAILURES — these conditions must never occur", () => {
   // Test 14: Donor covers Amex but only 3.00% used → FAIL
   it("14. Donor covers Amex: must use 3.50% (350 bps), not 3.00%", () => {
     const r = calc(2500, true, "CARD", "AMERICAN_EXPRESS");
-    expect(r.percentageBps).toBe(350);
-    expect(r.percentageBps).not.toBe(300);
+    expect(r.percentageBasisPoints).toBe(350);
+    expect(r.percentageBasisPoints).not.toBe(300);
   });
 
   // Test 15: Org covers Amex but 2.30% default used → FAIL
   it("15. Org covers Amex: must use 3.50% (350 bps), not 2.30%", () => {
     const r = calc(2500, false, "CARD", "AMERICAN_EXPRESS");
-    expect(r.percentageBps).toBe(350);
-    expect(r.percentageBps).not.toBe(230);
+    expect(r.percentageBasisPoints).toBe(350);
+    expect(r.percentageBasisPoints).not.toBe(230);
   });
 
   // Test 16: ACH fee interpreted as 0.25 cents instead of 25 cents → FAIL
   it("16. ACH fee must be 25 cents, not 0.25 cents", () => {
     const r = calc(2500, true, "ACH");
-    expect(r.processingFeeCents).toBe(25);
-    expect(r.processingFeeCents).not.toBe(0); // not 0.25 of a cent rounded to 0
+    expect(r.expectedFeeCents).toBe(25);
+    expect(r.expectedFeeCents).not.toBe(0); // not 0.25 of a cent rounded to 0
     expect(r.supplementalFeeCents).toBe(25);
   });
 
@@ -234,7 +224,7 @@ describe("RECURRING — same fee matrix applies on every charge", () => {
     // Simulate three separate charges (same amount, recurring)
     for (const amount of [2500, 5000, 10000]) {
       const r = calc(amount, true, "CARD", "VISA");
-      expect(r.percentageBps).toBe(300);
+      expect(r.percentageBasisPoints).toBe(300);
       expect(r.fixedFeeCents).toBe(0);
       const expectedFee = Math.round(amount * 300 / 10000);
       expect(r.supplementalFeeCents).toBe(expectedFee);
@@ -245,7 +235,7 @@ describe("RECURRING — same fee matrix applies on every charge", () => {
   it("19. Recurring Amex, donor covers: 3.50% on every charge", () => {
     for (const amount of [2500, 5000, 10000]) {
       const r = calc(amount, true, "CARD", "AMEX");
-      expect(r.percentageBps).toBe(350);
+      expect(r.percentageBasisPoints).toBe(350);
       expect(r.fixedFeeCents).toBe(0);
       const expectedFee = Math.round(amount * 350 / 10000);
       expect(r.supplementalFeeCents).toBe(expectedFee);
@@ -256,8 +246,8 @@ describe("RECURRING — same fee matrix applies on every charge", () => {
   it("20. Recurring ACH, org covers: $0.25 flat, supplementalFeeCents=0", () => {
     for (const amount of [2500, 5000, 10000]) {
       const r = calc(amount, false, "ACH");
-      expect(r.processingFeeCents).toBe(25);
-      expect(r.donorChargeAmountCents).toBe(amount);
+      expect(r.expectedFeeCents).toBe(25);
+      expect(r.amountToChargeCents).toBe(amount);
       expect(r.supplementalFeeCents).toBe(0);
     }
   });
@@ -268,31 +258,29 @@ describe("RECURRING — same fee matrix applies on every charge", () => {
 describe("$100 cross-check", () => {
   it("$100 Visa donor covers: 3.00%=$3.00, charge=$103.00", () => {
     const r = calc(10000, true, "CARD", "VISA");
-    expect(r.processingFeeCents).toBe(300);
-    expect(r.donorChargeAmountCents).toBe(10300);
+    expect(r.expectedFeeCents).toBe(300);
+    expect(r.amountToChargeCents).toBe(10300);
     expect(r.supplementalFeeCents).toBe(300);
   });
 
   it("$100 Visa org covers: 2.30%+$0.30=$2.60, charge=$100.00, net=$97.40", () => {
     const r = calc(10000, false, "CARD", "VISA");
-    expect(r.processingFeeCents).toBe(260); // 230+30
-    expect(r.donorChargeAmountCents).toBe(10000);
+    expect(r.expectedFeeCents).toBe(260); // 230+30
+    expect(r.amountToChargeCents).toBe(10000);
     expect(r.supplementalFeeCents).toBe(0);
-    expect(r.merchantExpectedNetCents).toBe(9740);
   });
 
   it("$100 Amex donor covers: 3.50%=$3.50, charge=$103.50, no $0.30", () => {
     const r = calc(10000, true, "CARD", "AMERICAN_EXPRESS");
-    expect(r.processingFeeCents).toBe(350);
-    expect(r.donorChargeAmountCents).toBe(10350);
+    expect(r.expectedFeeCents).toBe(350);
+    expect(r.amountToChargeCents).toBe(10350);
     expect(r.supplementalFeeCents).toBe(350);
     expect(r.fixedFeeCents).toBe(0);
   });
 
   it("$100 Amex org covers: 3.50%+$0.30=$3.80, net=$96.20", () => {
     const r = calc(10000, false, "CARD", "AMERICAN_EXPRESS");
-    expect(r.processingFeeCents).toBe(380);
+    expect(r.expectedFeeCents).toBe(380);
     expect(r.supplementalFeeCents).toBe(0);
-    expect(r.merchantExpectedNetCents).toBe(9620);
   });
 });

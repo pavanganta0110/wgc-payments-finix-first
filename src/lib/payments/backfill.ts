@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
-import { normalizeCardBrand, CARD_FEE_CONFIG } from "@/lib/giving/feeCalculator";
+import { normalizeCardBrand, WGC_PRICING } from "@/lib/giving/feeCalculator";
 
 export async function reconcilePaymentFees(paymentId: string) {
   const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
@@ -35,9 +35,10 @@ export async function reconcilePaymentFees(paymentId: string) {
       }
     }
 
-    const config = CARD_FEE_CONFIG[brand as keyof typeof CARD_FEE_CONFIG] || CARD_FEE_CONFIG.DEFAULT;
-    const percentageBps = config.percentageBps;
-    const fixedFeeCents = config.fixedFeeCents;
+    const isAmex = brand === "AMERICAN_EXPRESS";
+    const pricing = donorCoversFee ? WGC_PRICING.donorCovered : WGC_PRICING.organizationPaid;
+    const percentageBps = isAmex ? pricing.amexCardBasisPoints : pricing.nonAmexCardBasisPoints;
+    const fixedFeeCents = donorCoversFee ? 0 : WGC_PRICING.organizationPaid.cardFixedFeeCents;
 
     let merchantExpectedNetCents = intendedCents;
     if (donorCoversFee === false) {

@@ -1,14 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
-import {
-  calculateFeeCoveredTotal,
-  isDynamicSupplementalFeesEnabled,
-  calculateDynamicSupplementalFee,
-  normalizeCardBrand,
-  checkPricingWarning,
-  FEE_CALCULATION_VERSION,
-} from "@/lib/giving/feeCalculator";
+import { FEE_CALCULATION_VERSION } from "@/lib/giving/feeCalculator";
+import { resolveWgcTransferFeeStrategy } from "@/lib/giving/serverFeeStrategy";
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { sendReceiptEmail } from "@/lib/giving/sendReceiptEmail";
@@ -76,7 +70,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       return NextResponse.json({ error: "This organization cannot accept gifts right now" }, { status: 400 });
     }
 
-    const dynamicFeesEnabled = isDynamicSupplementalFeesEnabled(church.finixMerchantId);
+    const finixMerchantId = church.finixMerchantId;
 
     // Amount rules
     if (link.amountType === "FIXED") {
@@ -215,49 +209,32 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     }
 
     // 2. Perform Fee Calculation
-    let totalCents: number;
-    let feeCoveredCents: number;
-    let feeRes: any = null;
+    const feeStrategy = resolveWgcTransferFeeStrategy({
+      donationAmountCents,
+      paymentMethod: method === "bank" ? "ACH" : "CARD",
+      cardBrand,
+      donorCoversFee: link.feeCoverEnabled && coverFees,
+    });
+    
+    const totalCents = feeStrategy.amountToChargeCents;
+    const feeCoveredCents = feeStrategy.supplementalFeeCents;
 
-    if (dynamicFeesEnabled) {
-      const brand = normalizeCardBrand(cardBrand);
-      feeRes = calculateDynamicSupplementalFee({
-        donationAmountCents,
-        paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
-        cardBrand: brand,
-        donorCoversFee: link.feeCoverEnabled && coverFees,
-      });
-      totalCents = feeRes.donorChargeAmountCents;
-      feeCoveredCents = feeRes.supplementalFeeCents;
-    } else {
-      const pricing = await prisma.churchPricing.findUnique({ where: { churchId: church.id } });
-      const oldFee = link.feeCoverEnabled && coverFees
-        ? calculateFeeCoveredTotal(donationAmountCents, method, {
-            cardPercentageFee: pricing?.cardPercentageFee ?? null,
-            cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,
-            achFixedFeeCents: pricing?.achFixedFeeCents ?? null,
-          })
-        : { totalCents: donationAmountCents };
-      totalCents = oldFee.totalCents;
-      feeCoveredCents = totalCents - donationAmountCents;
-    }
-
-    // 3. Return Preview Response if requested
-    if (dynamicFeesEnabled && preview) {
+    // 3. Return Preview response if requested
+    if (preview) {
       return NextResponse.json({
         preview: true,
         paymentInstrumentId: instrumentId,
-        cardBrand: feeRes.normalizedCardBrand,
+        cardBrand: feeStrategy.normalizedCardBrand,
         donationAmountCents,
-        processingFeeCents: feeRes.processingFeeCents,
-        donorChargeAmountCents: feeRes.donorChargeAmountCents,
-        supplementalFeeCents: feeRes.supplementalFeeCents,
-        merchantExpectedNetCents: feeRes.merchantExpectedNetCents,
+        processingFeeCents: feeStrategy.expectedFeeCents,
+        donorChargeAmountCents: feeStrategy.amountToChargeCents,
+        supplementalFeeCents: feeStrategy.supplementalFeeCents,
+        merchantExpectedNetCents: totalCents - feeStrategy.expectedFeeCents,
       });
     }
 
-    // 4. Verify expected total matches recalculated server total
-    if (dynamicFeesEnabled && typeof expectedTotalCents === "number" && expectedTotalCents !== totalCents) {
+    // 4. Verify client total matches recalculated server total
+    if (typeof expectedTotalCents === "number" && expectedTotalCents !== totalCents) {
       return NextResponse.json({ error: "Payment amount has changed. Please confirm and try again." }, { status: 400 });
     }
 
@@ -290,24 +267,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       claimedOneTimeLinkId = link.id;
     }
 
-    const tags: any = {
-      source: "wgc_giving_link",
-      merchantId: church.finixMerchantId,
-      churchId: church.id,
-      givingLinkId: link.id,
-    };
-
-    if (dynamicFeesEnabled) {
-      tags.donation_amount_cents = String(donationAmountCents);
-      tags.processing_fee_cents = String(feeRes.processingFeeCents);
-      tags.donor_covers_fee = String(link.feeCoverEnabled && coverFees);
-      tags.fee_strategy = (link.feeCoverEnabled && coverFees) ? "DONOR_PAID" : "ORGANIZATION_PAID";
-      tags.card_brand = feeRes.normalizedCardBrand || "NONE";
-      tags.fee_percentage_bps = String(feeRes.percentageBps);
-      tags.fee_fixed_cents = String(feeRes.fixedFeeCents);
-      tags.fee_calculation_version = FEE_CALCULATION_VERSION;
-    }
-
     // 6. Handle Subscription flow
     if (isRecurring) {
       const subscription = await finixClient.createSubscription({
@@ -317,7 +276,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         linked_to: church.finixMerchantId,
         linked_type: "MERCHANT",
         buyer_details: { identity_id: identityId, instrument_id: instrumentId },
-        tags,
+        tags: {
+            source: "wgc_giving_link",
+            merchantId: church.finixMerchantId,
+            churchId: church.id,
+            givingLinkId: link.id,
+        },
       });
 
       await prisma.finixSubscription.upsert({
@@ -338,7 +302,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
           startedAt: new Date(),
           donationAmountCents,
           donorCoversFee: link.feeCoverEnabled && coverFees,
-          feeCalculationVersion: dynamicFeesEnabled ? "v1" : null,
+          feeCalculationVersion: FEE_CALCULATION_VERSION,
           lastSyncedAt: new Date(),
         },
         update: {
@@ -364,14 +328,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       amount: totalCents,
       currency: "USD",
       source: instrumentId,
+      fee_profile: feeStrategy.feeProfileId,
       fraud_session_id: fraudSessionId,
       idempotency_id: idempotencyId,
       statement_descriptor: (link.statementDescriptor || church.name).slice(0, 18).toUpperCase(),
-      tags,
+      tags: {
+        source: "wgc_giving_link",
+        givingLinkId: link.id,
+        merchantId: church.finixMerchantId,
+        churchId: church.id,
+        donation_amount_cents: String(donationAmountCents),
+        processing_fee_cents: String(feeStrategy.expectedFeeCents),
+        donor_covers_fee: String(link.feeCoverEnabled && coverFees),
+        fee_strategy: feeStrategy.feePaidBy,
+        card_brand: feeStrategy.normalizedCardBrand || "NONE",
+        fee_percentage_bps: String(feeStrategy.percentageBasisPoints),
+        fee_fixed_cents: String(feeStrategy.fixedFeeCents),
+        fee_calculation_version: FEE_CALCULATION_VERSION,
+      },
     };
 
-    if ((link.feeCoverEnabled && coverFees) && feeCoveredCents > 0) {
-      transferPayload.supplemental_fee = feeCoveredCents;
+    if (feeStrategy.feePaidBy === "DONOR" && feeStrategy.supplementalFeeCents > 0) {
+      transferPayload.supplemental_fee = feeStrategy.supplementalFeeCents;
     }
 
     const transfer = await finixClient.createTransfer(transferPayload);
@@ -388,7 +366,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         amountCents: totalCents,
         currency: "USD",
         source: "wgc_giving_link",
-        tagsJson: tags,
+        tagsJson: transferPayload.tags,
         createdAtFinix: new Date(),
         lastSyncedAt: new Date(),
       },
@@ -416,20 +394,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
                 : "BANK_ACCOUNT",
         status: transfer.state ?? "PENDING",
         donorCoversFee: link.feeCoverEnabled && coverFees,
-        cardBrand: dynamicFeesEnabled ? feeRes.normalizedCardBrand : null,
-        percentageBps: dynamicFeesEnabled ? feeRes.percentageBps : null,
-        fixedFeeCents: dynamicFeesEnabled ? feeRes.fixedFeeCents : null,
-        feeCalculationVersion: dynamicFeesEnabled ? FEE_CALCULATION_VERSION : null,
-        merchantExpectedNetCents: dynamicFeesEnabled ? feeRes.merchantExpectedNetCents : (totalCents - feeCoveredCents),
+        cardBrand: feeStrategy.normalizedCardBrand,
+        percentageBps: feeStrategy.percentageBasisPoints,
+        fixedFeeCents: feeStrategy.fixedFeeCents,
+        feeCalculationVersion: FEE_CALCULATION_VERSION,
+        merchantExpectedNetCents: totalCents - feeStrategy.expectedFeeCents,
         fundName: link.fundName || null,
         isAnonymous: fieldSettings.anonymousDonation !== "HIDDEN" ? Boolean(donor.isAnonymous) : false,
         note: fieldSettings.donorNote !== "HIDDEN" ? donor.note?.trim() || null : null,
       },
     });
 
-    if (dynamicFeesEnabled) {
-      await checkPricingWarning(church.id, church.finixMerchantId);
-    }
+
 
     const succeeded = (transfer.state || "").toUpperCase() === "SUCCEEDED";
 

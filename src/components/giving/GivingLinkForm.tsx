@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import { CheckCircle, Clock, AlertCircle, Repeat } from "lucide-react";
 import { getFraudSessionId } from "@/lib/finix/fraudSession";
 import { mountFinixPaymentForm } from "@/lib/finix/tokenize";
-import { calculateFeeCoveredTotal } from "@/lib/giving/feeCalculator";
+import { calculateWgcFeeAmounts } from "@/lib/giving/feeCalculator";
 import { formatCents } from "@/lib/format";
 import type { FinixPaymentFormInstance } from "@/lib/finix/fraudSession";
 import type { DonorFieldSettings, FrequencyKey, PaymentMethodKey, BrandingModeSettings } from "@/lib/givingLinks/types";
@@ -116,8 +116,14 @@ export default function GivingLinkForm({
   // happens to be selected — kept separate from the card/bank form's own
   // paymentMethod-driven totalCents/feeCoveredCents declared further below.
   const effectiveAmountCents = amountType === "FIXED" ? (fixedAmountCents ?? 0) : customAmount ? Math.round(parseFloat(customAmount) * 100) : amountCents;
-  const walletProjectedFee = calculateFeeCoveredTotal(effectiveAmountCents || 0, "card", pricing);
-  const { totalCents: walletTotalCents } = coverFees ? walletProjectedFee : { totalCents: effectiveAmountCents || 0 };
+  
+  const walletFeeResult = calculateWgcFeeAmounts({
+    donationAmountCents: effectiveAmountCents || 0,
+    paymentMethod: "CARD",
+    cardBrand: null,
+    donorCoversFee: feeCoverEnabled ? coverFees : false,
+  });
+  const walletTotalCents = (feeCoverEnabled && coverFees) ? walletFeeResult.amountToChargeCents : (effectiveAmountCents || 0);
 
   const submitWalletPayment = async (
     method: "apple_pay" | "google_pay",
@@ -296,8 +302,14 @@ export default function GivingLinkForm({
     };
   }, [paymentMethod]);
 
-  const projectedFee = calculateFeeCoveredTotal(effectiveAmountCents || 0, paymentMethod, pricing);
-  const { totalCents, feeCoveredCents } = coverFees ? projectedFee : { totalCents: effectiveAmountCents || 0, feeCoveredCents: 0 };
+  const feeResult = calculateWgcFeeAmounts({
+    donationAmountCents: effectiveAmountCents || 0,
+    paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
+    cardBrand: null,
+    donorCoversFee: feeCoverEnabled ? coverFees : false,
+  });
+  const totalCents = (feeCoverEnabled && coverFees) ? feeResult.amountToChargeCents : (effectiveAmountCents || 0);
+  const feeCoveredCents = (feeCoverEnabled && coverFees) ? feeResult.supplementalFeeCents : 0;
 
   const isFieldVisible = (key: keyof DonorFieldSettings) => donorFieldSettings[key] !== "HIDDEN";
   const isFieldRequired = (key: keyof DonorFieldSettings) => donorFieldSettings[key] === "REQUIRED";
@@ -661,7 +673,7 @@ export default function GivingLinkForm({
         <label className="flex items-start gap-2 text-sm" style={{ color: light.bodyTextColor }}>
           <input type="checkbox" checked={coverFees} onChange={(e) => setCoverFees(e.target.checked)} className="mt-0.5" />
           <span>
-            I&apos;ll cover the {formatCents(projectedFee.feeCoveredCents)} processing fee so my full{" "}
+            I&apos;ll cover the {formatCents(feeCoveredCents || feeResult.expectedFeeCents)} processing fee so my full{" "}
             {formatCents(effectiveAmountCents)} gift goes to {churchName}.
           </span>
         </label>

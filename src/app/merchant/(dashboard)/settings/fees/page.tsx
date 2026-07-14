@@ -2,20 +2,28 @@ import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { formatCents } from "@/lib/format";
-import { calculateFeeCoveredTotal, DEFAULT_CARD_PERCENTAGE_FEE, DEFAULT_CARD_FIXED_FEE_CENTS, DEFAULT_ACH_FIXED_FEE_CENTS } from "@/lib/giving/feeCalculator";
+import { calculateWgcFeeAmounts, WGC_PRICING } from "@/lib/giving/feeCalculator";
 
 export default async function FeesSettingsPage() {
   const session = await getSession();
   const churchId = session!.churchId!;
   const pricing = await prisma.churchPricing.findUnique({ where: { churchId } });
 
-  const cardPct = pricing?.cardPercentageFee ?? DEFAULT_CARD_PERCENTAGE_FEE;
-  const cardFixed = pricing?.cardFixedFeeCents ?? DEFAULT_CARD_FIXED_FEE_CENTS;
-  const achFixed = pricing?.achFixedFeeCents ?? DEFAULT_ACH_FIXED_FEE_CENTS;
+  const cardPct = (WGC_PRICING.organizationPaid.nonAmexCardBasisPoints / 100);
+  const cardFixed = WGC_PRICING.organizationPaid.cardFixedFeeCents;
+  const achFixed = WGC_PRICING.organizationPaid.achFixedFeeCents;
 
   const exampleDonationCents = 10000;
-  const { totalCents, feeCoveredCents } = calculateFeeCoveredTotal(exampleDonationCents, "card", { cardPercentageFee: cardPct, cardFixedFeeCents: cardFixed });
-  const estimatedFeeCents = totalCents - exampleDonationCents;
+  
+  const feeResult = calculateWgcFeeAmounts({
+    donationAmountCents: exampleDonationCents,
+    paymentMethod: "CARD",
+    cardBrand: null,
+    donorCoversFee: true,
+  });
+
+  const totalCents = feeResult.amountToChargeCents;
+  const estimatedFeeCents = feeResult.supplementalFeeCents;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">

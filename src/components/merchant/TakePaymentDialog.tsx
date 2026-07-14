@@ -5,7 +5,7 @@ import { X, CheckCircle, AlertCircle, ChevronDown } from "lucide-react";
 import toast from "react-hot-toast";
 import { getFraudSessionId } from "@/lib/finix/fraudSession";
 import { mountFinixPaymentForm } from "@/lib/finix/tokenize";
-import { calculateFeeCoveredTotal } from "@/lib/giving/feeCalculator";
+import { calculateWgcFeeAmounts } from "@/lib/giving/feeCalculator";
 import { formatCents } from "@/lib/format";
 import { validateGoodsServicesInput, computeRecordedContributionAmountCents } from "@/lib/giving/goodsServices";
 import { DEFAULT_NO_GOODS_SERVICES_TEXT, DEFAULT_GOODS_SERVICES_TEMPLATE } from "@/lib/settings/acknowledgmentDefaults";
@@ -86,10 +86,15 @@ export default function TakePaymentDialog({
   }, [paymentMethod]);
 
   const amountCents = Math.round((parseFloat(amount) || 0) * 100);
-  const projected = calculateFeeCoveredTotal(amountCents || 0, paymentMethod, pricing);
-  const { totalCents, feeCoveredCents } = coverFees
-    ? projected
-    : { totalCents: amountCents, feeCoveredCents: 0 };
+  const feeResult = calculateWgcFeeAmounts({
+    donationAmountCents: amountCents || 0,
+    paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
+    cardBrand: null,
+    donorCoversFee: coverFees,
+  });
+  
+  const totalCents = coverFees ? feeResult.amountToChargeCents : (amountCents || 0);
+  const feeCoveredCents = coverFees ? feeResult.supplementalFeeCents : 0;
 
   const goodsServicesFairMarketValueCents = goodsServicesFairMarketValue.trim() ? Math.round((parseFloat(goodsServicesFairMarketValue) || 0) * 100) : null;
   const goodsServicesValidation = validateGoodsServicesInput(

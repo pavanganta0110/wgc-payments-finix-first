@@ -2,14 +2,8 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
-import {
-  calculateFeeCoveredTotal,
-  isDynamicSupplementalFeesEnabled,
-  calculateDynamicSupplementalFee,
-  normalizeCardBrand,
-  checkPricingWarning,
-  FEE_CALCULATION_VERSION,
-} from "@/lib/giving/feeCalculator";
+import { FEE_CALCULATION_VERSION } from "@/lib/giving/feeCalculator";
+import { resolveWgcTransferFeeStrategy } from "@/lib/giving/serverFeeStrategy";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { sendDonationReceipt } from "@/lib/giving/generateReceipt";
 import { normalizeUSPhone, isValidEmail } from "@/lib/validation";
@@ -84,7 +78,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Organization is not set up to accept payments" }, { status: 400 });
     }
 
-    const dynamicFeesEnabled = isDynamicSupplementalFeesEnabled(church.finixMerchantId);
 
     const existing = await prisma.paymentAttempt.findUnique({ where: { clientAttemptId } });
     if (existing) {
@@ -124,32 +117,15 @@ export async function POST(req: Request) {
     if (!instrumentId) throw new Error("Failed to create payment instrument");
 
     // Perform Fee Calculation
-    let totalCents: number;
-    let feeCoveredCents: number;
-    let feeRes: any = null;
-
-    if (dynamicFeesEnabled) {
-      const brand = normalizeCardBrand(instrument.card?.brand);
-      feeRes = calculateDynamicSupplementalFee({
-        donationAmountCents,
-        paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
-        cardBrand: brand,
-        donorCoversFee: coverFees,
-      });
-      totalCents = feeRes.donorChargeAmountCents;
-      feeCoveredCents = feeRes.supplementalFeeCents;
-    } else {
-      const pricing = await prisma.churchPricing.findUnique({ where: { churchId: church.id } });
-      const oldFee = coverFees
-        ? calculateFeeCoveredTotal(donationAmountCents, method, {
-            cardPercentageFee: pricing?.cardPercentageFee ?? null,
-            cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,
-            achFixedFeeCents: pricing?.achFixedFeeCents ?? null,
-          })
-        : { totalCents: donationAmountCents };
-      totalCents = oldFee.totalCents;
-      feeCoveredCents = totalCents - donationAmountCents;
-    }
+    const feeStrategy = resolveWgcTransferFeeStrategy({
+      donationAmountCents,
+      paymentMethod: method === "bank" ? "ACH" : "CARD",
+      cardBrand: instrument.card?.brand,
+      donorCoversFee: coverFees,
+    });
+    
+    const totalCents = feeStrategy.amountToChargeCents;
+    const feeCoveredCents = feeStrategy.supplementalFeeCents;
 
     const idempotencyId = existing?.idempotencyId ?? crypto.randomUUID();
 
@@ -203,6 +179,7 @@ export async function POST(req: Request) {
       amount: totalCents,
       currency: "USD",
       source: instrumentId,
+      fee_profile: feeStrategy.feeProfileId,
       fraud_session_id: fraudSessionId,
       idempotency_id: idempotencyId,
       statement_descriptor: church.name.slice(0, 18).toUpperCase(),
@@ -211,29 +188,20 @@ export async function POST(req: Request) {
         merchantId: church.finixMerchantId,
         churchId: church.id,
         adminUserId: session.userId,
+        donation_amount_cents: String(donationAmountCents),
+        processing_fee_cents: String(feeStrategy.expectedFeeCents),
+        donor_covers_fee: String(coverFees),
+        fee_strategy: feeStrategy.feePaidBy,
+        card_brand: feeStrategy.normalizedCardBrand || "NONE",
+        fee_percentage_bps: String(feeStrategy.percentageBasisPoints),
+        fee_fixed_cents: String(feeStrategy.fixedFeeCents),
+        fee_calculation_version: FEE_CALCULATION_VERSION,
         ...(fundName ? { fundName } : {}),
       },
     };
 
-    if (dynamicFeesEnabled) {
-      transferPayload.tags = {
-        ...transferPayload.tags,
-        donation_amount_cents: String(donationAmountCents),
-        processing_fee_cents: String(feeRes.processingFeeCents),
-        donor_covers_fee: String(coverFees),
-        fee_strategy: coverFees ? "DONOR_PAID" : "ORGANIZATION_PAID",
-        card_brand: feeRes.normalizedCardBrand || "NONE",
-        fee_percentage_bps: String(feeRes.percentageBps),
-        fee_fixed_cents: String(feeRes.fixedFeeCents),
-        fee_calculation_version: FEE_CALCULATION_VERSION,
-      };
-      if (coverFees && feeCoveredCents > 0) {
-        transferPayload.supplemental_fee = feeCoveredCents;
-      }
-    } else {
-      if (coverFees && feeCoveredCents > 0) {
-        transferPayload.supplemental_fee = feeCoveredCents;
-      }
+    if (feeStrategy.feePaidBy === "DONOR" && feeStrategy.supplementalFeeCents > 0) {
+      transferPayload.supplemental_fee = feeStrategy.supplementalFeeCents;
     }
 
     const transfer = await finixClient.createTransfer(transferPayload);
@@ -300,17 +268,14 @@ export async function POST(req: Request) {
         goodsServicesInternalNote: goodsServicesProvidedValue ? goodsServicesInternalNote : null,
         recordedContributionAmountCents,
         donorCoversFee: coverFees,
-        cardBrand: dynamicFeesEnabled ? feeRes.normalizedCardBrand : null,
-        percentageBps: dynamicFeesEnabled ? feeRes.percentageBps : null,
-        fixedFeeCents: dynamicFeesEnabled ? feeRes.fixedFeeCents : null,
-        feeCalculationVersion: dynamicFeesEnabled ? FEE_CALCULATION_VERSION : null,
-        merchantExpectedNetCents: dynamicFeesEnabled ? feeRes.merchantExpectedNetCents : (totalCents - feeCoveredCents),
+        cardBrand: feeStrategy.normalizedCardBrand,
+        percentageBps: feeStrategy.percentageBasisPoints,
+        fixedFeeCents: feeStrategy.fixedFeeCents,
+        feeCalculationVersion: FEE_CALCULATION_VERSION,
+        merchantExpectedNetCents: totalCents - feeStrategy.expectedFeeCents,
+        givingPageType: "GENERAL",
       },
     });
-
-    if (dynamicFeesEnabled) {
-      await checkPricingWarning(church.id, church.finixMerchantId);
-    }
 
     await logDashboardAction({
       churchId: church.id,

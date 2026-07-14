@@ -27,12 +27,22 @@ export default async function PersonGivingDetailReportPage({
       selectedPersonId: personId,
       status: "SUCCEEDED",
     },
-    include: {
-      donor: true,
-      givingPage: true,
-    },
     orderBy: { createdAt: "desc" },
   });
+
+  const donorIds = Array.from(new Set(payments.map(p => p.donorId).filter(Boolean))) as string[];
+  const donors = await prisma.donor.findMany({ where: { id: { in: donorIds } } });
+  const donorMap = new Map(donors.map(d => [d.id, d]));
+  
+  const givingPageIds = Array.from(new Set(payments.map(p => p.givingPageId).filter(Boolean))) as string[];
+  const givingPages = await prisma.givingPage.findMany({ where: { id: { in: givingPageIds } } });
+  const givingPageMap = new Map(givingPages.map(g => [g.id, g]));
+
+  const paymentsWithRelations = payments.map(p => ({
+    ...p,
+    donor: p.donorId ? donorMap.get(p.donorId) || null : null,
+    givingPage: p.givingPageId ? givingPageMap.get(p.givingPageId) || null : null
+  }));
 
   return (
     <div className="space-y-6">
@@ -48,7 +58,7 @@ export default async function PersonGivingDetailReportPage({
         </div>
       </div>
 
-      <PersonGivingDetailClient person={person} payments={payments} />
+      <PersonGivingDetailClient person={person} payments={paymentsWithRelations} />
     </div>
   );
 }

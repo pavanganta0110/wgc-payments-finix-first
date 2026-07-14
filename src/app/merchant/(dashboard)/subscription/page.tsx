@@ -6,6 +6,7 @@ import StateBadge from "@/components/merchant/StateBadge";
 import ComingSoon from "@/components/merchant/ComingSoon";
 import { formatDateCDT, formatDateTimeCDT } from "@/lib/formatDateTimeCDT";
 import RefreshPricingButton from "@/components/merchant/RefreshPricingButton";
+import { WGC_PRICING } from "@/lib/giving/feeCalculator";
 
 function titleCase(s: string | null | undefined) {
   if (!s) return "—";
@@ -117,12 +118,12 @@ export default async function SubscriptionPage() {
             </p>
             <div className="space-y-3">
               <RateRow
-                label="Card Processing Rate"
-                rate="2.30% + $0.30 per transaction"
+                label="Card fee charged to organization"
+                rate={`${(WGC_PRICING.organizationPaid.nonAmexCardBasisPoints / 100).toFixed(1)}% + ${formatCents(WGC_PRICING.organizationPaid.cardFixedFeeCents)}`}
               />
               <RateRow
-                label="ACH Processing Fee"
-                rate="$0.25 per transaction"
+                label="ACH Fee charged to organization"
+                rate={`${formatCents(WGC_PRICING.organizationPaid.achFixedFeeCents)}`}
               />
             </div>
             <p className="text-xs text-slate-400 mt-3">

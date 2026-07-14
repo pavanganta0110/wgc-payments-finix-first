@@ -13,13 +13,7 @@ import { linkTransfersToSettlement, recomputeSettlementAggregates } from "@/lib/
 import { isFreshEnoughToApply } from "@/lib/finix/sync/settlementFundingSync";
 import { syncAllChurchesPricing, syncChurchPricingForMerchantProfile } from "@/lib/finix/sync/syncFeeProfiles";
 import { describeAchReturnReason } from "@/lib/finix/achReturnReasonCodes";
-import {
-  calculateFeeCoveredTotal,
-  isDynamicSupplementalFeesEnabled,
-  calculateDynamicSupplementalFee,
-  normalizeCardBrand,
-  checkPricingWarning,
-} from "@/lib/giving/feeCalculator";
+import { calculateWgcFeeAmounts } from "@/lib/giving/feeCalculator";
 
 const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SECRET || process.env.FINIX_WEBHOOK_SIGNING_KEY;
 const BEARER_TOKEN = process.env.FINIX_WEBHOOK_BEARER_TOKEN;
@@ -283,41 +277,18 @@ export async function syncFinixDataFromWebhookEvent(
               });
               const donationAmountCents = sub.donationAmountCents ?? data.amount ?? 0;
               const donorCoversFee = sub.donorCoversFee ?? false;
-              const dynamicFeesEnabled = isDynamicSupplementalFeesEnabled(churchId);
-
-              let feeCoveredCents = 0;
-              let percentageBps: number | null = null;
-              let fixedFeeCents: number | null = null;
-              let cardBrandStr: string | null = null;
-              let merchantExpectedNetCents = donationAmountCents;
-
-              if (dynamicFeesEnabled) {
-                const brand = normalizeCardBrand(instrument?.cardBrand || data.card?.brand);
-                const isAch = instrument?.paymentMethodType === "bank" || data.payment_type === "bank_account";
-                const feeRes = calculateDynamicSupplementalFee({
-                  donationAmountCents,
-                  paymentMethod: isAch ? "ACH" : "CARD",
-                  cardBrand: brand,
-                  donorCoversFee,
-                });
-                feeCoveredCents = feeRes.supplementalFeeCents;
-                percentageBps = feeRes.percentageBps;
-                fixedFeeCents = feeRes.fixedFeeCents;
-                cardBrandStr = feeRes.normalizedCardBrand;
-                merchantExpectedNetCents = feeRes.merchantExpectedNetCents;
-              } else {
-                const pricing = await prisma.churchPricing.findUnique({ where: { churchId } });
-                const method = (instrument?.paymentMethodType === "bank" || data.payment_type === "bank_account") ? "bank" : "card";
-                const oldFee = donorCoversFee
-                  ? calculateFeeCoveredTotal(donationAmountCents, method, {
-                      cardPercentageFee: pricing?.cardPercentageFee ?? null,
-                      cardFixedFeeCents: pricing?.cardFixedFeeCents ?? null,
-                      achFixedFeeCents: pricing?.achFixedFeeCents ?? null,
-                    })
-                  : { totalCents: donationAmountCents };
-                feeCoveredCents = oldFee.totalCents - donationAmountCents;
-                merchantExpectedNetCents = donationAmountCents - (donorCoversFee ? 0 : feeCoveredCents);
-              }
+              const feeRes = calculateWgcFeeAmounts({
+                donationAmountCents,
+                paymentMethod: (instrument?.paymentMethodType === "bank" || data.payment_type === "bank_account") ? "ACH" : "CARD",
+                cardBrand: instrument?.cardBrand || data.card?.brand || null,
+                donorCoversFee,
+              });
+              
+              const feeCoveredCents = feeRes.supplementalFeeCents;
+              const percentageBps = feeRes.percentageBasisPoints;
+              const fixedFeeCents = feeRes.fixedFeeCents;
+              const cardBrandStr = feeRes.normalizedCardBrand;
+              const merchantExpectedNetCents = (donationAmountCents + feeCoveredCents) - feeRes.expectedFeeCents;
 
               const donorId = sub.donorId || instrument?.donorId || null;
               await prisma.payment.create({
@@ -337,15 +308,11 @@ export async function syncFinixDataFromWebhookEvent(
                   cardBrand: cardBrandStr,
                   percentageBps,
                   fixedFeeCents,
-                  feeCalculationVersion: dynamicFeesEnabled ? "v1" : null,
+                  feeCalculationVersion: "v1",
                   merchantExpectedNetCents,
                   finixSubscriptionId: sub.finixSubscriptionId,
                 },
               });
-
-              if (dynamicFeesEnabled) {
-                await checkPricingWarning(churchId, sub.finixMerchantId);
-              }
             }
           }
         } catch (err) {
