@@ -120,7 +120,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     const church = await prisma.church.findUnique({ where: { id: givingPage.churchId } });
     if (!church || !church.finixMerchantId) {
       return NextResponse.json({ success: false, code: "PAYMENT_CONFIGURATION_ERROR", message: "Organization is not set up to accept payments", retryable: false }, { status: 400 });
-    }, { status: 400 });
     }
 
     const finixMerchantId = church.finixMerchantId;
