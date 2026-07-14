@@ -77,12 +77,10 @@ export default async function SubscriptionPage() {
           {/* Header */}
           <div className="flex items-start justify-between mb-4">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">WGC Processing Rates</h3>
+              <h3 className="text-sm font-bold text-slate-900">Processing Rates</h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                These rates determine how processing fees are applied based on whether
-                the donor chooses to cover the fee.
                 {pricing.updatedAt && (
-                  <> · Last updated {formatDateTimeCDT(pricing.updatedAt)}</>
+                  <>Last updated {formatDateTimeCDT(pricing.updatedAt)}</>
                 )}
               </p>
             </div>
@@ -92,54 +90,49 @@ export default async function SubscriptionPage() {
           {/* Section 1: Donor Covers */}
           <div className="mb-5">
             <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-3">
-              When Donors Cover Processing Fees
+              When the Donor Covers the Processing Fee
             </p>
             <div className="space-y-3">
               <RateRow
-                label="Non-American-Express Cards"
-                rate="3.00% of the donation amount"
-                description="Added to the donor's total when the donor chooses to cover processing fees."
+                label="Card Fee Charged to Organization"
+                rate="0%"
               />
               <RateRow
-                label="American Express"
-                rate="3.50% of the donation amount"
-                description="Added to the donor's total when the donor chooses to cover processing fees."
-              />
-              <RateRow
-                label="ACH"
-                rate="$0.25 per transaction"
-                description="Added to the donor's total when the donor chooses to cover processing fees."
+                label="ACH Fee Charged to Organization"
+                rate="$0.00"
               />
             </div>
+            <p className="text-xs text-slate-400 mt-3">
+              When the donor covers the processing fee, no processing fee is deducted
+              from the organization&rsquo;s donation proceeds.
+            </p>
           </div>
 
           <div className="border-t border-slate-100 my-4" />
 
-          {/* Section 2: Org Covers */}
+          {/* Section 2: Donor Does Not Cover */}
           <div>
             <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-3">
-              When the Organization Covers Processing Fees
+              When the Donor Does Not Cover the Processing Fee
             </p>
             <div className="space-y-3">
               <RateRow
-                label="Non-American-Express Cards"
+                label="Card Processing Rate"
                 rate="2.30% + $0.30 per transaction"
-                description="Deducted from donation proceeds when the donor does not cover the fee."
               />
               <RateRow
-                label="American Express"
-                rate="3.50% + $0.30 per transaction"
-                description="Deducted from donation proceeds when the donor does not cover the fee."
-              />
-              <RateRow
-                label="ACH"
+                label="ACH Processing Fee"
                 rate="$0.25 per transaction"
-                description="Deducted from donation proceeds when the donor does not cover the fee."
               />
             </div>
+            <p className="text-xs text-slate-400 mt-3">
+              When the donor does not cover the processing fee, the applicable processing
+              fee is deducted from the organization&rsquo;s donation proceeds.
+            </p>
           </div>
         </div>
       )}
+
     </div>
   );
 }
@@ -155,12 +148,12 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RateRow({ label, rate, description }: { label: string; rate: string; description: string }) {
+function RateRow({ label, rate, description }: { label: string; rate: string; description?: string }) {
   return (
     <div className="flex items-start justify-between gap-4 text-sm">
       <div>
         <p className="font-semibold text-slate-800">{label}</p>
-        <p className="text-xs text-slate-500 mt-0.5">{description}</p>
+        {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
       </div>
       <p className="font-bold text-slate-900 whitespace-nowrap shrink-0">{rate}</p>
     </div>
