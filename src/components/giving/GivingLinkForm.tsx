@@ -308,8 +308,16 @@ export default function GivingLinkForm({
     cardBrand: null,
     donorCoversFee: feeCoverEnabled ? coverFees : false,
   });
+  
+  const donorCoveredFeeResult = calculateWgcFeeAmounts({
+    donationAmountCents: effectiveAmountCents || 0,
+    paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
+    cardBrand: null,
+    donorCoversFee: true,
+  });
+  
   const totalCents = (feeCoverEnabled && coverFees) ? feeResult.amountToChargeCents : (effectiveAmountCents || 0);
-  const feeCoveredCents = (feeCoverEnabled && coverFees) ? feeResult.supplementalFeeCents : 0;
+  const feeCoveredCents = donorCoveredFeeResult.supplementalFeeCents;
 
   const isFieldVisible = (key: keyof DonorFieldSettings) => donorFieldSettings[key] !== "HIDDEN";
   const isFieldRequired = (key: keyof DonorFieldSettings) => donorFieldSettings[key] === "REQUIRED";
@@ -673,7 +681,7 @@ export default function GivingLinkForm({
         <label className="flex items-start gap-2 text-sm" style={{ color: light.bodyTextColor }}>
           <input type="checkbox" checked={coverFees} onChange={(e) => setCoverFees(e.target.checked)} className="mt-0.5" />
           <span>
-            I&apos;ll cover the {formatCents(feeCoveredCents || feeResult.expectedFeeCents)} processing fee so my full{" "}
+            I&apos;ll cover the {formatCents(feeCoveredCents)} processing fee so my full{" "}
             {formatCents(effectiveAmountCents)} gift goes to {churchName}.
           </span>
         </label>

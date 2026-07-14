@@ -95,8 +95,15 @@ export default function DonationForm({
     donorCoversFee: coverFees,
   });
   
+  const donorCoveredFeeResult = calculateWgcFeeAmounts({
+    donationAmountCents: effectiveAmountCents || 0,
+    paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
+    cardBrand: null,
+    donorCoversFee: true,
+  });
+  
   const totalCents = coverFees ? feeResult.amountToChargeCents : (effectiveAmountCents || 0);
-  const feeCoveredCents = coverFees ? feeResult.supplementalFeeCents : 0;
+  const feeCoveredCents = donorCoveredFeeResult.supplementalFeeCents;
 
   const handleSubmit = async () => {
     if (!effectiveAmountCents || effectiveAmountCents < 100) {
@@ -341,7 +348,7 @@ export default function DonationForm({
         <label className="flex items-start gap-2 text-sm text-slate-600">
           <input type="checkbox" checked={coverFees} onChange={(e) => setCoverFees(e.target.checked)} className="mt-0.5" />
           <span>
-            I'll cover the {formatCents(feeCoveredCents || feeResult.expectedFeeCents)} processing fee so my full{" "}
+            I'll cover the {formatCents(feeCoveredCents)} processing fee so my full{" "}
             {formatCents(effectiveAmountCents)} gift goes to the organization.
           </span>
         </label>
