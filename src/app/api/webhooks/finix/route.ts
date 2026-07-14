@@ -1131,7 +1131,12 @@ export async function POST(req: Request) {
       }
     }
 
-    const payload = JSON.parse(rawBody);
+    let payload: any;
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+    }
     const { entity, eventType, data } = getFinixEventData(payload);
     const eventId = payload.id;
     const occurredAt = payload.created_at ? new Date(payload.created_at) : new Date();
