@@ -110,6 +110,11 @@ export default function GivingLinkForm({
   const [googleAvailable, setGoogleAvailable] = useState(false);
   const [walletProcessing, setWalletProcessing] = useState<"apple_pay" | "google_pay" | null>(null);
   const googlePayButtonRef = useRef<HTMLDivElement>(null);
+  const [attemptId, setAttemptId] = useState("");
+
+  useEffect(() => {
+    setAttemptId(crypto.randomUUID());
+  }, []);
 
   // Apple Pay / Google Pay always ride card-network rails, so their fee
   // uses the card rate regardless of which manual-entry tab (card/bank)
@@ -142,6 +147,7 @@ export default function GivingLinkForm({
           coverFees: feeCoverEnabled ? coverFees : false,
           isRecurring: false,
           fraudSessionId,
+          clientAttemptId: attemptId,
           donor: {
             name: walletResult.billingContact.name,
             email: walletResult.billingContact.email || email.trim(),
@@ -151,14 +157,22 @@ export default function GivingLinkForm({
           },
         }),
       });
-      const data = await res.json();
-      setWalletProcessing(null);
-
-      if (!res.ok) {
-        setResult({ step: "failed", error: data?.error || "Payment failed. Please try again." });
+      const data = await res.json().catch(() => null);
+      
+      if (!res.ok || !data?.success) {
+        setWalletProcessing(null);
+        const errMsg = data?.message || (typeof data?.error === 'string' ? data.error : data?.error?.message) || "We couldn’t complete your donation. Please try again.";
+        setResult({ step: "failed", error: errMsg });
         return { success: false };
       }
 
+      if (!data.transferId && !data.redirectUrl) {
+        setWalletProcessing(null);
+        setResult({ step: "failed", error: "Your payment response could not be confirmed. Please do not submit again." });
+        return { success: false };
+      }
+
+      setWalletProcessing(null);
       const state = (data.state || "").toUpperCase();
       if (state === "PENDING") {
         setResult({ step: "pending", totalCents: data.totalCents, transferId: data.transferId });
@@ -398,6 +412,7 @@ export default function GivingLinkForm({
               billingInterval: isRecurring ? frequency : undefined,
               paymentMethod,
               fraudSessionId,
+              clientAttemptId: attemptId,
               donor: {
                 firstName: firstName.trim(),
                 lastName: lastName.trim(),
@@ -411,14 +426,16 @@ export default function GivingLinkForm({
           });
 
           const data = await res.json().catch(() => null);
-          setSubmitting(false);
 
           if (!res.ok || !data?.success) {
-            setResult({ step: "failed", error: data?.message || data?.error || "Payment failed. Please try again." });
+            setSubmitting(false);
+            const errMsg = data?.message || (typeof data?.error === 'string' ? data.error : data?.error?.message) || "Payment failed. Please try again.";
+            setResult({ step: "failed", error: errMsg });
             return;
           }
 
           if (data.recurring) {
+            setSubmitting(false);
             setResult({
               step: "success",
               totalCents: 0,

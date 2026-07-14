@@ -236,3 +236,57 @@ export function toSafeErrorResponse(error: any, status = 500, context?: ErrorCon
     { status }
   );
 }
+
+export interface PaymentErrorResponse {
+  success: false;
+  code: "PAYMENT_FAILED" | "PAYMENT_STATUS_UNCERTAIN" | "PAYMENT_CONFIGURATION_ERROR" | "VALIDATION_ERROR";
+  message: string;
+  reference: string;
+  retryable: boolean;
+}
+
+export function toSafePaymentErrorResponse(
+  error: any,
+  code: PaymentErrorResponse["code"],
+  defaultMessage: string,
+  retryable: boolean,
+  context?: ErrorContext
+) {
+  const supportRef = generateSupportReference();
+  const redactedError = redactSensitiveData(error);
+  const logBlock = {
+    supportReference: supportRef,
+    timestamp: new Date().toISOString(),
+    context: context ? redactSensitiveData(context) : {},
+    error: redactedError instanceof Error ? { message: redactedError.message, stack: redactedError.stack } : redactedError,
+  };
+  console.error("[WGC-SECURE-PAYMENT-ERROR]", JSON.stringify(logBlock));
+
+  // Determine if it was a network timeout or abort
+  if (error instanceof Error || (error && typeof error === "object")) {
+    const msg = String(error.message || JSON.stringify(error)).toLowerCase();
+    if (msg.includes("timeout") || msg.includes("abort") || msg.includes("econnreset") || msg.includes("network")) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PAYMENT_STATUS_UNCERTAIN",
+          message: "We’re confirming your payment. Please do not submit another payment.",
+          reference: supportRef,
+          retryable: false,
+        },
+        { status: 503 }
+      );
+    }
+  }
+
+  return NextResponse.json(
+    {
+      success: false,
+      code,
+      message: defaultMessage,
+      reference: supportRef,
+      retryable,
+    },
+    { status: code === "VALIDATION_ERROR" ? 400 : 402 }
+  );
+}

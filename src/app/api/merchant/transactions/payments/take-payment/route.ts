@@ -7,7 +7,7 @@ import { resolveWgcTransferFeeStrategy } from "@/lib/giving/serverFeeStrategy";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { sendDonationReceipt } from "@/lib/giving/generateReceipt";
 import { normalizeUSPhone, isValidEmail } from "@/lib/validation";
-import { toSafeErrorResponse } from "@/lib/utils/errorNormalizer";
+import { toSafeErrorResponse, toSafePaymentErrorResponse } from "@/lib/utils/errorNormalizer";
 import { validateGoodsServicesInput, computeRecordedContributionAmountCents } from "@/lib/giving/goodsServices";
 import { logDashboardAction } from "@/lib/dashboardAudit";
 import crypto from "crypto";
@@ -68,14 +68,14 @@ export async function POST(req: Request) {
     if (donor.phone) {
       const normalized = normalizeUSPhone(donor.phone);
       if (!normalized) {
-        return NextResponse.json({ error: "Please enter a valid U.S. phone number" }, { status: 400 });
+        return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Please enter a valid U.S. phone number", retryable: true }, { status: 400 });
       }
       donor.phone = normalized;
     }
 
     const church = await prisma.church.findUnique({ where: { id: session.churchId } });
     if (!church || !church.finixMerchantId) {
-      return NextResponse.json({ error: "Organization is not set up to accept payments" }, { status: 400 });
+      return NextResponse.json({ success: false, code: "PAYMENT_CONFIGURATION_ERROR", message: "Organization is not set up to accept payments", retryable: false }, { status: 400 });
     }
 
 
@@ -97,32 +97,51 @@ export async function POST(req: Request) {
     const [firstName, ...rest] = String(donor.name).trim().split(" ");
     const lastName = rest.join(" ") || firstName;
 
-    const identity = await finixClient.createBuyerIdentity({
-      entity: {
-        first_name: firstName,
-        last_name: lastName,
-        email: donor.email,
-        phone: donor.phone || undefined,
-      },
-    });
+    let identity;
+    try {
+      identity = await finixClient.createBuyerIdentity({
+        entity: {
+          first_name: firstName,
+          last_name: lastName,
+          email: donor.email,
+          phone: donor.phone || undefined,
+        },
+      });
+    } catch (err) {
+      return toSafePaymentErrorResponse(err, "PAYMENT_FAILED", "Could not verify identity with processor. No charge was made.", true, { action: "createBuyerIdentity" });
+    }
     const identityId = identity?.id;
-    if (!identityId) throw new Error("Failed to create buyer identity");
+    if (!identityId) {
+      return toSafePaymentErrorResponse(new Error("Failed to create buyer identity"), "PAYMENT_FAILED", "Could not process identity. No charge was made.", true, { action: "createBuyerIdentity" });
+    }
 
-    const instrument = await finixClient.createPaymentInstrument({
-      identity: identityId,
-      token,
-      type: "TOKEN",
-    });
+    let instrument;
+    try {
+      instrument = await finixClient.createPaymentInstrument({
+        identity: identityId,
+        token,
+        type: "TOKEN",
+      });
+    } catch (err) {
+      return toSafePaymentErrorResponse(err, "PAYMENT_FAILED", "Could not verify payment instrument with processor. No charge was made.", true, { action: "createPaymentInstrument" });
+    }
     const instrumentId = instrument?.id;
-    if (!instrumentId) throw new Error("Failed to create payment instrument");
+    if (!instrumentId) {
+      return toSafePaymentErrorResponse(new Error("Failed to create payment instrument"), "PAYMENT_FAILED", "Could not process payment instrument. No charge was made.", true, { action: "createPaymentInstrument" });
+    }
 
     // Perform Fee Calculation
-    const feeStrategy = resolveWgcTransferFeeStrategy({
-      donationAmountCents,
-      paymentMethod: method === "bank" ? "ACH" : "CARD",
-      cardBrand: instrument.card?.brand,
-      donorCoversFee: coverFees,
-    });
+    let feeStrategy;
+    try {
+      feeStrategy = resolveWgcTransferFeeStrategy({
+        donationAmountCents,
+        paymentMethod: method === "bank" ? "ACH" : "CARD",
+        cardBrand: instrument.card?.brand,
+        donorCoversFee: coverFees,
+      });
+    } catch (err) {
+      return toSafePaymentErrorResponse(err, "PAYMENT_CONFIGURATION_ERROR", "Pricing configuration error for this organization.", true, { action: "resolveFeeStrategy" });
+    }
     
     const totalCents = feeStrategy.amountToChargeCents;
     const feeCoveredCents = feeStrategy.supplementalFeeCents;
@@ -180,7 +199,7 @@ export async function POST(req: Request) {
       currency: "USD",
       source: instrumentId,
       fee_profile: feeStrategy.feeProfileId,
-      fraud_session_id: fraudSessionId,
+      ...(method !== "bank" && { fraud_session_id: fraudSessionId }),
       idempotency_id: idempotencyId,
       statement_descriptor: church.name.slice(0, 18).toUpperCase(),
       tags: {
@@ -204,7 +223,12 @@ export async function POST(req: Request) {
       transferPayload.supplemental_fee = feeStrategy.supplementalFeeCents;
     }
 
-    const transfer = await finixClient.createTransfer(transferPayload);
+    let transfer;
+    try {
+      transfer = await finixClient.createTransfer(transferPayload);
+    } catch (err) {
+      return toSafePaymentErrorResponse(err, "PAYMENT_FAILED", "We couldn’t complete your donation. No charge was made.", true, { action: "createTransfer" });
+    }
 
     await prisma.paymentAttempt.update({
       where: { id: attempt.id },

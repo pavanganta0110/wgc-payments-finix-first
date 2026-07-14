@@ -10,7 +10,7 @@ import { sendDonationReceipt } from "@/lib/giving/generateReceipt";
 import { normalizeUSPhone, isValidEmail } from "@/lib/validation";
 import { isGivingLinkUsable } from "@/lib/givingLinks/status";
 import { parseDonorFieldSettings, parseAllowedPaymentMethods, parseAllowedFrequencies } from "@/lib/givingLinks/types";
-import { toSafeErrorResponse } from "@/lib/utils/errorNormalizer";
+import { toSafeErrorResponse, toSafePaymentErrorResponse } from "@/lib/utils/errorNormalizer";
 import crypto from "crypto";
 
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -54,15 +54,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
     const isWallet = paymentMethod === "apple_pay" || paymentMethod === "google_pay";
 
+    if (!clientAttemptId) {
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Missing client attempt ID", retryable: true }, { status: 400 });
+    }
     if (!donationAmountCents || donationAmountCents < 100) {
-      logEvent("10_DONATION_RESPONSE_RETURNED", {});
-    return NextResponse.json({ error: "Invalid donation amount" }, { status: 400 });
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Invalid donation amount (minimum $1.00)", retryable: true }, { status: 400 });
     }
     if (isWallet ? !walletToken : (!token && !paymentInstrumentId)) {
-      return NextResponse.json({ error: "Missing payment token" }, { status: 400 });
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Missing payment token", retryable: true }, { status: 400 });
     }
     if (!fraudSessionId) {
-      return NextResponse.json({ error: "Missing fraud session" }, { status: 400 });
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Missing fraud session", retryable: true }, { status: 400 });
     }
 
     const link = await prisma.givingLink.findUnique({ where: { publicSlug: slug } });
@@ -133,25 +135,42 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       (isWallet ? walletBillingContact?.name?.trim() : undefined);
     if (fieldSettings.firstName === "REQUIRED" || fieldSettings.lastName === "REQUIRED" || fieldSettings.email === "REQUIRED") {
       if (!fullName) {
-        return NextResponse.json({ error: "Name is required" }, { status: 400 });
+        return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Name is required", retryable: true }, { status: 400 });
       }
     }
     if (fieldSettings.email === "REQUIRED" && !donor?.email) {
-      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Email is required", retryable: true }, { status: 400 });
     }
     if (donor?.email && !isValidEmail(donor.email)) {
-      return NextResponse.json({ error: "Please enter a valid email address" }, { status: 400 });
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Please enter a valid email address", retryable: true }, { status: 400 });
     }
     if (donor?.phone) {
       const normalized = normalizeUSPhone(donor.phone);
       if (fieldSettings.phone === "REQUIRED" && !normalized) {
-        return NextResponse.json({ error: "Please enter a valid U.S. phone number" }, { status: 400 });
+        return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Please enter a valid U.S. phone number", retryable: true }, { status: 400 });
       }
       if (normalized) donor.phone = normalized;
     }
     if (!fullName || !donor?.email) {
-      return NextResponse.json({ error: "Name and email are required" }, { status: 400 });
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Name and email are required", retryable: true }, { status: 400 });
     }
+
+    const existingAttempt = await prisma.paymentAttempt.findUnique({ where: { clientAttemptId } });
+    if (existingAttempt) {
+      if (existingAttempt.status === "SUCCEEDED" || existingAttempt.status === "PENDING") {
+        return NextResponse.json({
+          success: true,
+          transferId: existingAttempt.finixTransferId,
+          state: existingAttempt.status,
+          duplicate: true,
+        });
+      }
+    }
+    await prisma.paymentAttempt.upsert({
+      where: { clientAttemptId },
+      update: { status: "STARTED" },
+      create: { clientAttemptId, status: "STARTED" }
+    });
 
     // 1. Resolve Identity and Payment Instrument
     let identityId: string;
@@ -161,9 +180,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
     if (paymentInstrumentId) {
       instrumentId = paymentInstrumentId;
-      const instrument = await finixClient.getPaymentInstrument(instrumentId);
+      let instrument;
+      try {
+        instrument = await finixClient.getPaymentInstrument(instrumentId);
+      } catch (err) {
+        return toSafePaymentErrorResponse(err, "PAYMENT_FAILED", "Could not load saved payment method.", true, { action: "getPaymentInstrument" });
+      }
       if (!instrument?.id) {
-        return NextResponse.json({ error: "Payment method not found on Finix" }, { status: 404 });
+        return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Payment method not found on Finix", retryable: true }, { status: 404 });
       }
       identityId = instrument.identity;
       cardBrand = instrument.card?.brand || null;
@@ -186,29 +210,43 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       const [firstName, ...rest] = fullName.trim().split(" ");
       const lastName = rest.join(" ") || firstName;
 
-      const identity = await finixClient.createBuyerIdentity({
-        entity: {
-          first_name: firstName,
-          last_name: lastName,
-          email: donor.email,
-          phone: donor.phone || undefined,
-        },
-      });
+      let identity;
+      try {
+        identity = await finixClient.createBuyerIdentity({
+          entity: {
+            first_name: firstName,
+            last_name: lastName,
+            email: donor.email,
+            phone: donor.phone || undefined,
+          },
+        });
+      } catch (err) {
+        return toSafePaymentErrorResponse(err, "PAYMENT_FAILED", "Could not verify identity with processor. No charge was made.", true, { action: "createBuyerIdentity" });
+      }
       identityId = identity?.id;
-      if (!identityId) throw new Error("Failed to create buyer identity");
+      if (!identityId) {
+        return toSafePaymentErrorResponse(new Error("Failed to create buyer identity"), "PAYMENT_FAILED", "Could not process identity. No charge was made.", true, { action: "createBuyerIdentity" });
+      }
 
-      const instrument = isWallet
-        ? await finixClient.createPaymentInstrument({
-            identity: identityId,
-            type: paymentMethod === "apple_pay" ? "APPLE_PAY" : "GOOGLE_PAY",
-            third_party_token: walletToken,
-            merchant_identity: process.env.FINIX_APPLICATION_OWNER_ID,
-            name: walletBillingContact.name,
-            address: walletBillingContact.address,
-          })
-        : await finixClient.createPaymentInstrument({ identity: identityId, token, type: "TOKEN" });
+      let instrument;
+      try {
+        instrument = isWallet
+          ? await finixClient.createPaymentInstrument({
+              identity: identityId,
+              type: paymentMethod === "apple_pay" ? "APPLE_PAY" : "GOOGLE_PAY",
+              third_party_token: walletToken,
+              merchant_identity: process.env.FINIX_APPLICATION_OWNER_ID,
+              name: walletBillingContact.name,
+              address: walletBillingContact.address,
+            })
+          : await finixClient.createPaymentInstrument({ identity: identityId, token, type: "TOKEN" });
+      } catch (err) {
+        return toSafePaymentErrorResponse(err, "PAYMENT_FAILED", "Could not verify payment instrument with processor. No charge was made.", true, { action: "createPaymentInstrument" });
+      }
       instrumentId = instrument?.id;
-      if (!instrumentId) throw new Error("Failed to create payment instrument");
+      if (!instrumentId) {
+        return toSafePaymentErrorResponse(new Error("Failed to create payment instrument"), "PAYMENT_FAILED", "Could not process payment instrument. No charge was made.", true, { action: "createPaymentInstrument" });
+      }
 
       cardBrand = instrument.card?.brand || null;
 
@@ -242,15 +280,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         calculatedFee: feeStrategy.expectedFeeCents
       });
     } catch (err: any) {
-      if (err.message?.includes("Missing fee profile")) {
-        return NextResponse.json({
-          success: false,
-          code: "PAYMENT_CONFIGURATION_ERROR",
-          message: "Payments are temporarily unavailable. No charge was made.",
-          reference: correlationId
-        }, { status: 503 });
-      }
-      throw err;
+      return toSafePaymentErrorResponse(err, "PAYMENT_CONFIGURATION_ERROR", "Pricing configuration error for this organization.", true, { action: "resolveFeeStrategy" });
     }
     
     const totalCents = feeStrategy.amountToChargeCents;
@@ -272,7 +302,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
     // 4. Verify client total matches recalculated server total
     if (typeof expectedTotalCents === "number" && expectedTotalCents !== totalCents) {
-      return NextResponse.json({ error: "Payment amount has changed. Please confirm and try again." }, { status: 400 });
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Payment amount has changed. Please confirm and try again.", retryable: true }, { status: 400 });
     }
 
     // 5. Check Idempotency
@@ -395,8 +425,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       supplemental_fee: transferPayload.supplemental_fee,
       feePaidBy: feeStrategy.feePaidBy
     });
-    const transfer = await finixClient.createTransfer(transferPayload);
-    logEvent("8_FINIX_TRANSFER_RESPONSE_RECEIVED", { transferId: transfer.id, state: transfer.state });
+    let transfer;
+    try {
+      transfer = await finixClient.createTransfer(transferPayload);
+      logEvent("8_FINIX_TRANSFER_RESPONSE_RECEIVED", { transferId: transfer.id, state: transfer.state });
+    } catch (error) {
+      return toSafePaymentErrorResponse(error, "PAYMENT_FAILED", "We couldn’t complete your donation. No charge was made.", true, { action: "createTransfer" });
+    }
 
     await prisma.finixTransfer.upsert({
       where: { finixTransferId: transfer.id },

@@ -8,7 +8,7 @@ import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { sendReceiptEmail } from "@/lib/giving/sendReceiptEmail";
 import { sendDonationReceipt } from "@/lib/giving/generateReceipt";
 import { normalizeUSPhone, isValidEmail } from "@/lib/validation";
-import { toSafeErrorResponse } from "@/lib/utils/errorNormalizer";
+import { toSafeErrorResponse, toSafePaymentErrorResponse } from "@/lib/utils/errorNormalizer";
 import crypto from "crypto";
 
 const isDev = process.env.NODE_ENV === "development";
@@ -57,18 +57,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       return NextResponse.json({ error: "Invalid donation amount" }, { status: 400 });
     }
     if (!fraudSessionId) {
-      return NextResponse.json({ error: "Missing fraud session" }, { status: 400 });
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Missing fraud session", retryable: true }, { status: 400 });
+    }
+    if (!clientAttemptId) {
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Missing client attempt ID", retryable: true }, { status: 400 });
     }
     if (!donor?.name || !donor?.email) {
-      return NextResponse.json({ error: "Name and email are required" }, { status: 400 });
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Donor name and email are required", retryable: true }, { status: 400 });
     }
     if (!isValidEmail(donor.email)) {
-      return NextResponse.json({ error: "Please enter a valid email address" }, { status: 400 });
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Please enter a valid email address", retryable: true }, { status: 400 });
     }
     if (donor.phone) {
       const normalized = normalizeUSPhone(donor.phone);
       if (!normalized) {
-        return NextResponse.json({ error: "Please enter a valid U.S. phone number" }, { status: 400 });
+        return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Please enter a valid U.S. phone number", retryable: true }, { status: 400 });
       }
       donor.phone = normalized;
     }
@@ -116,7 +119,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
     const church = await prisma.church.findUnique({ where: { id: givingPage.churchId } });
     if (!church || !church.finixMerchantId) {
-      return NextResponse.json({ error: "This organization cannot accept gifts right now" }, { status: 400 });
+      return NextResponse.json({ success: false, code: "PAYMENT_CONFIGURATION_ERROR", message: "Organization is not set up to accept payments", retryable: false }, { status: 400 });
+    }, { status: 400 });
     }
 
     const finixMerchantId = church.finixMerchantId;
@@ -145,14 +149,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         throw new Error("Failed to create buyer identity");
       }
 
-      const instrument = await finixClient.createPaymentInstrument({
-        identity: identityId,
-        token,
-        type: "TOKEN",
-      });
+      let instrument;
+      try {
+        instrument = await finixClient.createPaymentInstrument({
+          identity: identityId,
+          token,
+          type: "TOKEN",
+        });
+      } catch (err) {
+        return toSafePaymentErrorResponse(err, "PAYMENT_FAILED", "Could not verify payment instrument with processor. No charge was made.", true, { action: "createPaymentInstrument" });
+      }
       instrumentId = instrument?.id;
       if (!instrumentId) {
-        throw new Error("Failed to create payment instrument");
+        return toSafePaymentErrorResponse(new Error("Failed to create payment instrument"), "PAYMENT_FAILED", "Could not process payment instrument. No charge was made.", true, { action: "createPaymentInstrument" });
       }
 
       cardBrand = instrument.card?.brand || null;
@@ -180,9 +189,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       }
     } else {
       instrumentId = paymentInstrumentId;
-      const instrument = await finixClient.getPaymentInstrument(instrumentId);
+      let instrument;
+      try {
+        instrument = await finixClient.getPaymentInstrument(instrumentId);
+      } catch (err) {
+        return toSafePaymentErrorResponse(err, "PAYMENT_FAILED", "Could not load saved payment method.", true, { action: "getPaymentInstrument" });
+      }
       if (!instrument?.id) {
-        return NextResponse.json({ error: "Payment method not found on Finix" }, { status: 404 });
+        return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Payment method not found on Finix", retryable: true }, { status: 404 });
       }
       identityId = instrument.identity;
       cardBrand = instrument.card?.brand || null;
@@ -215,12 +229,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
     logEvent("3_PAYMENT_INSTRUMENT_CREATED", { identityId, instrumentId });
     // 2. Perform Fee Calculation
-    const feeStrategy = resolveWgcTransferFeeStrategy({
-      donationAmountCents,
-      paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
-      cardBrand,
-      donorCoversFee: coverFees,
-    });
+    let feeStrategy;
+    try {
+      feeStrategy = resolveWgcTransferFeeStrategy({
+        donationAmountCents,
+        paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
+        cardBrand,
+        donorCoversFee: coverFees,
+      });
+    } catch (err) {
+      return toSafePaymentErrorResponse(err, "PAYMENT_CONFIGURATION_ERROR", "Pricing configuration error for this organization.", true, { action: "resolveFeeStrategy" });
+    }
     
     const totalCents = feeStrategy.amountToChargeCents;
     const feeCoveredCents = feeStrategy.supplementalFeeCents;
@@ -241,7 +260,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
     // 4. Verify client total matches recalculated server total
     if (typeof expectedTotalCents === "number" && expectedTotalCents !== totalCents) {
-      return NextResponse.json({ error: "Payment amount has changed. Please confirm and try again." }, { status: 400 });
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Payment amount has changed. Please confirm and try again.", retryable: true }, { status: 400 });
     }
 
     // 5. Check Idempotency
@@ -369,8 +388,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       supplemental_fee: transferPayload.supplemental_fee,
       feePaidBy: feeStrategy.feePaidBy
     });
-    const transfer = await finixClient.createTransfer(transferPayload);
-    logEvent("8_FINIX_TRANSFER_RESPONSE_RECEIVED", { transferId: transfer.id, state: transfer.state });
+    let transfer;
+    try {
+      transfer = await finixClient.createTransfer(transferPayload);
+      logEvent("8_FINIX_TRANSFER_CREATED", { transferId: transfer.id });
+    } catch (error) {
+      return toSafePaymentErrorResponse(error, "PAYMENT_FAILED", "We couldn’t complete your donation. No charge was made.", true, { action: "createTransfer" });
+    }
 
     await prisma.finixTransfer.upsert({
       where: { finixTransferId: transfer.id },
