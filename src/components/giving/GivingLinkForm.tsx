@@ -448,6 +448,7 @@ export default function GivingLinkForm({
           }
 
           const state = (data.state || "").toUpperCase();
+          setSubmitting(false);
           if (state === "PENDING") {
             setResult({ step: "pending", totalCents: data.totalCents, transferId: data.transferId });
           } else {
