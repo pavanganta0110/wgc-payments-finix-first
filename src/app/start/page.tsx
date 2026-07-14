@@ -286,9 +286,20 @@ export default function StartOnboardingPage() {
       <main className="flex-grow max-w-4xl w-full mx-auto py-16 px-6">
         <div className="text-center mb-10">
           <h1 className="text-3xl font-bold text-slate-900 mb-4">Start accepting donations with WGC Payments</h1>
-          <p className="text-slate-600 bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm inline-block">
-            The information you provide will be used to verify your identity securely via API. Additional information may be requested. Reviews are typically completed within 48 hours, often quicker.
-          </p>
+          <div className="max-w-2xl mx-auto space-y-4">
+            <p className="text-slate-600 bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm block">
+              The information you provide will be used to verify your identity securely via API. Additional information may be requested. Reviews are typically completed within 48 hours, often quicker.
+            </p>
+            <div className="text-left text-xs text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <p className="font-semibold text-slate-700 mb-2">Finix requires we collect the following information to set up your processing account:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li><strong>Business information:</strong> Data about your organization, such as your legal business name.</li>
+                <li><strong>Owner information:</strong> Data about your organization&apos;s control person, such as their legal name and details.</li>
+                <li><strong>Processing information:</strong> Processing details, such as historical or estimated volumes.</li>
+                <li><strong>Bank account information:</strong> Details about your payout bank account for settlements.</li>
+              </ul>
+            </div>
+          </div>
         </div>
 
         <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
