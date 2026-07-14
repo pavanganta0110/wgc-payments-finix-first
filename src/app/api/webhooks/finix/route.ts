@@ -1014,6 +1014,17 @@ export async function syncFinixDataFromWebhookEvent(
   });
 }
 
+// Some webhook-provider dashboards probe reachability with GET/HEAD before
+// (or instead of) an empty-body POST — answered the same harmless way as
+// the empty-POST case below, never touching auth/DB/Finix.
+export async function GET() {
+  return NextResponse.json({ message: "Verification ping successful" }, { status: 200 });
+}
+
+export async function HEAD() {
+  return new NextResponse(null, { status: 200 });
+}
+
 export async function POST(req: Request) {
   try {
     const headerList = await headers();
