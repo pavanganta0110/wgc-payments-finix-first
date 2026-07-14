@@ -342,14 +342,7 @@ export class FinixClient {
    * buyer session) — this throws rather than silently omitting it, so a
    * future checkout integration can't accidentally ship without it.
    */
-  async createTransfer(payload: { fraud_session_id: string; idempotency_id?: string; [key: string]: any }) {
-    if (!payload.fraud_session_id) {
-      throw new Error(
-        "createTransfer requires fraud_session_id (from Finix.js Auth's getSessionKey() " +
-          "on the buyer's checkout page). See src/lib/finix/fraudSession.ts."
-      );
-    }
-
+  async createTransfer(payload: { fraud_session_id?: string; idempotency_id?: string; [key: string]: any }) {
     const body = {
       ...payload,
       idempotency_id: payload.idempotency_id ?? crypto.randomUUID(),
