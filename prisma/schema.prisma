@@ -388,6 +388,43 @@ model Church {
   organizationContacts    OrganizationContact[]
   supportTickets          SupportTicket[]
   bankAccounts            OrganizationBankAccount[]
+  complianceForms         ComplianceForm[]
+}
+
+/// Mirrors Finix's `Compliance Form` resource (PCI SAQ attestation). Finix
+/// creates these automatically per Merchant — we never create one, only
+/// sync (webhook + reconciliation fallback) and attest (PUT) to the one
+/// Finix already made. `finixComplianceFormId` is Finix's own ID
+/// (e.g. "cf_..."), never generated locally.
+model ComplianceForm {
+  id                    String    @id @default(cuid())
+  finixComplianceFormId String    @unique
+  churchId              String
+  finixMerchantId       String
+  type                  String // PCI_SAQ_A
+  version               String?
+  state                 String // INCOMPLETE | OVERDUE | COMPLETE | EXPIRED | INVALID
+  dueAt                 DateTime?
+  validFrom             DateTime?
+  validUntil            DateTime?
+  unsignedFileId        String?
+  signedFileId          String?
+  signeeName            String?
+  signeeTitle           String?
+  signeeIpAddress       String?
+  signeeUserAgent       String?
+  signedAt              DateTime?
+  isAccepted            Boolean   @default(false)
+  createdAtFinix        DateTime?
+  updatedAtFinix        DateTime?
+  lastReconciledAt      DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  church Church @relation(fields: [churchId], references: [id], onDelete: Cascade)
+
+  @@index([churchId])
+  @@index([state])
 }
 
 /// The organization's payout bank account(s) on file (Finix calls this a

@@ -14,6 +14,7 @@ import { isFreshEnoughToApply } from "@/lib/finix/sync/settlementFundingSync";
 import { syncAllChurchesPricing, syncChurchPricingForMerchantProfile } from "@/lib/finix/sync/syncFeeProfiles";
 import { describeAchReturnReason } from "@/lib/finix/achReturnReasonCodes";
 import { calculateWgcFeeAmounts } from "@/lib/giving/feeCalculator";
+import { upsertComplianceFormFromFinix } from "@/lib/finix/sync/complianceForms";
 
 const WEBHOOK_SECRET = process.env.FINIX_WEBHOOK_SECRET || process.env.FINIX_WEBHOOK_SIGNING_KEY;
 const BEARER_TOKEN = process.env.FINIX_WEBHOOK_BEARER_TOKEN;
@@ -987,6 +988,20 @@ export async function syncFinixDataFromWebhookEvent(
       await syncChurchPricingForMerchantProfile(data.id);
     } catch (err) {
       console.error("Failed to sync church pricing after merchant_profile event:", err);
+    }
+    return;
+  }
+
+  if (entity === "COMPLIANCE_FORM" && data?.id) {
+    // linked_to is the Finix Merchant ID (confirmed in the Compliance Form
+    // API schema: linked_type is always "MERCHANT" today).
+    const churchId = await resolveChurchIdForMerchant(data.linked_to);
+    if (churchId) {
+      try {
+        await upsertComplianceFormFromFinix(churchId, data.linked_to, data);
+      } catch (err) {
+        console.error("Failed to sync compliance form from webhook:", err);
+      }
     }
     return;
   }

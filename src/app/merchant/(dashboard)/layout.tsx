@@ -5,8 +5,10 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import Sidebar from "@/components/merchant/Sidebar";
 import LogoutButton from "@/components/merchant/LogoutButton";
+import ComplianceBanner from "@/components/merchant/ComplianceBanner";
 
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { reconcileComplianceFormsForChurch, resolveComplianceStatus } from "@/lib/finix/sync/complianceForms";
 
 export default async function MerchantDashboardLayout({
   children,
@@ -25,9 +27,19 @@ export default async function MerchantDashboardLayout({
     redirect("/merchant/login");
   }
 
+  await reconcileComplianceFormsForChurch(session.churchId);
+  const complianceForm = await prisma.complianceForm.findFirst({
+    where: { churchId: session.churchId },
+    orderBy: { createdAt: "desc" },
+  });
+  const complianceStatus = resolveComplianceStatus(
+    complianceForm ? { state: complianceForm.state, dueAt: complianceForm.dueAt } : null
+  );
+
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">
       <Header />
+      <ComplianceBanner status={complianceStatus} />
       <div className="flex-grow flex">
         <Sidebar />
         <div className="flex-grow flex flex-col min-w-0">

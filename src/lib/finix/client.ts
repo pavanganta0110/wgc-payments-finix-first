@@ -600,6 +600,27 @@ export class FinixClient {
   async getAuthorization(authorizationId: string) {
     return this.fetchApi(`/authorizations/${authorizationId}`);
   }
+
+  async getComplianceForm(complianceFormId: string) {
+    return this.fetchApi(`/compliance_forms/${complianceFormId}`);
+  }
+
+  async listComplianceFormsForMerchant(merchantId: string) {
+    return this.fetchApi(`/compliance_forms?linked_to=${merchantId}`);
+  }
+
+  // pci_saq_a is currently the only Compliance Form `type` Finix issues
+  // (confirmed in the API spec's `type` enum) — signature is submitted
+  // under that same key regardless of form type.
+  async completeComplianceForm(
+    complianceFormId: string,
+    signature: { name: string; title: string; ip_address: string; user_agent: string; signed_at: string }
+  ) {
+    return this.fetchApi(`/compliance_forms/${complianceFormId}`, {
+      method: "PUT",
+      body: JSON.stringify({ pci_saq_a: signature }),
+    });
+  }
 }
 
 // Export a singleton instance for ease of use
