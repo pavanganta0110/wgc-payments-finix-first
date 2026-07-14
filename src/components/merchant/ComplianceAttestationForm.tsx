@@ -40,7 +40,7 @@ export default function ComplianceAttestationForm({
     return (
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
         <p className="text-sm text-slate-500">
-          No compliance form is on file yet. Finix issues this automatically shortly after your account is
+          No compliance form is on file yet. This is issued automatically shortly after your account is
           approved — check back soon.
         </p>
       </div>
