@@ -14,13 +14,13 @@ const CHURCH_FEATURES = [
   },
   {
     icon: ShieldCheck,
-    title: "Secure Finix onboarding",
+    title: "Secure onboarding",
     description: "Our PCI Level 1 compliant onboarding process ensures your organization's data is verified securely and swiftly.",
   },
   {
     icon: LayoutDashboard,
     title: "Sub-merchant dashboard",
-    description: "Get direct access to your dedicated Finix portal for complete transparency over your operations.",
+    description: "Get direct access to your dedicated portal for complete transparency over your operations.",
   },
   {
     icon: ArrowRightLeft,

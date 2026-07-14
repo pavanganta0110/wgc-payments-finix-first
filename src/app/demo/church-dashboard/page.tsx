@@ -55,7 +55,7 @@ export default function DemoDashboardPage() {
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white text-wgc-gold-500 text-[10px] font-bold tracking-widest uppercase mb-4 font-mono border border-wgc-gold-500/20">
             Preview Environment
           </div>
-          <h1 className="text-3xl font-bold text-wgc-navy-900 tracking-tight">What your church users will see</h1>
+          <h1 className="text-3xl font-bold text-wgc-navy-900 tracking-tight">What your admins will see</h1>
           <p className="mt-2 text-lg text-slate-500 font-medium tracking-tight opacity-80">A clean, focused dashboard powered by WGC infrastructure, styled to match your software.</p>
         </div>
 
@@ -87,7 +87,7 @@ export default function DemoDashboardPage() {
                 </div>
               </div>
             )}
-
+ 
             {/* Stats Row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
               {[
@@ -165,20 +165,6 @@ export default function DemoDashboardPage() {
                      ))}
                   </div>
                 </div>
-
-                {/* Chart Placeholder */}
-                <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm h-56 flex flex-col justify-end relative group">
-                  <h3 className="absolute top-8 left-8 font-bold text-wgc-navy-900 text-[10px] uppercase tracking-widest font-mono">30-Day Velocity</h3>
-                  <div className="flex items-end space-x-3 h-24 mt-8">
-                    {[33, 50, 100, 66, 83, 50].map((h, i) => (
-                      <div 
-                        key={i} 
-                        className="flex-1 bg-slate-100 rounded-t-lg transition-all duration-500 hover:bg-wgc-gold-500 cursor-pointer"
-                        style={{ height: `${h}%` }}
-                      ></div>
-                    ))}
-                  </div>
-                </div>
               </div>
 
             </div>
@@ -197,7 +183,7 @@ export default function DemoDashboardPage() {
 
         <div className="mt-16 text-center">
           <Link href="/contact" className="inline-flex items-center justify-center px-10 py-5 bg-gradient-to-br from-wgc-gold-500 to-amber-600 rounded-2xl text-sm font-bold text-wgc-navy-900 uppercase tracking-[0.2em] shadow-2xl transform transition-all hover:scale-105 active:scale-95 shadow-wgc-gold-500/20">
-            Interested in building this? <ArrowRight className="ml-3 w-5 h-5" />
+            Book a Call for Demo <ArrowRight className="ml-3 w-5 h-5" />
           </Link>
         </div>
 

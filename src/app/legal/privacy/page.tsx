@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import GatewayIcon from "@/components/ui/GatewayIcon";
 
 export default function PrivacyPage() {
   return (
@@ -10,9 +11,7 @@ export default function PrivacyPage() {
         <div className="mb-12">
            <Link href="/" className="inline-block mb-10 group">
               <div className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-xl bg-wgc-gold-500 flex items-center justify-center shadow-lg shadow-wgc-gold-500/20 transform rotate-12 group-hover:rotate-0 transition-transform">
-                  <span className="text-wgc-navy-900 font-black text-xl -rotate-12 group-hover:rotate-0 transition-transform">W</span>
-                </div>
+                <GatewayIcon className="h-10 w-auto transition-transform group-hover:scale-105 duration-500" />
                 <span className="font-black text-wgc-navy-900 uppercase tracking-tighter text-2xl">WGC Payments</span>
               </div>
            </Link>

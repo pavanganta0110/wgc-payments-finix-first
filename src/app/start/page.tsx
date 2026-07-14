@@ -291,7 +291,7 @@ export default function StartOnboardingPage() {
               The information you provide will be used to verify your identity securely via API. Additional information may be requested. Reviews are typically completed within 48 hours, often quicker.
             </p>
             <div className="text-left text-xs text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-200">
-              <p className="font-semibold text-slate-700 mb-2">Finix requires we collect the following information to set up your processing account:</p>
+              <p className="font-semibold text-slate-700 mb-2">Our partners require us to collect the following information to set up your processing account:</p>
               <ul className="list-disc pl-5 space-y-1">
                 <li><strong>Business information:</strong> Data about your organization, such as your legal business name.</li>
                 <li><strong>Owner information:</strong> Data about your organization&apos;s control person, such as their legal name and details.</li>

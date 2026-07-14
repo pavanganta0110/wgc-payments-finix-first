@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, CreditCard, Banknote, ShieldAlert, RotateCcw } from "lucide-react";
+import GatewayIcon from "@/components/ui/GatewayIcon";
 
 export default function FeesPage() {
   return (
@@ -10,14 +11,11 @@ export default function FeesPage() {
         <div className="mb-12">
            <Link href="/" className="inline-block mb-10 group">
               <div className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-xl bg-wgc-gold-500 flex items-center justify-center shadow-lg shadow-wgc-gold-500/20 transform rotate-12 group-hover:rotate-0 transition-transform">
-                  <span className="text-wgc-navy-900 font-black text-xl -rotate-12 group-hover:rotate-0 transition-transform">W</span>
-                </div>
+                <GatewayIcon className="h-10 w-auto transition-transform group-hover:scale-105 duration-500" />
                 <span className="font-black text-wgc-navy-900 uppercase tracking-tighter text-2xl">WGC Payments</span>
               </div>
            </Link>
            <h1 className="text-4xl font-bold text-wgc-navy-900 tracking-tight">Fee Schedule</h1>
-           <p className="text-slate-500 font-medium tracking-tight mt-2 opacity-80">Last updated July 2026.</p>
         </div>
 
         {/* Content */}
@@ -25,7 +23,7 @@ export default function FeesPage() {
           
           <div className="relative z-10 text-slate-600 leading-relaxed space-y-8">
             <p className="text-lg">
-              WGC Payments offers church-specific pricing for donation processing and platform access.
+              WGC Payments offers church, nonprofit, or client-specific pricing for donation processing and platform access.
             </p>
             <p>
               Unless otherwise agreed in writing, standard pricing may be:
@@ -39,6 +37,7 @@ export default function FeesPage() {
                 <h3 className="text-xl font-bold text-wgc-navy-900 mb-2">Card Donations</h3>
                 <p className="text-3xl font-black text-wgc-navy-900 tracking-tight mb-2">up to 2.3%<span className="text-lg text-slate-400 font-medium ml-1">+ $0.25</span></p>
                 <p className="text-sm text-slate-500">per transaction</p>
+                <p className="text-[11px] text-slate-400 mt-3 border-t border-slate-200/50 pt-2 font-medium">American Express (AMEX) cards are processed at 3.5% + $0.25</p>
               </div>
 
               <div className="border border-slate-100 bg-slate-50 rounded-2xl p-6 hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
@@ -62,7 +61,7 @@ export default function FeesPage() {
             </div>
 
             <p>
-              These rates may vary by church agreement, transaction type, payment method, processing configuration, and volume. As volume and processing efficiency increase, pricing may be reduced. Fees are not increased without prior notice or agreement.
+              These rates may vary by church/nonprofit/client agreement, transaction type, payment method, processing configuration, and volume. As volume and processing efficiency increase, pricing may be reduced. Fees are not increased without prior notice or agreement.
             </p>
             
             <p>
@@ -74,7 +73,7 @@ export default function FeesPage() {
             </p>
             
             <p className="font-bold text-wgc-navy-900">
-              Final pricing for each church is provided during onboarding or in the church’s WGC Payments agreement.
+              Final pricing for each church/nonprofit/client is provided during onboarding or in their WGC Payments agreement.
             </p>
             
             <hr className="my-10 border-slate-100" />
@@ -86,6 +85,8 @@ export default function FeesPage() {
                 <li className="flex items-center gap-2"><RotateCcw className="w-4 h-4 text-slate-400" /> <strong>ACH Returns:</strong> $4.00 per return</li>
               </ul>
             </div>
+
+            <p className="text-xs text-slate-400 text-right">Last updated July 2026.</p>
             
           </div>
 

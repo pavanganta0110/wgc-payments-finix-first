@@ -62,7 +62,7 @@ export default function PricingPage() {
                   Transparent, <span className="text-wgc-gold-600 italic">competitive</span> rates.
                 </h1>
                 <p className="text-lg sm:text-xl font-medium leading-relaxed mb-12 text-wgc-navy-500 max-w-2xl tracking-tight opacity-80">
-                  WGC offers highly competitive pricing for churches and nonprofits. Capped card rates, flat-rate ACH, and a simple platform fee — so you can fund the mission, not the bank.
+                  WGC offers highly competitive pricing for churches and nonprofits. Flat-rate ACH and a simple platform fee — so you can fund the mission, not the bank.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-6">
                   <a href="#calculator" className="bg-wgc-gold-500 text-wgc-navy-950 inline-flex items-center justify-center px-10 py-5 text-[13px] font-bold rounded-2xl shadow-[0_20px_40px_rgba(234,179,8,0.2)] transform transition-all hover:scale-105 hover:bg-wgc-navy-950 hover:text-white uppercase tracking-widest">
