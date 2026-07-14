@@ -297,7 +297,6 @@ export async function POST(req: Request) {
         fixedFeeCents: feeStrategy.fixedFeeCents,
         feeCalculationVersion: FEE_CALCULATION_VERSION,
         merchantExpectedNetCents: totalCents - feeStrategy.expectedFeeCents,
-        givingPageType: "GENERAL",
       },
     });
 

@@ -744,12 +744,6 @@ model Payment {
   actualFinixFeesCents              Int?
   finixSubscriptionId               String?
 
-  givingPageType              String?
-  designationType             String?
-  selectedPersonId            String?
-  selectedPersonNameSnapshot  String?
-  selectedPersonTitleSnapshot String?
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1295,12 +1289,6 @@ model FinixSubscription {
   donorCoversFee             Boolean?
   feeCalculationVersion      String?
 
-  givingPageType              String?
-  designationType             String?
-  selectedPersonId            String?
-  selectedPersonNameSnapshot  String?
-  selectedPersonTitleSnapshot String?
-
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   lastSyncedAt DateTime?
@@ -1768,60 +1756,4 @@ model AnnualDonationStatementLine {
   createdAt DateTime @default(now())
 
   @@index([annualStatementId])
-}
-
-model GivingPage {
-  id                   String   @id @default(cuid())
-  churchId             String
-  givingPageType       String   @default("ORGANIZATION") // ORGANIZATION | PERSON
-  slug                 String   @unique
-  name                 String
-  isDefault            Boolean  @default(false)
-  enabled              Boolean  @default(true)
-  logoUrl              String?
-  headline             String?
-  description          String?
-  primaryColorHex      String   @default("#eab308")
-  suggestedAmountsJson Json?
-  allowRecurring       Boolean  @default(true)
-  allowFeeCoverage     Boolean  @default(true)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-
-  givingPagePersons GivingPagePerson[]
-}
-
-model OrganizationPerson {
-  id                   String   @id @default(cuid())
-  churchId             String
-  displayName          String
-  firstName            String?
-  lastName             String?
-  title                String?
-  ministryOrDepartment String?
-  publicDescription    String?
-  profileImageUrl      String?
-  isActive             Boolean  @default(true)
-  displayOrder         Int      @default(0)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-
-  givingPagePersons GivingPagePerson[]
-
-  @@index([churchId])
-}
-
-model GivingPagePerson {
-  id           String   @id @default(cuid())
-  givingPageId String
-  personId     String
-  displayOrder Int      @default(0)
-  createdAt    DateTime @default(now())
-
-  givingPage GivingPage         @relation(fields: [givingPageId], references: [id])
-  person     OrganizationPerson @relation(fields: [personId], references: [id])
-
-  @@unique([givingPageId, personId])
-  @@index([givingPageId])
-  @@index([personId])
 }

@@ -35,16 +35,7 @@ export async function cleanupUnusedLogo(
       return;
     }
 
-    // 2. Check GivingPages
-    const otherPage = await prisma.givingPage.findFirst({
-      where: { logoUrl: oldLogoUrl },
-    });
-    if (otherPage) {
-      console.log(`Logo ${fileId} is still referenced by a Giving Page.`);
-      return;
-    }
-
-    // 3. Check Churches
+    // 2. Check Churches
     const otherChurch = await prisma.church.findFirst({
       where: { logoUrl: oldLogoUrl },
     });

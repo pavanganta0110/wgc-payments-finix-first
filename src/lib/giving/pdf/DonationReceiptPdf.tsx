@@ -40,7 +40,6 @@ export interface DonationReceiptPdfProps {
   donationDate: Date;
   amountCents: number;
   fundName: string | null;
-  designationText: string | null;
   paymentMethodLabel: string;
   isRecurring: boolean;
   recurringInterval: string | null;
@@ -86,7 +85,6 @@ export function DonationReceiptPdf(props: DonationReceiptPdfProps) {
           <View style={styles.row}><Text style={styles.label}>Date</Text><Text style={styles.value}>{formatDate(props.donationDate)}</Text></View>
           <View style={styles.row}><Text style={styles.label}>Amount</Text><Text style={styles.value}>{formatCents(props.amountCents)}</Text></View>
           {props.fundName && <View style={styles.row}><Text style={styles.label}>Fund / Campaign</Text><Text style={styles.value}>{props.fundName}</Text></View>}
-          {props.designationText && <View style={styles.row}><Text style={styles.label}>Gift Purpose</Text><Text style={styles.value}>{props.designationText}</Text></View>}
           <View style={styles.row}><Text style={styles.label}>Payment Method</Text><Text style={styles.value}>{props.paymentMethodLabel}</Text></View>
           <View style={styles.row}>
             <Text style={styles.label}>Frequency</Text>
