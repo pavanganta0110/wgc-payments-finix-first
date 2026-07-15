@@ -17,12 +17,14 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      // Finix.js tokenization lib + inline scripts needed by Next.js hydration
-      "script-src 'self' 'unsafe-inline' https://js.finix.com",
+      // Finix.js tokenization lib + inline scripts needed by Next.js hydration + Google reCAPTCHA
+      "script-src 'self' 'unsafe-inline' https://js.finix.com https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: https:",
       "connect-src 'self' https://finix.live-payments-api.com https://finix.sandbox-payments-api.com",
+      // Allow Google reCAPTCHA iframes
+      "frame-src 'self' https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/",
       // Prevent this page from being embedded anywhere
       "frame-ancestors 'none'",
     ].join("; "),
