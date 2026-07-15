@@ -1,6 +1,7 @@
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import ScrollFade from "@/components/ui/ScrollFade";
+import InquiryForm from "@/components/marketing/InquiryForm";
 import { Mail } from "lucide-react";
 
 import type { Metadata } from "next";
@@ -58,64 +59,7 @@ export default function ContactPage() {
                 {/* Contact Form */}
                 <div className="px-8 py-16 sm:px-12 lg:py-20 xl:p-20 border-b lg:border-b-0 lg:border-r border-wgc-navy-50">
                   <h2 className="text-3xl font-bold text-wgc-navy-900 mb-10 tracking-tight">Inquire</h2>
-                  
-                  <form className="space-y-8">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-                      <div>
-                        <label htmlFor="first-name" className="block text-[10px] font-bold text-wgc-navy-400 uppercase tracking-widest mb-2 ml-1 font-mono">First name</label>
-                        <div className="mt-1">
-                          <input type="text" name="first-name" id="first-name" className="block w-full bg-wgc-navy-50/50 border-wgc-navy-100/50 focus:ring-wgc-gold-500 focus:border-wgc-gold-500 rounded-xl p-4 border sm:text-sm transition-all font-bold text-wgc-navy-900" />
-                        </div>
-                      </div>
-                      <div>
-                        <label htmlFor="last-name" className="block text-[10px] font-bold text-wgc-navy-400 uppercase tracking-widest mb-2 ml-1 font-mono">Last name</label>
-                        <div className="mt-1">
-                          <input type="text" name="last-name" id="last-name" className="block w-full bg-wgc-navy-50/50 border-wgc-navy-100/50 focus:ring-wgc-gold-500 focus:border-wgc-gold-500 rounded-xl p-4 border sm:text-sm transition-all font-bold text-wgc-navy-900" />
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label htmlFor="email" className="block text-[10px] font-bold text-wgc-navy-400 uppercase tracking-widest mb-2 ml-1 font-mono">Email</label>
-                      <div className="mt-1">
-                        <input type="email" name="email" id="email" className="block w-full bg-wgc-navy-50/50 border-wgc-navy-100/50 focus:ring-wgc-gold-500 focus:border-wgc-gold-500 rounded-xl p-4 border sm:text-sm transition-all font-bold text-wgc-navy-900" />
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label htmlFor="company" className="block text-[10px] font-bold text-wgc-navy-400 uppercase tracking-widest mb-2 ml-1 font-mono">Organization</label>
-                      <div className="mt-1">
-                        <input type="text" name="company" id="company" className="block w-full bg-wgc-navy-50/50 border-wgc-navy-100/50 focus:ring-wgc-gold-500 focus:border-wgc-gold-500 rounded-xl p-4 border sm:text-sm transition-all font-bold text-wgc-navy-900" />
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label htmlFor="role" className="block text-[10px] font-bold text-wgc-navy-400 uppercase tracking-widest mb-2 ml-1 font-mono">Organization Type</label>
-                      <div className="mt-1">
-                        <select id="role" name="role" className="block w-full bg-wgc-navy-50/50 border-wgc-navy-100/50 focus:ring-wgc-gold-500 focus:border-wgc-gold-500 rounded-xl p-4 border sm:text-sm transition-all font-bold text-wgc-navy-900 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-[right_1rem_center] bg-no-repeat">
-                          <option>Church</option>
-                          <option>Nonprofit</option>
-                          <option>Software Partner (ISV)</option>
-                          <option>Financial Institution</option>
-                          <option>Ministry Network</option>
-                          <option>Other</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="message" className="block text-[10px] font-bold text-wgc-navy-400 uppercase tracking-widest mb-2 ml-1 font-mono">Platform Requirements</label>
-                      <div className="mt-1">
-                        <textarea id="message" name="message" rows={5} className="block w-full bg-wgc-navy-50/50 border-wgc-navy-100/50 focus:ring-wgc-gold-500 focus:border-wgc-gold-500 rounded-xl p-4 border sm:text-sm transition-all font-bold text-wgc-navy-900" placeholder="Briefly describe your current donation needs..."></textarea>
-                      </div>
-                    </div>
-
-                    <div className="pt-4">
-                      <button type="submit" className="w-full bg-wgc-gold-500 text-wgc-navy-900 py-5 px-8 text-sm font-bold rounded-xl hover:bg-black hover:text-wgc-navy-900 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-xl uppercase tracking-[0.2em]">
-                        Dispatch Inquiry
-                      </button>
-                    </div>
-                  </form>
+                  <InquiryForm />
                 </div>
 
                 {/* Direct Contact */}

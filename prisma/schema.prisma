@@ -253,6 +253,23 @@ model EmailLog {
   createdAt               DateTime  @default(now())
 }
 
+/// Submissions from the public /contact "Inquiry Registry" form. Persisted
+/// so a submission is recoverable even if the notification email fails —
+/// the form previously had no backend at all (no action/onSubmit/API), so
+/// every prior submission was silently lost before this model existed.
+model ContactInquiry {
+  id             String    @id @default(cuid())
+  firstName      String
+  lastName       String
+  email          String
+  company        String?
+  role           String?
+  message        String
+  emailSent      Boolean   @default(false)
+  emailError     String?
+  createdAt      DateTime  @default(now())
+}
+
 model AuditLog {
   id                      String   @id @default(cuid())
   onboardingApplicationId String?
