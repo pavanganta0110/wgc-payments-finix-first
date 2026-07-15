@@ -246,6 +246,11 @@ export default function StartOnboardingPage() {
       const data = await res.json();
       if (!res.ok || !data.success) {
         let errorMsg = data.step ? `Failed to submit: ${data.step}` : data.message || data.error || "Failed to submit onboarding application.";
+        if (data.errorDetail) {
+          errorMsg = `${errorMsg} — ${data.errorDetail}`;
+        } else if (data.message) {
+          errorMsg = `${errorMsg} — ${data.message}`;
+        }
         if (data.prismaCode) errorMsg += ` | Prisma Code: ${data.prismaCode}`;
         if (data.prismaMessage) errorMsg += ` | Msg: ${data.prismaMessage}`;
         if (data.finixError) errorMsg += ` | Finix Error: ${data.finixError}`;
@@ -350,10 +355,10 @@ export default function StartOnboardingPage() {
                       <option value="Nonprofit">Nonprofit</option>
                     </select>
                   </div>
-                  <div><label className="block text-sm font-semibold mb-2">Business Tax ID (EIN)</label><input required value={formData.businessTaxId} onChange={(e) => updateField("businessTaxId", e.target.value)} pattern="\d{9}" maxLength={9} title="Tax ID must be exactly 9 digits" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
+                  <div><label className="block text-sm font-semibold mb-2">Business Tax ID (EIN)</label><input required value={formData.businessTaxId} onChange={(e) => updateField("businessTaxId", e.target.value.replace(/\D/g, ""))} pattern="\d{9}" maxLength={9} title="Tax ID must be exactly 9 digits" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div><label className="block text-sm font-semibold mb-2">Primary Contact Name</label><input required value={formData.contactName} onChange={(e) => updateField("contactName", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div><label className="block text-sm font-semibold mb-2">Primary Contact Email</label><input required type="email" value={formData.contactEmail} onChange={(e) => updateField("contactEmail", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
-                  <div><label className="block text-sm font-semibold mb-2">Business Phone</label><input required type="tel" value={formData.businessPhone} onChange={(e) => updateField("businessPhone", e.target.value)} pattern="\d{10}" maxLength={10} title="Phone number must be exactly 10 digits" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
+                  <div><label className="block text-sm font-semibold mb-2">Business Phone</label><input required type="tel" value={formData.businessPhone} onChange={(e) => updateField("businessPhone", e.target.value.replace(/\D/g, ""))} pattern="\d{10}" maxLength={10} title="Phone number must be exactly 10 digits" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div>
                     <label className="block text-sm font-semibold mb-2">Website</label>
                     <input required type="text" value={formData.website} onChange={(e) => updateField("website", e.target.value)} onBlur={(e) => updateField("website", normalizeWebsiteUrl(e.target.value))} placeholder="yourorganization.org" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" />
@@ -370,7 +375,7 @@ export default function StartOnboardingPage() {
                       ))}
                     </select>
                   </div>
-                  <div><label className="block text-sm font-semibold mb-2">ZIP Code</label><input required value={formData.businessPostalCode} onChange={(e) => updateField("businessPostalCode", e.target.value)} pattern="\d{5}" maxLength={5} title="Must be a 5-digit ZIP code" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
+                  <div><label className="block text-sm font-semibold mb-2">ZIP Code</label><input required value={formData.businessPostalCode} onChange={(e) => updateField("businessPostalCode", e.target.value.replace(/\D/g, ""))} pattern="\d{5}" maxLength={5} title="Must be a 5-digit ZIP code" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div><label className="block text-sm font-semibold mb-2">MCC</label><input required value={formData.mcc} onChange={(e) => updateField("mcc", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-semibold mb-2">Statement Descriptor (Bank statement text)</label>
@@ -449,8 +454,8 @@ export default function StartOnboardingPage() {
                   <div><label className="block text-sm font-semibold mb-2">Last Name</label><input required value={formData.lastName} onChange={(e) => updateField("lastName", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
                   <div><label className="block text-sm font-semibold mb-2">Title</label><input required value={formData.title} onChange={(e) => updateField("title", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
                   <div><label className="block text-sm font-semibold mb-2">Email</label><input required type="email" value={formData.email} onChange={(e) => updateField("email", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
-                  <div><label className="block text-sm font-semibold mb-2">Phone</label><input required type="tel" value={formData.phone} onChange={(e) => updateField("phone", e.target.value)} pattern="\d{10}" maxLength={10} title="Phone number must be exactly 10 digits" className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
-                  <div><label className="block text-sm font-semibold mb-2">SSN / Tax ID</label><input required type="password" value={formData.taxId} onChange={(e) => updateField("taxId", e.target.value)} pattern="\d{9}" maxLength={9} title="Tax ID must be exactly 9 digits" className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
+                  <div><label className="block text-sm font-semibold mb-2">Phone</label><input required type="tel" value={formData.phone} onChange={(e) => updateField("phone", e.target.value.replace(/\D/g, ""))} pattern="\d{10}" maxLength={10} title="Phone number must be exactly 10 digits" className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
+                  <div><label className="block text-sm font-semibold mb-2">SSN / Tax ID</label><input required type="password" value={formData.taxId} onChange={(e) => updateField("taxId", e.target.value.replace(/\D/g, ""))} pattern="\d{9}" maxLength={9} title="Tax ID must be exactly 9 digits" className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
                   <div><label className="block text-sm font-semibold mb-2">DOB Year</label><input required type="number" placeholder="YYYY" min="1900" max={new Date().getFullYear() - 18} title="Must be at least 18 years old" value={formData.dobYear} onChange={(e) => updateField("dobYear", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
                   <div className="flex gap-4">
                     <div className="w-1/2"><label className="block text-sm font-semibold mb-2">Month</label><input required type="number" placeholder="MM" min="1" max="12" value={formData.dobMonth} onChange={(e) => updateField("dobMonth", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
@@ -468,7 +473,7 @@ export default function StartOnboardingPage() {
                       ))}
                     </select>
                   </div>
-                  <div><label className="block text-sm font-semibold mb-2">ZIP Code</label><input required value={formData.personalPostalCode} onChange={(e) => updateField("personalPostalCode", e.target.value)} pattern="\d{5}" maxLength={5} title="Must be a 5-digit ZIP code" className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
+                  <div><label className="block text-sm font-semibold mb-2">ZIP Code</label><input required value={formData.personalPostalCode} onChange={(e) => updateField("personalPostalCode", e.target.value.replace(/\D/g, ""))} pattern="\d{5}" maxLength={5} title="Must be a 5-digit ZIP code" className="w-full px-4 py-3 rounded-xl border outline-none" /></div>
                 </div>
               </div>
             )}
@@ -495,7 +500,7 @@ export default function StartOnboardingPage() {
                           <div><label className="block text-sm font-semibold mb-2">Last Name</label><input required value={owner.lastName} onChange={(e) => updateAssociatedOwner(index, "lastName", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
                           <div><label className="block text-sm font-semibold mb-2">Email</label><input required type="email" value={owner.email} onChange={(e) => updateAssociatedOwner(index, "email", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
                           <div><label className="block text-sm font-semibold mb-2">Ownership %</label><input required type="number" min="25" max="100" value={owner.ownershipPercentage} onChange={(e) => updateAssociatedOwner(index, "ownershipPercentage", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
-                          <div><label className="block text-sm font-semibold mb-2">SSN / Tax ID</label><input required type="password" value={owner.taxId} onChange={(e) => updateAssociatedOwner(index, "taxId", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
+                          <div><label className="block text-sm font-semibold mb-2">SSN / Tax ID</label><input required type="password" value={owner.taxId} onChange={(e) => updateAssociatedOwner(index, "taxId", e.target.value.replace(/\D/g, ""))} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
                           <div className="flex gap-2 mt-1">
                             <input required type="number" placeholder="YYYY" min="1900" max={new Date().getFullYear() - 18} title="Must be at least 18 years old" value={owner.dobYear} onChange={(e) => updateAssociatedOwner(index, "dobYear", e.target.value)} className="w-1/3 px-4 py-2 rounded-lg border outline-none" />
                             <input required type="number" placeholder="MM" min="1" max="12" value={owner.dobMonth} onChange={(e) => updateAssociatedOwner(index, "dobMonth", e.target.value)} className="w-1/3 px-4 py-2 rounded-lg border outline-none" />
@@ -512,7 +517,7 @@ export default function StartOnboardingPage() {
                               ))}
                             </select>
                           </div>
-                          <div><label className="block text-sm font-semibold mb-2">ZIP</label><input required value={owner.postalCode} onChange={(e) => updateAssociatedOwner(index, "postalCode", e.target.value)} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
+                          <div><label className="block text-sm font-semibold mb-2">ZIP</label><input required value={owner.postalCode} onChange={(e) => updateAssociatedOwner(index, "postalCode", e.target.value.replace(/\D/g, ""))} className="w-full px-4 py-2 rounded-lg border outline-none" /></div>
                         </div>
                       </div>
                     ))}
