@@ -214,3 +214,66 @@ export async function sendWgcAdminEmail(options: WgcAdminEmailOptions) {
     bodyHtml: bodyHtml + `<p><a href="${adminDashboardLink}">View in Admin Dashboard</a></p>`,
   });
 }
+
+export interface WgcAdminOnboardingNotificationOptions {
+  organizationName: string;
+  applicantName: string;
+  applicantEmail: string;
+  applicantPhone: string;
+  organizationType: string;
+  businessTaxId: string; // The raw EIN/TaxID. The function will extract only the last 4.
+  website?: string;
+  submittedAt: Date;
+  applicationId: string;
+  finixIdentityId?: string;
+  status: string;
+}
+
+export async function sendWgcAdminOnboardingNotification(options: WgcAdminOnboardingNotificationOptions) {
+  const adminEmail = process.env.SUPPORT_EMAIL || "support@wgcpayments.com";
+  const {
+    organizationName,
+    applicantName,
+    applicantEmail,
+    applicantPhone,
+    organizationType,
+    businessTaxId,
+    website,
+    submittedAt,
+    applicationId,
+    finixIdentityId,
+    status
+  } = options;
+
+  const last4Ein = businessTaxId ? businessTaxId.slice(-4) : "N/A";
+  const adminDashboardLink = `${process.env.NEXT_PUBLIC_APP_URL || 'https://wgcpayments.com'}/admin/merchant-applications/${applicationId}`;
+
+  const bodyHtml = `
+    <p>A new merchant onboarding application has been successfully submitted.</p>
+    <table style="width: 100%; text-align: left; border-collapse: collapse; margin-top: 20px; font-size: 14px;">
+      <tr><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;"><strong>Organization Name:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;">${organizationName}</td></tr>
+      <tr><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;"><strong>Applicant Name:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;">${applicantName}</td></tr>
+      <tr><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;"><strong>Applicant Email:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;">${applicantEmail}</td></tr>
+      <tr><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;"><strong>Applicant Phone:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;">${applicantPhone}</td></tr>
+      <tr><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;"><strong>Organization Type:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;">${organizationType}</td></tr>
+      <tr><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;"><strong>EIN (Last 4):</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;">${last4Ein}</td></tr>
+      ${website ? `<tr><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;"><strong>Website:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;"><a href="${website}" target="_blank">${website}</a></td></tr>` : ''}
+      <tr><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;"><strong>Submission Date:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;">${submittedAt.toLocaleString()}</td></tr>
+      <tr><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;"><strong>Application ID:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;">${applicationId}</td></tr>
+      ${finixIdentityId ? `<tr><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;"><strong>Finix Identity ID:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #E2E8F0;">${finixIdentityId}</td></tr>` : ''}
+      <tr><td style="padding: 8px 0;"><strong>Current Status:</strong></td><td style="padding: 8px 0;">${status}</td></tr>
+    </table>
+    <div style="margin-top: 30px; text-align: center;">
+      <a href="${adminDashboardLink}" style="display: inline-block; padding: 10px 20px; background-color: #0B5DBC; color: #FFFFFF; text-decoration: none; border-radius: 4px; font-weight: 600;">Review Application</a>
+    </div>
+  `;
+
+  return await sendWgcEmail({
+    to: adminEmail,
+    subject: `New Merchant Onboarding Submitted — ${organizationName}`,
+    title: "New Merchant Application",
+    badgeText: "NEW",
+    badgeColor: "#0B5DBC",
+    bodyHtml,
+  });
+}

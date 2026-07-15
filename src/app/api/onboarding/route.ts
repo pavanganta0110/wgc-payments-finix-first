@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
-import { sendWgcEmail } from "@/lib/email";
+import { sendWgcEmail, sendWgcAdminOnboardingNotification } from "@/lib/email";
 
 function extractFinixErrorMessage(err: any): string {
   let finixErrorStr = err.message || "Unknown error";
@@ -463,6 +463,55 @@ export async function POST(req: Request) {
         });
         await prisma.emailLog.create({
           data: { onboardingApplicationId: application.id, type: "ONBOARDING_SUBMITTED", to: contactEmail, subject: "WGC Payments onboarding submitted", status: "FAILED", error: err.message }
+        });
+      }
+    }
+
+    // Send internal admin notification idempotently
+    const existingAdminLog = await prisma.emailLog.findFirst({
+      where: { onboardingApplicationId: application.id, type: "ADMIN_ONBOARDING_NOTIFICATION" }
+    });
+
+    if (!existingAdminLog) {
+      try {
+        await sendWgcAdminOnboardingNotification({
+          organizationName: legalBusinessName || organizationName || "Unknown Organization",
+          applicantName: `${firstName || ''} ${lastName || ''}`.trim() || contactName || "Unknown Applicant",
+          applicantEmail: email || contactEmail || "No Email Provided",
+          applicantPhone: phone || contactPhone || "No Phone Provided",
+          organizationType: organizationType || "Unknown Type",
+          businessTaxId: businessTaxId || "N/A", // Safe: inside the function only the last 4 are used
+          website: website || "",
+          submittedAt: new Date(),
+          applicationId: application.id,
+          finixIdentityId: finixIdentity.id,
+          status: "UNDER_REVIEW"
+        });
+
+        await prisma.emailLog.create({
+          data: {
+            onboardingApplicationId: application.id,
+            type: "ADMIN_ONBOARDING_NOTIFICATION",
+            to: process.env.SUPPORT_EMAIL || "support@wgcpayments.com",
+            subject: "New Merchant Onboarding Submitted",
+            status: "SENT",
+            sentAt: new Date()
+          }
+        });
+      } catch (err: any) {
+        console.error("ADMIN_NOTIFICATION_FAILED", {
+          applicationId: application.id,
+          errorMessage: err.message
+        });
+        await prisma.emailLog.create({
+          data: {
+            onboardingApplicationId: application.id,
+            type: "ADMIN_ONBOARDING_NOTIFICATION",
+            to: process.env.SUPPORT_EMAIL || "support@wgcpayments.com",
+            subject: "New Merchant Onboarding Submitted",
+            status: "FAILED",
+            error: err.message
+          }
         });
       }
     }
