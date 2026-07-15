@@ -21,6 +21,7 @@
     "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-google-recaptcha": "^3.1.0",
     "react-hot-toast": "^2.6.0",
     "resend": "^6.17.1",
     "tailwind-merge": "^3.6.0"
@@ -32,6 +33,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/react-google-recaptcha": "^2.1.9",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "prisma": "^5.16.1",

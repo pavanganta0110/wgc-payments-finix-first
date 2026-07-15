@@ -82,12 +82,30 @@ export async function POST(req: Request) {
       associatedOwners,
       // Payout Bank
       accountHolderName, accountType, routingNumber, accountNumber, bankCountry, currency,
-      legal
+      legal,
+      recaptchaToken
     } = body;
 
     const reqHeaders = await headers();
     const ipAddress = reqHeaders.get("x-forwarded-for") || reqHeaders.get("x-real-ip") || "unknown";
     const userAgent = reqHeaders.get("user-agent") || "unknown";
+
+    if (!recaptchaToken) {
+      return NextResponse.json({ error: "Missing reCAPTCHA token" }, { status: 400 });
+    }
+
+    const recaptchaSecret = process.env.RECAPTCHA_SECRET_KEY;
+    if (recaptchaSecret) {
+      const verifyRes = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `secret=${recaptchaSecret}&response=${recaptchaToken}`,
+      });
+      const verifyJson = await verifyRes.json();
+      if (!verifyJson.success) {
+        return NextResponse.json({ error: "Failed reCAPTCHA validation. Please try again." }, { status: 400 });
+      }
+    }
 
     // The Payout Bank / Processing form fields are labeled in whole dollars,
     // but both our DB columns (*Cents) and Finix's underwriting fields

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ReCAPTCHA from "react-google-recaptcha";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { Loader2, ArrowRight, ArrowLeft, UploadCloud } from "lucide-react";
@@ -35,6 +36,7 @@ export default function StartOnboardingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasBeneficialOwners, setHasBeneficialOwners] = useState<boolean | null>(null);
   const [attemptedNext, setAttemptedNext] = useState(false);
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     // Basic / Organization
@@ -213,6 +215,7 @@ export default function StartOnboardingPage() {
     try {
       const payload = {
         ...formData,
+        recaptchaToken,
         website: normalizeWebsiteUrl(formData.website),
         annualCardVolume: Number(formData.annualCardVolume || 0),
         annualAchVolume: Number(formData.annualAchVolume || 0),
@@ -643,9 +646,15 @@ export default function StartOnboardingPage() {
                   Next <ArrowRight className="w-4 h-4" />
                 </button>
               ) : (
-                <button type="submit" onClick={() => setAttemptedNext(true)} disabled={isSubmitting || !Object.values(legal).every(Boolean)} className="px-8 py-3 rounded-xl font-bold text-slate-900 metallic-gold shadow-lg transition-all flex items-center gap-2 disabled:opacity-50">
-                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "Submit Secure Onboarding"}
-                </button>
+                <div className="flex flex-col items-end gap-4">
+                  <ReCAPTCHA
+                    sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!}
+                    onChange={(val) => setRecaptchaToken(val)}
+                  />
+                  <button type="submit" onClick={() => setAttemptedNext(true)} disabled={isSubmitting || !Object.values(legal).every(Boolean) || !recaptchaToken} className="px-8 py-3 rounded-xl font-bold text-slate-900 metallic-gold shadow-lg transition-all flex items-center gap-2 disabled:opacity-50">
+                    {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "Submit Secure Onboarding"}
+                  </button>
+                </div>
               )}
             </div>
           </form>
