@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import ReCAPTCHA from "react-google-recaptcha";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -37,6 +37,7 @@ export default function StartOnboardingPage() {
   const [hasBeneficialOwners, setHasBeneficialOwners] = useState<boolean | null>(null);
   const [attemptedNext, setAttemptedNext] = useState(false);
   const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
+  const recaptchaRef = useRef<ReCAPTCHA>(null);
 
   const [formData, setFormData] = useState({
     // Basic / Organization
@@ -287,6 +288,9 @@ export default function StartOnboardingPage() {
       console.error(err);
       toast.error(err.message || "An error occurred");
       setIsSubmitting(false);
+      // ReCAPTCHA tokens are single-use. If submission failed, reset the widget to get a fresh token.
+      recaptchaRef.current?.reset();
+      setRecaptchaToken(null);
     }
   };
 
@@ -648,6 +652,7 @@ export default function StartOnboardingPage() {
               ) : (
                 <div className="flex flex-col items-end gap-4">
                   <ReCAPTCHA
+                    ref={recaptchaRef}
                     sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!}
                     onChange={(val) => setRecaptchaToken(val)}
                   />
