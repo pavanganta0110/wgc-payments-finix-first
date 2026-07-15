@@ -287,7 +287,7 @@ export default function StartOnboardingPage() {
         <div className="text-center mb-10">
           <h1 className="text-3xl font-bold text-slate-900 mb-4">Payment rails for churches and nonprofits</h1>
           <p className="text-slate-600 max-w-2xl mx-auto mb-6 text-base">
-            WGC Payments helps churches and nonprofits accept digital donations through our secure Finix-powered onboarding and payment infrastructure.
+            WGC Payments helps churches and nonprofits accept digital donations through our secure onboarding and payment infrastructure.
           </p>
           <div className="max-w-2xl mx-auto space-y-4">
             <p className="text-slate-600 bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm block">
