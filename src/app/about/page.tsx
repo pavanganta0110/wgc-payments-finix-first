@@ -57,7 +57,7 @@ export default function AboutPage() {
                 <div className="w-1.5 h-1.5 rounded-full bg-wgc-gold-500"></div>
                 <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-wgc-gold-500/90 font-mono">Our Foundation</span>
               </div>
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05] mb-6 text-slate-50">
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05] mb-6 text-wgc-navy-900">
                 Why WGC <span className="text-wgc-gold-500">exists</span>
               </h1>
               <p className="text-xl font-medium leading-relaxed max-w-2xl mx-auto text-wgc-navy-500 tracking-tight">
