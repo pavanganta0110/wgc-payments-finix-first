@@ -7,7 +7,7 @@ export const WGC_PRICING = {
   organizationPaid: {
     nonAmexCardBasisPoints: 230,
     amexCardBasisPoints: 350,
-    cardFixedFeeCents: 30,
+    cardFixedFeeCents: 25,
     achFixedFeeCents: 25,
   },
 } as const;
