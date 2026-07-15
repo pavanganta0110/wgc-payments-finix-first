@@ -81,7 +81,7 @@ export default function Footer() {
         <div className="mt-24 border-t border-wgc-navy-100 pt-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="flex flex-col gap-1">
             <p className="text-[11px] font-bold text-wgc-navy-700 uppercase tracking-widest">
-              &copy; 2026 Way Point Gateway Collective.
+              &copy; 2026 Waypoint Gateway Collective.
             </p>
             <p className="text-[10px] text-wgc-navy-700 font-medium italic">A Kingdom-First White Label Payment Platform.</p>
           </div>
