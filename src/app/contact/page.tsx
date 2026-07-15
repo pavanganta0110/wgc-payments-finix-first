@@ -143,8 +143,8 @@ export default function ContactPage() {
                         </div>
                       </div>
                       <div className="space-y-6">
-                        <a href="mailto:sales@wgcpayments.com" className="text-[14px] font-bold text-wgc-navy-900 flex items-center gap-3 transition-all tracking-[0.1em] hover:text-wgc-gold-600">
-                          <Mail className="w-5 h-5 text-wgc-gold-500" /> sales@wgcpayments.com
+                        <a href="mailto:support@wgcpayments.com" className="text-[14px] font-bold text-wgc-navy-900 flex items-center gap-3 transition-all tracking-[0.1em] hover:text-wgc-gold-600">
+                          <Mail className="w-5 h-5 text-wgc-gold-500" /> support@wgcpayments.com
                         </a>
                       </div>
                     </div>
