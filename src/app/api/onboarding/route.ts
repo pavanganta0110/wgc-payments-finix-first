@@ -363,7 +363,7 @@ export async function POST(req: Request) {
 
     // 4. Merchant
     console.log("ONBOARDING_STEP", "MERCHANT_CREATE_START");
-    const processor = process.env.FINIX_PROCESSOR || "DUMMY_V1";
+    const processor = process.env.FINIX_PROCESSOR || "FINIX_V1";
     let finixMerchant;
     try {
       finixMerchant = await finixClient.createMerchant(finixIdentity.id, processor);
