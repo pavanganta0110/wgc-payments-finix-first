@@ -16,6 +16,12 @@ const US_STATES = [
   "DC",
 ];
 
+const MCC_OPTIONS = [
+  { code: "5045", label: "5045 — Computers, Computer Peripheral Equipment, and Software" },
+  { code: "8398", label: "8398 — Charitable and Social Service Organizations" },
+  { code: "8661", label: "8661 — Religious Organizations" },
+];
+
 const normalizeWebsiteUrl = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) return trimmed;
@@ -376,7 +382,20 @@ export default function StartOnboardingPage() {
                     </select>
                   </div>
                   <div><label className="block text-sm font-semibold mb-2">ZIP Code</label><input required value={formData.businessPostalCode} onChange={(e) => updateField("businessPostalCode", e.target.value.replace(/\D/g, ""))} pattern="\d{5}" maxLength={5} title="Must be a 5-digit ZIP code" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
-                  <div><label className="block text-sm font-semibold mb-2">MCC</label><input required value={formData.mcc} onChange={(e) => updateField("mcc", e.target.value)} className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" /></div>
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Merchant Category Code (MCC)</label>
+                    <select
+                      required
+                      value={formData.mcc}
+                      onChange={(e) => updateField("mcc", e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308] bg-white"
+                    >
+                      {MCC_OPTIONS.map((opt) => (
+                        <option key={opt.code} value={opt.code}>{opt.label}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-slate-500 mt-1">Select the category that best describes your organization&apos;s primary activity.</p>
+                  </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-semibold mb-2">Statement Descriptor (Bank statement text)</label>
                     <input required value={formData.defaultStatementDescriptor} onChange={(e) => updateField("defaultStatementDescriptor", e.target.value)} maxLength={20} placeholder="e.g. GRACE CHURCH DONATE" className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]" />
