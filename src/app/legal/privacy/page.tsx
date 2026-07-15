@@ -91,7 +91,7 @@ export default function PrivacyPage() {
                 If you have questions about this Privacy Policy or how your data is handled, please contact us at:
               </p>
               <p className="mt-4 font-bold text-wgc-navy-900">
-                privacy@wgcpayments.com
+                support@wgcpayments.com
               </p>
             </section>
 
