@@ -11,6 +11,7 @@ interface DocumentDetail {
   uploadedAt: string;
   internalReviewNotes: string | null;
   organizationFacingMessage: string | null;
+  uploadedByAdmin: { id: string; email: string; name: string | null } | null;
   onboardingApplication: { id: string; organizationName: string; contactName: string; contactEmail: string };
 }
 
@@ -123,7 +124,11 @@ export default function DocumentDetailPage() {
         </p>
         <p className="text-sm text-slate-700 mb-1"><span className="font-semibold">File:</span> {doc.originalFilename}</p>
         <p className="text-sm text-slate-700 mb-1"><span className="font-semibold">Status:</span> {doc.status.replace(/_/g, ' ')}</p>
-        <p className="text-sm text-slate-700 mb-4"><span className="font-semibold">Uploaded:</span> {new Date(doc.uploadedAt).toLocaleString()}</p>
+        <p className="text-sm text-slate-700 mb-1"><span className="font-semibold">Uploaded:</span> {new Date(doc.uploadedAt).toLocaleString()}</p>
+        <p className="text-sm text-slate-700 mb-4">
+          <span className="font-semibold">Uploaded by:</span>{' '}
+          {doc.uploadedByAdmin ? `${doc.uploadedByAdmin.name || doc.uploadedByAdmin.email} (admin)` : 'The organization, via onboarding'}
+        </p>
 
         <div className="flex gap-3">
           <button

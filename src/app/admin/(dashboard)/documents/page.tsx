@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import AdminDocumentUploadModal from '@/components/admin/AdminDocumentUploadModal';
 
 interface Document {
   id: string;
@@ -9,6 +10,7 @@ interface Document {
   originalFilename: string;
   status: string;
   uploadedAt: string;
+  uploadedByAdmin: { id: string; email: string; name: string | null } | null;
   onboardingApplication: { id: string; organizationName: string; contactName: string; contactEmail: string };
 }
 
@@ -24,6 +26,7 @@ export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('ALL');
+  const [showUpload, setShowUpload] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -41,8 +44,16 @@ export default function DocumentsPage() {
 
   return (
     <div className="max-w-5xl mx-auto">
-      <h1 className="text-2xl font-bold text-slate-900 mb-1">501(c)(3) Documents</h1>
-      <p className="text-sm text-slate-500 mb-6">IRS determination letters submitted during onboarding.</p>
+      <div className="flex items-start justify-between gap-4 mb-1">
+        <h1 className="text-2xl font-bold text-slate-900">501(c)(3) Documents</h1>
+        <button
+          onClick={() => setShowUpload(true)}
+          className="shrink-0 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800"
+        >
+          Upload document
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 mb-6">IRS determination letters — submitted during onboarding, or uploaded manually by an admin.</p>
 
       <select
         value={status}
@@ -79,12 +90,21 @@ export default function DocumentsPage() {
                   </div>
                   <p className="text-xs text-slate-500">{doc.onboardingApplication.contactName} · {doc.onboardingApplication.contactEmail}</p>
                   <p className="text-sm text-slate-600 mt-2 truncate">{doc.originalFilename}</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {doc.uploadedByAdmin
+                      ? `Uploaded by admin: ${doc.uploadedByAdmin.name || doc.uploadedByAdmin.email}`
+                      : 'Submitted by the organization'}
+                  </p>
                 </div>
                 <p className="text-xs text-slate-400 shrink-0">{new Date(doc.uploadedAt).toLocaleDateString()}</p>
               </div>
             </Link>
           ))}
         </div>
+      )}
+
+      {showUpload && (
+        <AdminDocumentUploadModal onClose={() => setShowUpload(false)} onUploaded={load} />
       )}
     </div>
   );

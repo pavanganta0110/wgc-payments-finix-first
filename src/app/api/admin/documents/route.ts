@@ -22,5 +22,16 @@ export async function GET(req: Request) {
     },
   });
 
-  return NextResponse.json({ documents });
+  const uploaderIds = [...new Set(documents.map((d) => d.uploadedByUserId).filter((id): id is string => !!id))];
+  const uploaders = uploaderIds.length
+    ? await prisma.user.findMany({ where: { id: { in: uploaderIds } }, select: { id: true, email: true, name: true } })
+    : [];
+  const uploaderById = new Map(uploaders.map((u) => [u.id, u]));
+
+  return NextResponse.json({
+    documents: documents.map((d) => ({
+      ...d,
+      uploadedByAdmin: d.uploadedByUserId ? uploaderById.get(d.uploadedByUserId) || null : null,
+    })),
+  });
 }

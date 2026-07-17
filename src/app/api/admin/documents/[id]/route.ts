@@ -16,5 +16,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     },
   });
   if (!document) return NextResponse.json({ error: "Document not found" }, { status: 404 });
-  return NextResponse.json({ document });
+
+  const uploadedByAdmin = document.uploadedByUserId
+    ? await prisma.user.findUnique({ where: { id: document.uploadedByUserId }, select: { id: true, email: true, name: true } })
+    : null;
+
+  return NextResponse.json({ document: { ...document, uploadedByAdmin } });
 }
