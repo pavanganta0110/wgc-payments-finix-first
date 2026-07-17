@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Inbox, FileText, Users, UserCircle } from "lucide-react";
+import { LayoutDashboard, Inbox, FileText, Users, UserCircle, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
   { name: "Inquiries", href: "/admin/inquiries", icon: Inbox },
   { name: "501(c)(3) Documents", href: "/admin/documents", icon: FileText },
+  { name: "Email Logs", href: "/admin/email-logs", icon: Mail },
   { name: "My Profile", href: "/admin/profile", icon: UserCircle },
 ];
 
@@ -16,7 +17,10 @@ const SUPER_ADMIN_NAV_ITEMS = [{ name: "Admin Users", href: "/admin/settings/adm
 
 export default function AdminSidebar({ role }: { role: "wgc_super_admin" | "wgc_admin" }) {
   const pathname = usePathname();
-  const items = role === "wgc_super_admin" ? [...NAV_ITEMS.slice(0, 3), ...SUPER_ADMIN_NAV_ITEMS, NAV_ITEMS[3]] : NAV_ITEMS;
+  const items =
+    role === "wgc_super_admin"
+      ? [...NAV_ITEMS.slice(0, 4), ...SUPER_ADMIN_NAV_ITEMS, ...NAV_ITEMS.slice(4)]
+      : NAV_ITEMS;
 
   return (
     <>
