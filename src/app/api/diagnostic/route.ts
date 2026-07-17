@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
+import { prisma } from "@/lib/prisma";
 
 function mask(val: string | undefined): string {
   if (!val) return "❌ MISSING";
@@ -39,7 +40,16 @@ export async function GET(req: Request) {
     });
   }
 
+  let dbConnectionTest: { ok: boolean; error?: string; userCount?: number } = { ok: false };
+  try {
+    const userCount = await prisma.user.count();
+    dbConnectionTest = { ok: true, userCount };
+  } catch (err: any) {
+    dbConnectionTest = { ok: false, error: err?.message || String(err) };
+  }
+
   return NextResponse.json({
+    dbConnectionTest,
     donorCoveredProfileConfigured: !!process.env.WGC_DONOR_COVERED_ZERO_FEE_PROFILE_ID,
     organizationPaidProfileConfigured: !!process.env.WGC_ORGANIZATION_PAID_FEE_PROFILE_ID,
     environment: process.env.NEXT_PUBLIC_FINIX_ENV || "unknown",
