@@ -58,6 +58,25 @@ export async function POST(req: Request) {
       },
     });
 
+    // Confirmation to the submitter — separate from the staff notification
+    // above, and never allowed to fail the request: the inquiry is already
+    // saved, so a submitter-side email hiccup shouldn't look like a failed
+    // submission to the person who just filled out the form.
+    sendWgcEmail({
+      to: email,
+      subject: "We've received your message — WGC Payments",
+      title: "Thanks for reaching out",
+      badgeText: "Received",
+      badgeColor: "#10B981",
+      bodyHtml: `
+        <p>Hi ${firstName},</p>
+        <p>Thanks for contacting WGC Payments. We've received your message and someone from our team will get back to you shortly.</p>
+        <div style="margin-top: 20px; padding: 15px; background-color: #F0F4F8; border-radius: 8px;">
+          <p style="margin: 0; white-space: pre-wrap;">${message}</p>
+        </div>
+      `,
+    }).catch((err) => console.error("[contact/route] Submitter confirmation email failed:", err));
+
     return NextResponse.json(
       { success: true, message: "Inquiry submitted successfully." },
       { status: 200 }
