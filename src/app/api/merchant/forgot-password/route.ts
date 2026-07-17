@@ -37,15 +37,30 @@ export async function POST(req: Request) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://wgcpayments.com";
     const resetLink = `${appUrl}/merchant/set-password/${rawToken}`;
 
-    await sendWgcEmail({
+    const subject = "Reset your WGC Payments password";
+    const emailResult = await sendWgcEmail({
       to: user.email,
-      subject: "Reset your WGC Payments password",
+      subject,
       title: "Reset your password",
       badgeText: "Action Required",
       badgeColor: "#0B5DBC",
       bodyHtml: `<p>We received a request to reset your WGC Payments dashboard password.</p>
                  <p><a href="${resetLink}">Set a new password</a></p>
                  <p>This link expires in 24 hours. If you didn't request this, you can safely ignore this email.</p>`,
+    });
+
+    // sendWgcEmail never throws on a Resend failure — log the real outcome
+    // (see provisionChurchAccount.ts for why this matters: without it, a
+    // failed send is indistinguishable from a successful one).
+    await prisma.emailLog.create({
+      data: {
+        type: "PASSWORD_RESET",
+        to: user.email,
+        subject,
+        status: emailResult.success ? "SENT" : "FAILED",
+        sentAt: emailResult.success ? new Date() : null,
+        error: emailResult.success ? null : String(emailResult.error ?? "unknown error"),
+      },
     });
 
     return NextResponse.json({ success: true, message: GENERIC_MESSAGE });

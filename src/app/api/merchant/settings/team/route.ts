@@ -92,15 +92,30 @@ export async function POST(req: Request) {
 
   const origin = req.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || "https://wgcpayments.com";
   const inviteLink = `${origin}/merchant/set-password/${rawToken}`;
-  await sendWgcEmail({
+  const inviteSubject = `You've been invited to join ${church?.name || "an organization"} on WGC Payments`;
+  const emailResult = await sendWgcEmail({
     to: email,
-    subject: `You've been invited to join ${church?.name || "an organization"} on WGC Payments`,
+    subject: inviteSubject,
     title: "You're invited",
     badgeText: "Team Invitation",
     badgeColor: "#0B5DBC",
     bodyHtml: `<p>You've been invited to join <strong>${church?.name || "an organization"}</strong> as an Organization Admin on WGC Payments.</p>
                <p><a href="${inviteLink}">Accept invitation and set your password</a></p>
                <p>This invitation link expires in 7 days.</p>`,
+  });
+
+  // sendWgcEmail never throws on a Resend failure — log the real outcome so
+  // a failed invite send is visible in EmailLog instead of looking identical
+  // to a successful one (the account still gets created either way).
+  await prisma.emailLog.create({
+    data: {
+      type: "TEAM_INVITE",
+      to: email,
+      subject: inviteSubject,
+      status: emailResult.success ? "SENT" : "FAILED",
+      sentAt: emailResult.success ? new Date() : null,
+      error: emailResult.success ? null : String(emailResult.error ?? "unknown error"),
+    },
   });
 
   await logDashboardAction({
