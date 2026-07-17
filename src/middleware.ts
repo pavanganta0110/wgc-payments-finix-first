@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import crypto from 'crypto'
 
 const SESSION_COOKIE_NAME = 'wgc_session';
 
@@ -20,7 +19,37 @@ const PUBLIC_ADMIN_PATHS = ['/admin/login', '/admin/forgot-password', '/admin/re
 // /api/merchant, so they're outside this middleware's /api/admin matcher.
 const PUBLIC_ADMIN_API_PATHS = ['/api/admin/login', '/api/admin/forgot-password'];
 
-function verifyAdminSessionCookie(token: string | undefined): boolean {
+// Uses the Web Crypto API (globalThis.crypto), not Node's `crypto` module —
+// this middleware runs on Vercel's Edge runtime, which doesn't have Node
+// built-ins. Node's crypto.createHmac (used to sign the cookie in
+// src/lib/auth/session.ts) and Web Crypto's HMAC-SHA256 produce identical
+// signatures for the same UTF-8 key/message bytes, so this can verify
+// tokens issued by the Node-side signer without needing to match runtimes.
+let cachedKey: CryptoKey | null = null;
+let cachedSecret: string | null = null;
+
+async function getHmacKey(secret: string): Promise<CryptoKey> {
+  if (cachedKey && cachedSecret === secret) return cachedKey;
+  cachedKey = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify']
+  );
+  cachedSecret = secret;
+  return cachedKey;
+}
+
+function base64urlToBytes(b64url: string): Uint8Array {
+  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/').padEnd(b64url.length + ((4 - (b64url.length % 4)) % 4), '=');
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function verifyAdminSessionCookie(token: string | undefined): Promise<boolean> {
   if (!token) return false;
   const secret = process.env.AUTH_SESSION_SECRET;
   if (!secret) return false;
@@ -28,19 +57,14 @@ function verifyAdminSessionCookie(token: string | undefined): boolean {
   const [payloadB64, signatureB64] = token.split('.');
   if (!payloadB64 || !signatureB64) return false;
 
-  const expectedSignature = crypto.createHmac('sha256', secret).update(payloadB64).digest();
-  let actualSignature: Buffer;
   try {
-    actualSignature = Buffer.from(signatureB64, 'base64url');
-  } catch {
-    return false;
-  }
-  if (expectedSignature.length !== actualSignature.length || !crypto.timingSafeEqual(expectedSignature, actualSignature)) {
-    return false;
-  }
+    const key = await getHmacKey(secret);
+    const signatureBytes = base64urlToBytes(signatureB64);
+    const payloadBytes = new TextEncoder().encode(payloadB64);
+    const valid = await crypto.subtle.verify('HMAC', key, signatureBytes as BufferSource, payloadBytes as BufferSource);
+    if (!valid) return false;
 
-  try {
-    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    const payload = JSON.parse(new TextDecoder().decode(base64urlToBytes(payloadB64)));
     if (typeof payload.exp !== 'number' || payload.exp < Math.floor(Date.now() / 1000)) return false;
     return payload.role === 'wgc_admin' || payload.role === 'wgc_super_admin';
   } catch {
@@ -48,7 +72,7 @@ function verifyAdminSessionCookie(token: string | undefined): boolean {
   }
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   const isAdminPagePath = pathname.startsWith('/admin');
@@ -75,7 +99,7 @@ export function middleware(request: NextRequest) {
 
   if (isAdminPagePath || isAdminApiPath) {
     const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-    const authed = verifyAdminSessionCookie(token);
+    const authed = await verifyAdminSessionCookie(token);
 
     if (!authed) {
       if (isAdminApiPath) {
@@ -88,10 +112,6 @@ export function middleware(request: NextRequest) {
 
   return NextResponse.next();
 }
-
-// Node's crypto module is used above (HMAC + timingSafeEqual) — requires
-// the Node.js middleware runtime rather than the Edge default.
-export const runtime = 'nodejs';
 
 export const config = {
   matcher: ['/admin/:path*', '/api/admin/:path*', '/api/test/:path*'],
