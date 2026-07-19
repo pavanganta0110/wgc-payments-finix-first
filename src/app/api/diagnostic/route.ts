@@ -1,16 +1,10 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
-import { prisma } from "@/lib/prisma";
 
 function mask(val: string | undefined): string {
   if (!val) return "❌ MISSING";
   if (val.length <= 8) return "✅ SET (too short to mask)";
   return `✅ ${val.slice(0, 4)}...${val.slice(-4)}`;
-}
-
-function maskConnectionString(val: string | undefined): string {
-  if (!val) return "❌ MISSING";
-  return val.replace(/:\/\/([^:]+):([^@]+)@/, "://$1:***@");
 }
 
 export async function GET(req: Request) {
@@ -40,21 +34,7 @@ export async function GET(req: Request) {
     });
   }
 
-  let dbConnectionTest: { ok: boolean; error?: string; userCount?: number } = { ok: false };
-  try {
-    const userCount = await prisma.user.count();
-    dbConnectionTest = { ok: true, userCount };
-  } catch (err: any) {
-    dbConnectionTest = { ok: false, error: err?.message || String(err) };
-  }
-
   return NextResponse.json({
-    dbConnectionTest,
-    donorCoveredProfileConfigured: !!process.env.WGC_DONOR_COVERED_ZERO_FEE_PROFILE_ID,
-    organizationPaidProfileConfigured: !!process.env.WGC_ORGANIZATION_PAID_FEE_PROFILE_ID,
-    environment: process.env.NEXT_PUBLIC_FINIX_ENV || "unknown",
-    databaseUrl: maskConnectionString(process.env.DATABASE_URL),
-    directUrl: maskConnectionString(process.env.DIRECT_URL),
     finix: {
       env:            process.env.FINIX_ENV            || "❌ MISSING",
       baseUrl:        process.env.FINIX_BASE_URL        || "❌ MISSING",

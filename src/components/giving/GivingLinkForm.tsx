@@ -207,7 +207,7 @@ export default function GivingLinkForm({
   // happens to be selected — kept separate from the card/bank form's own
   // paymentMethod-driven totalCents/feeCoveredCents declared further below.
   const effectiveAmountCents = amountType === "FIXED" ? (fixedAmountCents ?? 0) : customAmount ? Math.round(parseFloat(customAmount) * 100) : amountCents;
-
+  
   const walletFeeResult = calculateWgcFeeAmounts({
     donationAmountCents: effectiveAmountCents || 0,
     paymentMethod: "CARD",
@@ -570,14 +570,14 @@ export default function GivingLinkForm({
     cardBrand: null,
     donorCoversFee: feeCoverEnabled ? coverFees : false,
   });
-
+  
   const donorCoveredFeeResult = calculateWgcFeeAmounts({
     donationAmountCents: effectiveAmountCents || 0,
     paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
     cardBrand: null,
     donorCoversFee: true,
   });
-
+  
   const totalCents = (feeCoverEnabled && coverFees) ? feeResult.amountToChargeCents : (effectiveAmountCents || 0);
   const feeCoveredCents = donorCoveredFeeResult.supplementalFeeCents;
 

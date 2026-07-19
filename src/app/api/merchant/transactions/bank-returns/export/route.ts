@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import { resolveDateRange } from "@/lib/dateRangePresets";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { formatAchReturnReason } from "@/lib/finix/achReturnReasonCodes";
+import { getSettlementPermissions } from "@/lib/finix/settlementPermissions";
+import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
+import { resolveViewScope } from "@/lib/auth/viewScope";
+import { resolveScopedUserId } from "@/lib/auth/scopes";
+import { resolveScopedTransferIds } from "@/lib/reports/insightsData";
+import { isAuthError } from "@/lib/auth/errors";
 
 function csvEscape(value: string) {
   if (value.includes(",") || value.includes('"') || value.includes("\n")) {
@@ -14,9 +19,18 @@ function csvEscape(value: string) {
 }
 
 export async function GET(req: Request) {
-  const session = await getSession();
+  let auth;
+  try {
+    auth = await requireMerchantSession();
+  } catch (err) {
+    if (isAuthError(err)) return NextResponse.json({ error: err.message }, { status: err.status });
+    throw err;
+  }
 
-  if (!session || session.role !== "church_admin" || !session.churchId) {
+  // Team-access Checkpoint 4A: same policy as the bank-returns page —
+  // no row-level attribution exists for ACH returns yet, so FUNDRAISER/VIEWER
+  // are denied entirely rather than shown organization-wide data.
+  if (!getSettlementPermissions(auth.rawRole).canExport) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -29,15 +43,25 @@ export async function GET(req: Request) {
   const { from: startDate, to: endDate } = resolveDateRange(range, from, to);
   const dateFilter = startDate ? { gte: startDate, ...(endDate ? { lte: endDate } : {}) } : undefined;
 
+  // Team-access: OWNER/authorized ADMIN may narrow this export to a
+  // specific team member's attributed activity via the dashboard scope
+  // dropdown ("view as") — this does not loosen the FUNDRAISER/VIEWER
+  // denial above, it only narrows what an already-authorized org-wide
+  // export contains.
+  const viewScope = await resolveViewScope(auth);
+  const scopedUserId = resolveScopedUserId(auth, viewScope) ?? undefined;
+  const scopedTransferIds = await resolveScopedTransferIds(auth.churchId, scopedUserId);
+
   const returns = await prisma.bankReturn.findMany({
     where: {
-      churchId: session.churchId,
+      churchId: auth.churchId,
       ...(dateFilter ? { createdAtFinix: dateFilter } : {}),
+      ...(scopedTransferIds ? { originalTransferId: { in: scopedTransferIds } } : {}),
     },
     orderBy: { createdAtFinix: "desc" },
   });
 
-  const church = await prisma.church.findUnique({ where: { id: session.churchId } });
+  const church = await prisma.church.findUnique({ where: { id: auth.churchId } });
 
   const instrumentIds = returns
     .map((r) => r.finixPaymentInstrumentId)

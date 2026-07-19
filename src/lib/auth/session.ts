@@ -2,20 +2,28 @@ import crypto from "crypto";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
-export const SESSION_COOKIE_NAME = "wgc_session";
+export { SESSION_COOKIE_NAME } from "./sessionConstants";
+import { SESSION_COOKIE_NAME } from "./sessionConstants";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
 export interface SessionPayload {
   userId: string;
   email: string;
-  role: "wgc_super_admin" | "wgc_admin" | "church_admin";
+  role: "wgc_super_admin" | "wgc_admin" | "church_admin" | "owner" | "admin" | "fundraiser" | "viewer";
   churchId: string | null;
   // Epoch ms of User.passwordChangedAt at the moment this token was
-  // issued, or null if the password has never been reset. Compared
-  // against the current DB value by getAdminSession() to invalidate
-  // every token issued before a password reset — the only way to revoke
-  // our stateless HMAC-signed cookies without a server-side session store.
-  passwordChangedAt: number | null;
+  // issued, or null if the password has never been reset. Used only by
+  // getAdminSession() (the internal WGC admin-panel auth path) to
+  // invalidate every token issued before a password reset. Optional
+  // because merchant-side logins (Team-access) don't set this — they use
+  // authVersion instead (see below).
+  passwordChangedAt?: number | null;
+  // Team-access Checkpoint 1: the User.authVersion value at sign-in time,
+  // used by requireMerchantSession() (a separate, independent check —
+  // see that file) to invalidate every token issued before a role/
+  // permission/disabled-status change. Optional because admin-panel
+  // logins don't set this — they use passwordChangedAt instead.
+  authVersion?: number;
   exp: number; // unix seconds
 }
 
@@ -109,7 +117,10 @@ export interface AdminSession {
  * passwordChangedAt still matches the DB, so a password reset immediately
  * revokes every other session even though the cookie itself is stateless.
  * Costs one query per protected admin request, same tradeoff the rest of
- * this codebase already makes for role checks.
+ * this codebase already makes for role checks. Unrelated to and
+ * unaffected by requireMerchantSession()'s authVersion check — the WGC
+ * internal admin panel and the merchant dashboard use two independent
+ * invalidation mechanisms on the same session-cookie infrastructure.
  */
 export async function getAdminSession(): Promise<AdminSession | null> {
   const payload = await getSession();
@@ -124,7 +135,24 @@ export async function getAdminSession(): Promise<AdminSession | null> {
   if (user.role !== "wgc_admin" && user.role !== "wgc_super_admin") return null;
 
   const dbChangedAt = user.passwordChangedAt ? user.passwordChangedAt.getTime() : null;
-  if (dbChangedAt !== payload.passwordChangedAt) return null;
+  if (dbChangedAt !== (payload.passwordChangedAt ?? null)) return null;
 
   return { userId: user.id, email: user.email, name: user.name, role: user.role as "wgc_super_admin" | "wgc_admin" };
+}
+
+/**
+ * Call after any change to a merchant user's role, permissionsJson,
+ * disabledAt, or bank-management permission — invalidates every
+ * merchant-dashboard session issued before the change (see
+ * requireMerchantSession()'s authVersion comparison). Does not touch the
+ * session cookie itself; the next request from that browser simply fails
+ * requireMerchantSession() and gets redirected to login. Does not affect
+ * WGC admin-panel sessions (getAdminSession() uses passwordChangedAt, not
+ * authVersion).
+ */
+export async function bumpAuthVersion(userId: string): Promise<void> {
+  await prisma.user.update({
+    where: { id: userId },
+    data: { authVersion: { increment: 1 } },
+  });
 }

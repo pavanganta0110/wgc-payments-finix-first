@@ -1,24 +1,38 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth/session";
-import { formatCents } from "@/lib/format";
-import { formatPersonName } from "@/lib/formatPersonName";
-import { loadGivingLinkAttempts } from "@/lib/givingLinks/attempts";
+import { prisma } from "@/lib/prisma";
 import { resolveDateRange } from "@/lib/dateRangePresets";
+import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
+import { isAuthError } from "@/lib/auth/errors";
+import { normalizeMerchantRole, ROLE_PERMISSIONS } from "@/lib/auth/roles";
+import { buildTransactionReportData, renderTransactionReportCsv, renderTransactionReportPdf, resolveUserIdentity } from "@/lib/exports/transactionReportData";
+import { buildTransactionExportFilename, csvResponse } from "@/lib/exports/transactionExport";
 
-function csvEscape(value: string) {
-  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
-
+/**
+ * Giving-link-scoped canonical transaction export. Row-scoping was
+ * previously done via loadGivingLinkAttempts (which fetches every
+ * Payment for the church/link, same source of truth) — now goes through
+ * resolveTransactionExportRows's givingLinkId filter instead, so the CSV
+ * uses the exact same canonical columns/calculations as every other
+ * transaction export. Access stays organization-wide-only (per the
+ * pre-existing policy: giving-link attempts have no per-user attribution
+ * gate of their own — OWNER/ADMIN with export+all-transactions only).
+ */
 export async function GET(req: Request) {
-  const session = await getSession();
-  if (!session || session.role !== "church_admin" || !session.churchId) {
+  let auth;
+  try {
+    auth = await requireMerchantSession();
+  } catch (err) {
+    if (isAuthError(err)) return NextResponse.json({ error: err.message }, { status: err.status });
+    throw err;
+  }
+  const normalized = normalizeMerchantRole(auth.rawRole);
+  const base = normalized ? ROLE_PERMISSIONS[normalized] : null;
+  if (!base?.canExportReports || !base.canViewAllTransactions) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { searchParams } = new URL(req.url);
+  const format = searchParams.get("format") === "pdf" ? "pdf" : "csv";
   const givingLinkId = searchParams.get("givingLinkId") || undefined;
   const range = searchParams.get("range") || undefined;
   const from = searchParams.get("from") || undefined;
@@ -26,51 +40,31 @@ export async function GET(req: Request) {
   const { from: startDate, to: endDate } = resolveDateRange(range, from, to);
   const dateFilter = startDate ? { gte: startDate, ...(endDate ? { lte: endDate } : {}) } : undefined;
 
-  const rows = await loadGivingLinkAttempts(session.churchId, { givingLinkId, dateFilter, take: 5000 });
-
-  const header = [
-    "Attempt ID",
-    "Giving Link",
-    "Donor",
-    "Email",
-    "Amount",
-    "Fee",
-    "Total",
-    "State",
-    "Payment Method",
-    "Last Four",
-    "Created",
-    "Updated",
-    "Transfer ID",
-    "Fund/Campaign",
-  ];
-  const lines = [header.join(",")];
-
-  for (const { payment, givingLink, transfer, instrument, donor } of rows) {
-    lines.push(
-      [
-        csvEscape(payment.id),
-        csvEscape(givingLink?.internalName || ""),
-        csvEscape(formatPersonName(donor?.name, instrument?.accountHolderName)),
-        csvEscape(donor?.email || ""),
-        csvEscape(formatCents(payment.donationAmountCents ?? payment.amountCents)),
-        csvEscape(formatCents(payment.feeCoveredCents ?? 0)),
-        csvEscape(formatCents(payment.amountCents)),
-        csvEscape((transfer?.state || payment.status || "").toUpperCase()),
-        csvEscape(payment.paymentMethodType || ""),
-        csvEscape(instrument?.cardLast4 || instrument?.bankLast4 || ""),
-        csvEscape(payment.createdAt.toISOString()),
-        csvEscape(payment.updatedAt.toISOString()),
-        csvEscape(payment.finixTransferId || ""),
-        csvEscape(payment.fundName || ""),
-      ].join(",")
-    );
+  let owner = { name: "Entire Organization", email: "", userId: "", role: "" };
+  let filenameId = "all-links";
+  if (givingLinkId) {
+    const link = await prisma.givingLink.findFirst({ where: { id: givingLinkId, churchId: auth.churchId }, select: { internalName: true, publicTitle: true, ownerUserId: true } });
+    if (!link) return NextResponse.json({ error: "Giving link not found" }, { status: 404 });
+    filenameId = link.internalName || link.publicTitle || givingLinkId;
+    const ownerIdentity = link.ownerUserId ? await resolveUserIdentity(link.ownerUserId) : null;
+    owner = { name: link.internalName || link.publicTitle || "", email: ownerIdentity?.email || "", userId: link.ownerUserId || "", role: ownerIdentity?.role || "" };
   }
 
-  return new NextResponse(lines.join("\n"), {
-    headers: {
-      "Content-Type": "text/csv",
-      "Content-Disposition": `attachment; filename="donation-attempts.csv"`,
-    },
+  const data = await buildTransactionReportData({
+    churchId: auth.churchId,
+    scope: "GIVING_LINK",
+    owner,
+    generatedBy: { name: auth.email, email: auth.email },
+    filter: { givingLinkId, createdAtRange: dateFilter },
+    appliedFiltersDescription: givingLinkId ? `Giving Link = ${filenameId}` : "All Giving Links",
   });
+
+  const filename = buildTransactionExportFilename("giving-link", filenameId, format);
+
+  if (format === "pdf") {
+    const pdf = await renderTransactionReportPdf(data);
+    return new NextResponse(new Uint8Array(pdf), { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${filename}"` } });
+  }
+  const csv = renderTransactionReportCsv(data);
+  return csvResponse(csv, filename);
 }

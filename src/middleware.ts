@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-
-const SESSION_COOKIE_NAME = 'wgc_session';
+import { SESSION_COOKIE_NAME } from '@/lib/auth/sessionConstants'
 
 // Public admin auth pages — reachable without a session, everything else
 // under /admin and /api/admin requires one. Deliberately duplicates the
@@ -18,6 +17,31 @@ const PUBLIC_ADMIN_PATHS = ['/admin/login', '/admin/forgot-password', '/admin/re
 // set-password are shared with the merchant flow and live under
 // /api/merchant, so they're outside this middleware's /api/admin matcher.
 const PUBLIC_ADMIN_API_PATHS = ['/api/admin/login', '/api/admin/forgot-password'];
+
+// Team-access Checkpoint 2: routes under /merchant and /api/merchant that
+// must stay reachable without a session — the pre-auth flows (login,
+// invite/reset password) and their supporting API routes. Every other path
+// under those two prefixes requires the session cookie to be present. This
+// is a COARSE backstop only (cookie-presence check — this Edge middleware
+// cannot do the DB-backed authVersion/disabled check that
+// requireMerchantSession() does). Every sensitive merchant route must
+// still call requireMerchantSession() itself; this middleware existing
+// does not remove that requirement. Entirely separate from, and does not
+// change, the /admin session-cookie verification above.
+const MERCHANT_PUBLIC_PREFIXES = [
+  '/merchant/login',
+  '/merchant/forgot-password',
+  '/merchant/set-password',
+  '/api/merchant/login',
+  '/api/merchant/logout',
+  '/api/merchant/forgot-password',
+  '/api/merchant/set-password',
+  '/api/merchant/validate-reset-token',
+];
+
+function isMerchantPublicPath(pathname: string): boolean {
+  return MERCHANT_PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
 
 // Uses the Web Crypto API (globalThis.crypto), not Node's `crypto` module —
 // this middleware runs on Vercel's Edge runtime, which doesn't have Node
@@ -75,6 +99,19 @@ async function verifyAdminSessionCookie(token: string | undefined): Promise<bool
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
+  const isMerchantPath = pathname.startsWith('/merchant') || pathname.startsWith('/api/merchant');
+  if (isMerchantPath && !isMerchantPublicPath(pathname)) {
+    const hasSession = Boolean(request.cookies.get(SESSION_COOKIE_NAME)?.value);
+    if (!hasSession) {
+      if (pathname.startsWith('/api/merchant')) {
+        return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+      }
+      const loginUrl = new URL('/merchant/login', request.url);
+      loginUrl.searchParams.set('redirectTo', pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
   const isAdminPagePath = pathname.startsWith('/admin');
   const isAdminApiPath = pathname.startsWith('/api/admin');
   const isTestPath = pathname.startsWith('/api/test');
@@ -114,5 +151,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/api/admin/:path*', '/api/test/:path*'],
+  matcher: ['/admin/:path*', '/api/admin/:path*', '/api/test/:path*', '/merchant/:path*', '/api/merchant/:path*'],
 }

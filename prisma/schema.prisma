@@ -300,6 +300,16 @@ model Church {
   finixIdentityId               String?
   finixApplicationId            String?
   status                        String
+  // Team-access Checkpoint 1: exactly one User (role "owner") accountable
+  // per Church. Nullable during migration — existing churches are backfilled
+  // via an explicit, reviewed report (see ownerBackfillPreview), never
+  // silently assigned. Deliberately a plain String FK-by-convention (no
+  // Prisma @relation) to match this schema's existing style for User<->Church
+  // cross-references (see User.invitedByUserId/disabledByUserId) and to keep
+  // this migration additive-only. Reporting/ownership only — never used to
+  // select a Finix merchant, identity, settlement destination, or bank
+  // account; those always come from Church.finixMerchantId/finixIdentityId.
+  primaryOwnerUserId            String?
   // Organization identity used on annual donation statements and the
   // organization profile — not required by onboarding/payments, so all
   // nullable. Intentionally not backfilled from OnboardingApplication:
@@ -805,6 +815,18 @@ model Payment {
   note                              String?
   isAnonymous                       Boolean   @default(false)
   createdByAdminUserId              String?
+  // Team-access Checkpoint 3: snapshotted once at payment-creation time from
+  // GivingLink.ownerUserId (public donation) or the acting admin/explicit
+  // assignment (Take a Payment flow) — never re-derived later. Stays null
+  // when attribution can't be proven (no giving link, unowned link, missing
+  // owner) rather than falling back to the church's primary owner. A later
+  // giving-link reassignment does NOT rewrite this field — see
+  // GivingLink.ownerUserId's comment. Reporting-only: never used to select
+  // a Finix merchant, identity, settlement destination, or bank account —
+  // those always come from Church.finixMerchantId/finixIdentityId. Plain
+  // string FK-by-convention (no @relation), matching this schema's existing
+  // style for User cross-references.
+  attributedUserId                  String?
   paymentAttemptId                  String?
   donorCoversFee                    Boolean?
   cardBrand                         String?
@@ -819,6 +841,8 @@ model Payment {
   updatedAt DateTime @updatedAt
 
   receipts DonationReceipt[]
+
+  @@index([churchId, attributedUserId])
 }
 
 // One immutable snapshot per receipt version sent (or prepared) for a
@@ -1356,6 +1380,14 @@ model FinixSubscription {
   // method flow) from one created by a donor via the public giving page or
   // a secure setup link — never inferred, always set at creation time.
   createdByUserId            String?
+  // Team-access Checkpoint 3: snapshotted once at subscription-creation
+  // time from GivingLink.ownerUserId (via givingLinkId above) — never
+  // re-read from the giving link afterward, so a later link reassignment
+  // doesn't change history. Every recurring Payment generated from this
+  // subscription inherits this value directly rather than re-deriving it.
+  // Null when attribution can't be proven (no giving link, unowned link).
+  // Same plain-string-FK rationale as Payment.attributedUserId.
+  attributedUserId           String?
   consentSource              String? // ADMIN_CONFIRMED | DONOR_DIRECT
   rawJsonRedacted            Json?
   createdAtFinix             DateTime?
@@ -1383,6 +1415,7 @@ model FinixSubscription {
 
   @@index([churchId, donorId])
   @@index([churchId, state])
+  @@index([churchId, attributedUserId])
 }
 
 /// Immutable record of donor authorization for a recurring donation —
@@ -1621,8 +1654,33 @@ model User {
   email                     String    @unique
   name                      String?
   passwordHash              String?
-  role                      String // "wgc_super_admin" | "wgc_admin" | "church_admin"
+  // Team-access Checkpoint 1: organization-side roles are "owner" |
+  // "admin" | "fundraiser" | "viewer" (exactly one "owner" per church,
+  // enforced at the application layer via Church.primaryOwnerUserId, not a
+  // DB constraint). "wgc_admin"/"wgc_super_admin" are WGC's own internal
+  // roles and are never treated as an organization owner anywhere in
+  // permission logic — kept as completely separate values on purpose.
+  // Existing rows are all "wgc_super_admin", "wgc_admin", or the legacy
+  // "church_admin" until the owner-backfill migration (see
+  // ownerBackfillPreview) maps church_admin -> owner/admin.
+  role                      String // "wgc_super_admin" | "wgc_admin" | "church_admin" | "owner" | "admin" | "fundraiser" | "viewer"
   churchId                  String?
+  // Team-access Checkpoint 1: roles + a small override on top, per the
+  // approved plan (roles are the primary model; this is for narrow
+  // exceptions like an ADMIN being granted canManageBankAccount without a
+  // full OWNER promotion) — never trusted alone client-side, always
+  // re-read server-side by requirePermission().
+  permissionsJson           Json?
+  // Team-access Checkpoint 1: incremented whenever this user's role,
+  // permissions, active/disabled status, or bank-management permission
+  // changes (see bumpAuthVersion in src/lib/auth/session.ts). The signed
+  // merchant session cookie carries the authVersion value that was
+  // current at sign-in; requireMerchantSession() rejects the cookie if it
+  // no longer matches the DB value, so a stale session can't keep acting
+  // on since-revoked permissions until it naturally expires. Unrelated to
+  // and does not replace passwordChangedAt, which the separate WGC
+  // admin-panel session check (getAdminSession()) still uses.
+  authVersion               Int       @default(1)
   setPasswordTokenHash      String?
   setPasswordTokenExpiresAt DateTime?
   lastLoginAt               DateTime?
@@ -1722,9 +1780,25 @@ model GivingLink {
   refundedCents             Int       @default(0)
   returnedCents             Int       @default(0)
   lastUsedAt                DateTime?
+  // Who created this link — never overwritten on reassignment. Preserved
+  // exactly as-is; see ownerUserId below for the field the Checkpoint 3
+  // attribution/reassignment work actually operates on.
   createdByUserId           String?
+  // Team-access Checkpoint 3: whose fundraising activity/reporting this link
+  // belongs to — distinct from createdByUserId (who made the link). An
+  // owner/admin can create a link on behalf of a fundraiser, in which case
+  // createdByUserId = the owner/admin and ownerUserId = the fundraiser.
+  // Defaults to the acting user at creation time if not explicitly assigned;
+  // a FUNDRAISER can only ever create links with ownerUserId = themselves
+  // (server-enforced, never trusted from client JSON). Reassigning this
+  // field changes attribution for FUTURE payments/subscriptions only —
+  // Payment.attributedUserId/FinixSubscription.attributedUserId are
+  // snapshotted once at creation and never rewritten when this changes.
+  ownerUserId               String?
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
+
+  @@index([churchId, ownerUserId])
 }
 
 model GivingLinkShare {
