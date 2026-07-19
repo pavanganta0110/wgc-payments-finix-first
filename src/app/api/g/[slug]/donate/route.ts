@@ -11,6 +11,7 @@ import { normalizeUSPhone, isValidEmail } from "@/lib/validation";
 import { isGivingLinkUsable } from "@/lib/givingLinks/status";
 import { parseDonorFieldSettings, parseAllowedPaymentMethods, parseAllowedFrequencies } from "@/lib/givingLinks/types";
 import { toSafeErrorResponse, toSafePaymentErrorResponse } from "@/lib/utils/errorNormalizer";
+import { resolvePaymentAttributionFromGivingLink } from "@/lib/auth/attributionSnapshot";
 import crypto from "crypto";
 
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -225,8 +226,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       }
 
       // sandboxDebug never logs in production — only NEXT_PUBLIC_FINIX_ENV
-      // !== "live" (mirrors the client-side wallet diagnostics). Payment
-      // tokens/credentials are never logged in full.
+      // !== "live" (mirrors the client-side wallet diagnostics added
+      // earlier). Payment tokens/credentials are never logged in full.
       const sandboxDebug = process.env.NEXT_PUBLIC_FINIX_ENV !== "live";
 
       let instrumentPayload: Record<string, unknown>;
@@ -244,12 +245,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         // merchant_identity MUST equal whatever identity was set as
         // gatewayMerchantId when the token was generated client-side
         // (FINIX_APPLICATION_OWNER_ID — see googlePay.ts/loadPublicGivingPageData.ts),
-        // not the individual church's own Finix identity — confirmed via
+        // not the individual church's own Finix identity. Confirmed via
         // Finix's own rejection when this was first tried with the church's
         // identity: 422 INVALID_FIELD, "Google Pay token must be associated
-        // with the merchant_identity provided". Per-church settlement
-        // routing happens separately, via `merchant: church.finixMerchantId`
-        // on the /transfers call further below.
+        // with the merchant_identity provided" — the token is scoped to the
+        // identity it was tokenized against and can't be reassigned to a
+        // different one at instrument-creation time. Actual per-church
+        // settlement routing happens separately, via `merchant:
+        // church.finixMerchantId` on the /transfers call further below.
         instrumentPayload = {
           identity: identityId,
           merchant_identity: process.env.FINIX_APPLICATION_OWNER_ID,
@@ -421,6 +424,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
           // re-derived from the processor's subscription response.
           donorId: donorRecord.id,
           givingLinkId: link.id,
+          // Team-access Checkpoint 3: snapshotted once at subscription
+          // creation from the giving link's owner — see the comment on the
+          // one-time Payment.attributedUserId above for the full rationale.
+          // Every recurring charge generated from this subscription later
+          // (webhooks/finix/route.ts) inherits this value directly.
+          attributedUserId: resolvePaymentAttributionFromGivingLink(link, church.id),
           finixMerchantId: church.finixMerchantId,
           finixBuyerIdentityId: identityId,
           finixPaymentInstrumentId: instrumentId,
@@ -522,6 +531,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         churchId: church.id,
         donorId: donorRecord.id,
         givingLinkId: link.id,
+        // Team-access Checkpoint 3: snapshotted once here, at payment
+        // creation — never re-derived from the giving link later (a
+        // subsequent reassignment must not change this payment's
+        // attribution). church was looked up via link.churchId above, so
+        // this is guaranteed same-church by construction. Stays null when
+        // the link has no owner — never substituted with the church's
+        // primary owner.
+        attributedUserId: resolvePaymentAttributionFromGivingLink(link, church.id),
         finixTransferId: transfer.id,
         finixBuyerIdentityId: identityId,
         finixPaymentInstrumentId: instrumentId,

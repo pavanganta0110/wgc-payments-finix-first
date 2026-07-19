@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { ArrowUpDown, Users, AlertTriangle } from "lucide-react";
-import { getSession } from "@/lib/auth/session";
+import { redirect } from "next/navigation";
 import { formatCents } from "@/lib/format";
+import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
+import { resolveViewScope } from "@/lib/auth/viewScope";
+import { resolveScopedDonorIds } from "@/lib/auth/scopes";
+import { isAuthError } from "@/lib/auth/errors";
 import { resolveDateRange } from "@/lib/dateRangePresets";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import ClickableTableRow from "@/components/merchant/ClickableTableRow";
@@ -77,10 +81,23 @@ export default async function DonorsPage({
     id?: string;
   }>;
 }) {
-  const session = await getSession();
-  const churchId = session!.churchId!;
-  const permissions = getDonorPermissions(session?.role);
+  let auth;
+  try {
+    auth = await requireMerchantSession();
+  } catch (err) {
+    if (isAuthError(err)) redirect("/merchant/dashboard");
+    throw err;
+  }
+  const churchId = auth.churchId;
+  const permissions = getDonorPermissions(auth.rawRole);
   const sp = await searchParams;
+
+  // Team-access: donor list and every summary/trend/growth analytics card
+  // are scoped to donors with attributed activity for the selected user
+  // (resolveScopedDonorIds, same helper used by the donor-export and
+  // donor-detail routes).
+  const viewScope = await resolveViewScope(auth);
+  const scopedDonorIds = (await resolveScopedDonorIds(auth, viewScope)) ?? undefined;
 
   const { from: startDate, to: endDate } = resolveDateRange(sp.range, sp.from, sp.to);
   const dateFilter = startDate ? { gte: startDate, ...(endDate ? { lte: endDate } : {}) } : undefined;
@@ -99,19 +116,19 @@ export default async function DonorsPage({
   // limit (session-mode pool_size: 15) on a single page load, confirmed by
   // a real 500 against the live pooler. Trading a bit of latency for not
   // blowing the connection budget.
-  const summary = await loadDonorSummary(churchId, dateFilter);
-  const trend = await loadDonationTrend(churchId, dateFilter, "weekly");
-  const topDonors = await loadTopDonors(churchId, dateFilter, topMetric, 10);
+  const summary = await loadDonorSummary(churchId, dateFilter, scopedDonorIds);
+  const trend = await loadDonationTrend(churchId, dateFilter, "weekly", scopedDonorIds);
+  const topDonors = await loadTopDonors(churchId, dateFilter, topMetric, 10, scopedDonorIds);
 
   let previousPeriodFilter: { gte: Date; lte?: Date } | undefined;
   if (dateFilter?.lte) {
     const spanMs = dateFilter.lte.getTime() - dateFilter.gte.getTime();
     previousPeriodFilter = { gte: new Date(dateFilter.gte.getTime() - spanMs), lte: new Date(dateFilter.gte.getTime() - 1) };
   }
-  const extended = await loadDonorAnalyticsExtended(churchId, dateFilter, previousPeriodFilter);
-  const growth = await loadDonorGrowth(churchId, dateFilter, "weekly");
+  const extended = await loadDonorAnalyticsExtended(churchId, dateFilter, previousPeriodFilter, scopedDonorIds);
+  const growth = await loadDonorGrowth(churchId, dateFilter, "weekly", scopedDonorIds);
   const orgInstruments = await prisma.finixPaymentInstrumentSnapshot.findMany({
-    where: { churchId, donorId: { not: null } },
+    where: { churchId, donorId: scopedDonorIds ? { in: scopedDonorIds } : { not: null } },
     select: { finixPaymentInstrumentId: true },
   });
   const paymentMethodMix = await loadDonorPaymentMethodMix(
@@ -135,6 +152,7 @@ export default async function DonorsPage({
       hasDispute: sp.hasDispute === "1",
       hasActiveSubscription: sp.hasActiveSubscription === "1",
       archivedStatus: (sp.archived as "active" | "archived" | "all") || "active",
+      donorIdIn: scopedDonorIds,
     },
     { key: sortKey, dir: sortDir },
     page,

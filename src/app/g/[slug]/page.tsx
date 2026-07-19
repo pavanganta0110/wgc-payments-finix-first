@@ -25,6 +25,7 @@ export default async function GivingLinkPublicPage({ params }: { params: Promise
   }
 
   const { light, church } = data;
+
   const { link, branding, pricing, donorFieldSettings, allowedPaymentMethods, allowedFrequencies, suggestedAmountsCents, googlePayGatewayMerchantId, googlePayMerchantId, googlePayEnvironment, serverAvailability, logoUrl } = data;
 
   return (

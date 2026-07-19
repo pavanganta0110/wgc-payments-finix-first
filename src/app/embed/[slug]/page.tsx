@@ -5,10 +5,10 @@ import { loadPublicGivingPageData } from "@/lib/givingLinks/loadPublicGivingPage
 import { isEmbedOriginAllowed, parseEmbedAllowedDomains } from "@/lib/giving/embedDomainCheck";
 
 /**
- * Full-bleed, chrome-free giving page meant to be opened as a top-level
- * popup window from third-party websites via public/embed/wgc-giving.js —
- * never linked to directly from WGC's own UI. See next.config.ts for the
- * frame-ancestors override scoped to this route.
+ * Full-bleed, chrome-free giving page meant to be iframed on third-party
+ * websites via public/embed/wgc-giving.js — never linked to directly from
+ * WGC's own UI. See next.config.ts for the frame-ancestors override that
+ * makes this route (and only this route) embeddable cross-origin.
  */
 export default async function EmbedGivingPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;

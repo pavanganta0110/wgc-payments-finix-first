@@ -1,7 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ArrowUpDown, ShieldAlert } from "lucide-react";
-import { getSession } from "@/lib/auth/session";
-import { prisma } from "@/lib/prisma";
+import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
+import { resolveViewScope } from "@/lib/auth/viewScope";
+import { resolveScopedUserId } from "@/lib/auth/scopes";
+import { resolveScopedTransferIds } from "@/lib/reports/insightsData";
+import { isAuthError } from "@/lib/auth/errors";
+import { getDisputePermissions } from "@/lib/finix/disputePermissions";
 import { formatCents } from "@/lib/format";
 import { resolveDateRange } from "@/lib/dateRangePresets";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
@@ -54,15 +59,31 @@ export default async function DisputesPage({
     id?: string;
   }>;
 }) {
-  const session = await getSession();
-  const churchId = session!.churchId!;
+  let auth;
+  try {
+    auth = await requireMerchantSession();
+  } catch (err) {
+    if (isAuthError(err)) redirect("/merchant/dashboard");
+    throw err;
+  }
+  // Team-access: dispute reads are scoped through their originating
+  // payment's attribution (resolveScopedTransferIds) — FUNDRAISER/VIEWER
+  // see only disputes tied to payments attributed to them, rather than
+  // being denied entirely.
+  if (!getDisputePermissions(auth.rawRole).canView) {
+    redirect("/merchant/dashboard");
+  }
+  const churchId = auth.churchId;
+  const viewScope = await resolveViewScope(auth);
+  const scopedUserId = resolveScopedUserId(auth, viewScope) ?? undefined;
+  const scopedTransferIds = await resolveScopedTransferIds(churchId, scopedUserId);
   const sp = await searchParams;
   const tab = sp.tab === "needs_attention" ? "needs_attention" : "all";
   const { from: startDate, to: endDate } = resolveDateRange(sp.range, sp.from, sp.to);
   const dateFilter = startDate ? { gte: startDate, ...(endDate ? { lte: endDate } : {}) } : undefined;
   const visibleCols = parseVisibleDisputeColumns(sp.cols);
 
-  const allRows = await loadDisputesList(churchId, dateFilter);
+  const allRows = await loadDisputesList(churchId, dateFilter, scopedTransferIds);
 
   const withMeta = allRows.map((row) => {
     const displayStatus = resolveDisputeDisplayStatus(row.dispute);
