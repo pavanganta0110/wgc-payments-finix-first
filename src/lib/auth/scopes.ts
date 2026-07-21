@@ -1,7 +1,17 @@
+import { cache } from "react";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { MerchantAuthContext } from "./requireMerchantSession";
 import type { ResolvedViewScope, ViewScope } from "./viewScope";
+
+// Request-level cached payment lookup to prevent duplicate database hits when building scopes
+export const getOwnPaymentTransferIds = cache(async (churchId: string, attributedUserId: string): Promise<string[]> => {
+  const ownPayments = await prisma.payment.findMany({
+    where: { churchId, attributedUserId },
+    select: { finixTransferId: true },
+  });
+  return ownPayments.map((p) => p.finixTransferId).filter((id): id is string => Boolean(id));
+});
 
 /**
  * Checkpoint 4: now that GivingLink.ownerUserId, Payment.attributedUserId,
@@ -126,11 +136,7 @@ export async function buildFinixTransferScope(
   if (scopedUserId === null) {
     return { churchId: auth.churchId };
   }
-  const ownPayments = await prisma.payment.findMany({
-    where: { churchId: auth.churchId, attributedUserId: scopedUserId },
-    select: { finixTransferId: true },
-  });
-  const transferIds = ownPayments.map((p) => p.finixTransferId).filter((id): id is string => Boolean(id));
+  const transferIds = await getOwnPaymentTransferIds(auth.churchId, scopedUserId);
   // No matching transfer IDs -> deliberately return an impossible filter
   // rather than an empty `in: []` (Prisma treats `in: []` as "match
   // nothing" too, but being explicit here avoids relying on that subtlety).
@@ -156,11 +162,7 @@ export async function buildRefundScope(
   if (scopedUserId === null) {
     return { churchId: auth.churchId };
   }
-  const ownPayments = await prisma.payment.findMany({
-    where: { churchId: auth.churchId, attributedUserId: scopedUserId },
-    select: { finixTransferId: true },
-  });
-  const transferIds = ownPayments.map((p) => p.finixTransferId).filter((id): id is string => Boolean(id));
+  const transferIds = await getOwnPaymentTransferIds(auth.churchId, scopedUserId);
   if (transferIds.length === 0) {
     return { churchId: auth.churchId, id: "__no_match__" };
   }

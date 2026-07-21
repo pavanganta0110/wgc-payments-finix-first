@@ -94,29 +94,35 @@ export default async function MerchantDashboardPage({
   const [transfers, disputes, refunds, authorizations, settlements, deposits] = await Promise.all([
     prisma.finixTransfer.findMany({
       where: { ...transferScope, ...(dateFilter ? { createdAtFinix: dateFilter } : {}) },
+      select: { state: true, amountCents: true, createdAtFinix: true },
     }),
     scopedUserId
       ? Promise.resolve([])
       : prisma.finixDispute.findMany({
           where: { churchId, ...(dateFilter ? { createdAtFinix: dateFilter } : {}) },
+          select: { state: true, amountCents: true, createdAtFinix: true },
         }),
     prisma.finixRefundOrReversal.findMany({
       where: { ...refundScope, ...(dateFilter ? { createdAtFinix: dateFilter } : {}) },
+      select: { state: true, amountCents: true, createdAtFinix: true },
     }),
     scopedUserId
       ? Promise.resolve([])
       : prisma.finixAuthorization.findMany({
           where: { churchId, ...(dateFilter ? { createdAtFinix: dateFilter } : {}) },
+          select: { state: true, amountCents: true, amountRequestedCents: true, isVoid: true, voidState: true, createdAtFinix: true },
         }),
     scopedUserId
       ? Promise.resolve([])
       : prisma.finixSettlement.findMany({
           where: { churchId, ...(dateFilter ? { createdAtFinix: dateFilter } : {}) },
+          select: { totalAmountCents: true, createdAtFinix: true },
         }),
     scopedUserId
       ? Promise.resolve([])
       : prisma.finixFundingTransferAttempt.findMany({
           where: { churchId, ...(dateFilter ? { createdAtFinix: dateFilter } : {}) },
+          select: { state: true, amountCents: true, createdAtFinix: true },
         }),
   ]);
 

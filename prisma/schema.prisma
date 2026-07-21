@@ -433,6 +433,7 @@ model Church {
   supportTickets          SupportTicket[]
   bankAccounts            OrganizationBankAccount[]
   complianceForms         ComplianceForm[]
+  synchronizationStates   SynchronizationState[]
 }
 
 /// Mirrors Finix's `Compliance Form` resource (PCI SAQ attestation). Finix
@@ -1050,6 +1051,7 @@ model FinixTransfer {
   lastReconciledAt         DateTime?
 
   @@index([churchId, finixSubscriptionId])
+  @@index([churchId, createdAtFinix])
 }
 
 model FinixRefundOrReversal {
@@ -1078,6 +1080,8 @@ model FinixRefundOrReversal {
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
   lastSyncedAt            DateTime?
+
+  @@index([churchId, createdAtFinix])
 }
 
 // A real ACH return (NACHA reason code), distinct from FinixRefundOrReversal
@@ -1218,6 +1222,7 @@ model FinixFundingTransferAttempt {
 
   @@index([churchId])
   @@index([finixSettlementId])
+  @@index([churchId, createdAtFinix])
 }
 
 model FinixDispute {
@@ -1252,6 +1257,7 @@ model FinixDispute {
 
   @@index([churchId])
   @@index([evidenceDueAt])
+  @@index([churchId, createdAtFinix])
 }
 
 // Metadata-only record of a dispute-evidence upload — the actual file bytes
@@ -1731,6 +1737,8 @@ model FinixAuthorization {
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
   lastSyncedAt             DateTime?
+
+  @@index([churchId, createdAtFinix])
 }
 
 // A configurable, trackable donation link — distinct from the simpler
@@ -1926,4 +1934,23 @@ model AnnualDonationStatementLine {
   createdAt DateTime @default(now())
 
   @@index([annualStatementId])
+}
+
+model SynchronizationState {
+  id               String    @id @default(cuid())
+  churchId         String
+  syncType         String
+  lastAttemptedAt  DateTime?
+  lastSuccessfulAt DateTime?
+  resultCount      Int       @default(0)
+  lastErrorAt      DateTime?
+  lastErrorCode    String?
+  lockedUntil      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  church Church @relation(fields: [churchId], references: [id], onDelete: Cascade)
+
+  @@unique([churchId, syncType])
+  @@index([syncType, lastSuccessfulAt])
 }

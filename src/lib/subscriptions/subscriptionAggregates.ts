@@ -125,11 +125,14 @@ export async function loadSubscriptionCandidates(churchId: string, filters: Subs
   // bounded and throttled (see subscriptionReconciliation.ts), so opening
   // either the Subscriptions or Recurring Donors page never permanently
   // shows a stale nextBillingDate/state/donor linkage.
-  try {
-    await reconcileStaleActiveSubscriptions(churchId);
-  } catch (err) {
-    console.error("Stale-subscription reconciliation pass failed:", err);
-  }
+  const { after } = require("next/server");
+  after(async () => {
+    try {
+      await reconcileStaleActiveSubscriptions(churchId);
+    } catch (err) {
+      console.error("Stale-subscription reconciliation pass failed:", err);
+    }
+  });
 
   const subscriptions = await prisma.finixSubscription.findMany({
     where: {

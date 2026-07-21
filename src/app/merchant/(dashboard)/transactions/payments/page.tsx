@@ -55,11 +55,14 @@ export default async function PaymentsListPage({
   // bounded and throttled (see paymentReconciliation.ts), so a payment
   // stuck showing PENDING is corrected on the next page view instead of
   // needing a redeploy or manual intervention.
-  try {
-    await reconcilePendingPayments(churchId);
-  } catch (err) {
-    console.error("Pending-payment reconciliation pass failed:", err);
-  }
+  const { after } = require("next/server");
+  after(async () => {
+    try {
+      await reconcilePendingPayments(churchId);
+    } catch (err) {
+      console.error("Pending-payment reconciliation pass failed:", err);
+    }
+  });
 
   const transfers = await prisma.finixTransfer.findMany({
     where: {

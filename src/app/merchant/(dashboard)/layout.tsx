@@ -39,7 +39,15 @@ export default async function MerchantDashboardLayout({
     redirect("/merchant/login");
   }
 
-  await reconcileComplianceFormsForChurch(auth.churchId);
+  const { after } = require("next/server");
+  after(async () => {
+    try {
+      await reconcileComplianceFormsForChurch(auth.churchId);
+    } catch (err) {
+      console.error("Compliance sync background task failed:", err);
+    }
+  });
+
   const complianceForm = await prisma.complianceForm.findFirst({
     where: { churchId: auth.churchId },
     orderBy: { createdAt: "desc" },

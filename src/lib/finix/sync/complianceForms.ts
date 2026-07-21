@@ -59,21 +59,81 @@ export async function upsertComplianceFormFromFinix(churchId: string, finixMerch
   });
 }
 
-/**
- * Self-healing fallback: fetches any Compliance Forms Finix has on file for
- * this merchant that we don't already have locally (or haven't refreshed
- * recently), independent of whether their creation/update webhook ever
- * arrived. Throttled + read-mostly, safe to call on every dashboard load.
- */
+export const SYNC_TYPES = {
+  FINIX_COMPLIANCE_FORMS: "FINIX_COMPLIANCE_FORMS",
+};
+
+export const COMPLIANCE_SYNC_COOLDOWN_MS = 60 * 60 * 1000;       // 1 hour for success
+export const COMPLIANCE_SYNC_RETRY_COOLDOWN_MS = 5 * 60 * 1000;  // 5 minutes for failure
+export const COMPLIANCE_SYNC_LEASE_MS = 30 * 1000;               // 30 seconds concurrency lease lock
+
 export async function reconcileComplianceFormsForChurch(churchId: string): Promise<void> {
   const church = await prisma.church.findUnique({ where: { id: churchId } });
   if (!church?.finixMerchantId) return;
 
-  const mostRecent = await prisma.complianceForm.findFirst({
-    where: { churchId },
-    orderBy: { lastReconciledAt: "desc" },
+  const now = new Date();
+  const state = await prisma.synchronizationState.findUnique({
+    where: { churchId_syncType: { churchId, syncType: SYNC_TYPES.FINIX_COMPLIANCE_FORMS } }
   });
-  if (!isStaleEnoughToReconcile(mostRecent?.lastReconciledAt)) return;
+
+  if (state) {
+    // 1. Success throttle (1 hour)
+    if (state.lastSuccessfulAt && now.getTime() - state.lastSuccessfulAt.getTime() < COMPLIANCE_SYNC_COOLDOWN_MS) {
+      return;
+    }
+    // 2. Retry throttle (5 minutes)
+    if (state.lastErrorAt && (!state.lastSuccessfulAt || state.lastErrorAt > state.lastSuccessfulAt) && now.getTime() - state.lastErrorAt.getTime() < COMPLIANCE_SYNC_RETRY_COOLDOWN_MS) {
+      return;
+    }
+    // 3. Concurrency lease lock check (30 seconds)
+    if (state.lockedUntil && now.getTime() < state.lockedUntil.getTime()) {
+      return;
+    }
+  }
+
+  // Acquire the concurrency lease lock atomically
+  const lockedUntil = new Date(now.getTime() + COMPLIANCE_SYNC_LEASE_MS);
+  const affected = await prisma.synchronizationState.updateMany({
+    where: {
+      churchId,
+      syncType: SYNC_TYPES.FINIX_COMPLIANCE_FORMS,
+      OR: [
+        { lockedUntil: null },
+        { lockedUntil: { lte: now } }
+      ]
+    },
+    data: {
+      lockedUntil,
+      lastAttemptedAt: now
+    }
+  });
+
+  if (affected.count === 0) {
+    try {
+      await prisma.synchronizationState.create({
+        data: {
+          churchId,
+          syncType: SYNC_TYPES.FINIX_COMPLIANCE_FORMS,
+          lockedUntil,
+          lastAttemptedAt: now
+        }
+      });
+    } catch (err) {
+      return;
+    }
+  }
+
+  // Double-checked lock validation: reload the state to verify if a concurrent process completed a fresh sync
+  const freshState = await prisma.synchronizationState.findUnique({
+    where: { churchId_syncType: { churchId, syncType: SYNC_TYPES.FINIX_COMPLIANCE_FORMS } }
+  });
+  if (freshState && freshState.lastSuccessfulAt && new Date().getTime() - freshState.lastSuccessfulAt.getTime() < COMPLIANCE_SYNC_COOLDOWN_MS) {
+    await prisma.synchronizationState.update({
+      where: { churchId_syncType: { churchId, syncType: SYNC_TYPES.FINIX_COMPLIANCE_FORMS } },
+      data: { lockedUntil: null }
+    });
+    return;
+  }
 
   try {
     const response = await finixClient.listComplianceFormsForMerchant(church.finixMerchantId);
@@ -81,8 +141,32 @@ export async function reconcileComplianceFormsForChurch(churchId: string): Promi
     for (const raw of forms) {
       await upsertComplianceFormFromFinix(churchId, church.finixMerchantId!, raw);
     }
+
+    // Success: Update synchronization state
+    await prisma.synchronizationState.update({
+      where: { churchId_syncType: { churchId, syncType: SYNC_TYPES.FINIX_COMPLIANCE_FORMS } },
+      data: {
+        lastSuccessfulAt: new Date(),
+        resultCount: forms.length,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lockedUntil: null
+      }
+    });
   } catch (err) {
     console.error("Compliance form reconciliation failed", { churchId, error: err });
+    const errorCode = err instanceof Error ? err.name || err.message : String(err);
+    const sanitizedCode = errorCode.substring(0, 100);
+
+    // Failure: Record error and release the lock to observe retry cooldown
+    await prisma.synchronizationState.update({
+      where: { churchId_syncType: { churchId, syncType: SYNC_TYPES.FINIX_COMPLIANCE_FORMS } },
+      data: {
+        lastErrorAt: new Date(),
+        lastErrorCode: sanitizedCode,
+        lockedUntil: null
+      }
+    });
   }
 }
 
