@@ -2,7 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { parseBrandingSettings, DEFAULT_BRANDING_SETTINGS } from '../types';
 import { PATCH } from '@/app/api/merchant/giving-links/[id]/route';
 import { prisma } from '@/lib/prisma';
-import { getSession } from '@/lib/auth/session';
+import { UnauthorizedError } from '@/lib/auth/errors';
+
+const mockCookieStore = { get: vi.fn(), set: vi.fn(), delete: vi.fn() };
+vi.mock("next/headers", () => ({
+  cookies: vi.fn(async () => mockCookieStore),
+}));
+
+vi.mock('@/lib/auth/requireMerchantSession', () => ({
+  requireMerchantSession: vi.fn(),
+  isAuthError: vi.fn((err: any) => err instanceof Error && err.name === 'UnauthorizedError'),
+}));
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -55,7 +65,8 @@ describe('Branding Settings for Giving Links', () => {
   });
 
   it('Unauthorized users cannot change branding settings (PATCH link)', async () => {
-    vi.mocked(getSession).mockResolvedValue(null);
+    const { requireMerchantSession } = await import('@/lib/auth/requireMerchantSession');
+    vi.mocked(requireMerchantSession).mockRejectedValue(new UnauthorizedError('Unauthorized'));
 
     const req = new Request('http://localhost/api/merchant/giving-links/link-123', {
       method: 'PATCH',
@@ -67,13 +78,8 @@ describe('Branding Settings for Giving Links', () => {
   });
 
   it('Non-admin users cannot change branding settings (PATCH link)', async () => {
-    vi.mocked(getSession).mockResolvedValue({
-      userId: 'user-123',
-      churchId: 'church-123',
-      role: 'wgc_admin',
-      email: 'admin@example.com',
-      exp: 9999999999,
-    });
+    const { requireMerchantSession } = await import('@/lib/auth/requireMerchantSession');
+    vi.mocked(requireMerchantSession).mockRejectedValue(new UnauthorizedError('Unauthorized'));
 
     const req = new Request('http://localhost/api/merchant/giving-links/link-123', {
       method: 'PATCH',
@@ -85,13 +91,16 @@ describe('Branding Settings for Giving Links', () => {
   });
 
   it('Authorized church_admin can update branding settings (PATCH link)', async () => {
-    vi.mocked(getSession).mockResolvedValue({
+    const { requireMerchantSession } = await import('@/lib/auth/requireMerchantSession');
+    vi.mocked(requireMerchantSession).mockResolvedValue({
       userId: 'user-123',
       churchId: 'church-123',
       role: 'church_admin',
       email: 'admin@example.com',
-      exp: 9999999999,
-    });
+      sessionSource: 'cookie',
+      activeScope: { type: 'ENTIRE_ORGANIZATION', scopeKey: 'ENTIRE_ORGANIZATION', churchId: 'church-123', label: 'Entire Organization' },
+      effectiveScope: { type: 'ENTIRE_ORGANIZATION', scopeKey: 'ENTIRE_ORGANIZATION', churchId: 'church-123', label: 'Entire Organization' },
+    } as any);
 
     vi.mocked(prisma.givingLink.findFirst).mockResolvedValue({
       id: 'link-123',

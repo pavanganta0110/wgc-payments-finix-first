@@ -69,7 +69,7 @@ export default function ChurchesPage() {
                   Payment rails for <span className="text-wgc-gold-500 italic font-playfair pr-2">churches</span>, nonprofits, and other 501(c) organizations
                 </h1>
                 <p className="text-lg md:text-xl text-white/80 max-w-2xl mx-auto mb-10 leading-relaxed">
-                  WGC Payments helps churches, nonprofits, and other 501(c) organizations accept digital donations through our secure Finix-powered onboarding and payment infrastructure.
+                  WGC Payments helps churches, nonprofits, and other 501(c) organizations accept digital donations through our secure onboarding and payment infrastructure.
                 </p>
                 <div className="flex flex-col sm:flex-row justify-center gap-6">
                   <Link href="/start" className="metallic-gold inline-flex items-center justify-center px-10 py-5 text-[13px] font-bold rounded-2xl transition-all shadow-2xl hover:-translate-y-1 tracking-wide">
