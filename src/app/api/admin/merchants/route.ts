@@ -103,13 +103,39 @@ export async function GET(req: Request) {
         c.id,
         c.name,
         c.status,
-        c."primaryOwnerUserId",
-        u.name AS "primaryOwnerName",
-        u.email AS "primaryOwnerEmail",
+        COALESCE(
+          c."primaryOwnerUserId",
+          (SELECT u_f.id FROM "User" u_f WHERE u_f."churchId" = c.id AND u_f.role IN ('CHURCH_ADMIN', 'church_admin', 'ADMIN', 'admin', 'OWNER', 'owner') ORDER BY u_f."createdAt" ASC LIMIT 1),
+          (SELECT u_f.id FROM "User" u_f WHERE u_f."churchId" = c.id ORDER BY u_f."createdAt" ASC LIMIT 1)
+        ) AS "resolvedPrimaryOwnerUserId",
+        COALESCE(
+          u.name,
+          (SELECT u_f.name FROM "User" u_f WHERE u_f."churchId" = c.id AND u_f.role IN ('CHURCH_ADMIN', 'church_admin', 'ADMIN', 'admin', 'OWNER', 'owner') ORDER BY u_f."createdAt" ASC LIMIT 1),
+          (SELECT u_f.name FROM "User" u_f WHERE u_f."churchId" = c.id ORDER BY u_f."createdAt" ASC LIMIT 1)
+        ) AS "primaryOwnerName",
+        COALESCE(
+          u.email,
+          (SELECT u_f.email FROM "User" u_f WHERE u_f."churchId" = c.id AND u_f.role IN ('CHURCH_ADMIN', 'church_admin', 'ADMIN', 'admin', 'OWNER', 'owner') ORDER BY u_f."createdAt" ASC LIMIT 1),
+          (SELECT u_f.email FROM "User" u_f WHERE u_f."churchId" = c.id ORDER BY u_f."createdAt" ASC LIMIT 1)
+        ) AS "primaryOwnerEmail",
         c."createdAt",
         c."updatedAt" AS "lastActivity",
-        oa.status AS "onboardingStatus",
-        fms."merchantState" AS "merchantActivationStatus",
+        COALESCE(
+          CASE 
+            WHEN c."finixMerchantId" IS NOT NULL THEN 'APPROVED'
+            WHEN oa.status IN ('APPROVED', 'COMPLETED', 'ACTIVE') THEN 'APPROVED'
+            ELSE oa.status
+          END,
+          fms."onboardingState",
+          CASE WHEN c."finixMerchantId" IS NOT NULL THEN 'APPROVED' ELSE 'UNDER_REVIEW' END
+        ) AS "onboardingStatus",
+        COALESCE(
+          fms."merchantState",
+          CASE 
+            WHEN c."finixMerchantId" IS NOT NULL OR c.status IN ('ACTIVE', 'APPROVED', 'COMPLETED') THEN 'APPROVED'
+            ELSE 'PENDING'
+          END
+        ) AS "merchantActivationStatus",
         (SELECT COUNT(*) FROM "User" u2 WHERE u2."churchId" = c.id) AS "usersCount",
         (SELECT COUNT(*) FROM "User" u2 WHERE u2."churchId" = c.id AND u2."disabledAt" IS NULL) AS "activeUsersCount",
         (SELECT COUNT(*) FROM "User" u2 WHERE u2."churchId" = c.id AND u2."disabledAt" IS NOT NULL) AS "disabledUsersCount",
@@ -133,15 +159,15 @@ export async function GET(req: Request) {
       id: m.id,
       name: m.name,
       status: m.status,
-      primaryOwner: m.primaryOwnerUserId ? {
-        id: m.primaryOwnerUserId,
+      primaryOwner: (m.resolvedPrimaryOwnerUserId || m.primaryOwnerEmail) ? {
+        id: m.resolvedPrimaryOwnerUserId || "",
         name: m.primaryOwnerName,
         email: m.primaryOwnerEmail
       } : null,
       createdAt: m.createdAt,
       lastActivity: m.lastActivity,
-      onboardingStatus: m.onboardingStatus,
-      merchantActivationStatus: m.merchantActivationStatus,
+      onboardingStatus: m.onboardingStatus || (m.status === 'ACTIVE' ? 'APPROVED' : 'UNDER_REVIEW'),
+      merchantActivationStatus: m.merchantActivationStatus || (m.status === 'ACTIVE' ? 'APPROVED' : 'PENDING'),
       counts: {
         users: Number(m.usersCount),
         active: Number(m.activeUsersCount),

@@ -43,10 +43,24 @@ export default async function MerchantOverviewPage({ params }: { params: { churc
     prisma.donor.count({ where: { churchId } }),
     prisma.finixSubscription.count({ where: { churchId, state: "ACTIVE" } }),
     prisma.supportTicket.count({ where: { churchId } }),
-    prisma.user.findFirst({
-      where: { churchId, role: "OWNER" },
-      orderBy: { createdAt: "asc" }
-    })
+    (async () => {
+      if (church.primaryOwnerUserId) {
+        const owner = await prisma.user.findUnique({ where: { id: church.primaryOwnerUserId } });
+        if (owner) return owner;
+      }
+      const adminUser = await prisma.user.findFirst({
+        where: {
+          churchId,
+          role: { in: ["CHURCH_ADMIN", "church_admin", "ADMIN", "admin", "OWNER", "owner"] }
+        },
+        orderBy: { createdAt: "asc" }
+      });
+      if (adminUser) return adminUser;
+      return prisma.user.findFirst({
+        where: { churchId },
+        orderBy: { createdAt: "asc" }
+      });
+    })()
   ]);
 
   const stats = [
@@ -108,7 +122,7 @@ export default async function MerchantOverviewPage({ params }: { params: { churc
               <dd className="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
                 {primaryOwner ? (
                   <div className="flex flex-col">
-                    <span>{primaryOwner.name}</span>
+                    <span>{primaryOwner.name || primaryOwner.email}</span>
                     <span className="text-gray-500">{primaryOwner.email}</span>
                   </div>
                 ) : (
@@ -119,7 +133,11 @@ export default async function MerchantOverviewPage({ params }: { params: { churc
             <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt className="text-sm font-medium text-gray-900">Onboarding Status</dt>
               <dd className="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
-                {onboardingApplication ? onboardingApplication.status : "No Application"}
+                {church.finixMerchantId
+                  ? "APPROVED"
+                  : onboardingApplication
+                  ? (onboardingApplication.status === "COMPLETED" ? "APPROVED" : onboardingApplication.status)
+                  : "No Application"}
               </dd>
             </div>
           </dl>

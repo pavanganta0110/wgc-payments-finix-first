@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { 
   Search, 
   Filter, 
@@ -9,7 +10,8 @@ import {
   MoreHorizontal, 
   Store, 
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  ExternalLink
 } from "lucide-react";
 
 interface MerchantData {
@@ -219,9 +221,12 @@ export default function MerchantsDirectoryPage() {
                 merchants.map((merchant) => (
                   <tr key={merchant.id || Math.random().toString()} className="hover:bg-slate-50/70 transition-colors group">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
+                      <Link 
+                        href={`/admin/merchants/${merchant.id}`}
+                        className="font-semibold text-slate-900 hover:text-indigo-600 hover:underline transition-colors block"
+                      >
                         {merchant.name || "Unknown Merchant"}
-                      </div>
+                      </Link>
                       <div className="text-xs text-slate-400 font-mono mt-0.5">
                         {merchant.id}
                       </div>
@@ -272,9 +277,13 @@ export default function MerchantsDirectoryPage() {
                       {formatDate(merchant.createdAt)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <button className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
-                        <MoreHorizontal className="h-5 w-5" />
-                      </button>
+                      <Link
+                        href={`/admin/merchants/${merchant.id}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 rounded-lg text-xs font-semibold transition-colors shadow-sm"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        View Profile
+                      </Link>
                     </td>
                   </tr>
                 ))
