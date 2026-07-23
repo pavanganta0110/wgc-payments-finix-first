@@ -7,12 +7,19 @@ function formatCurrency(cents: number | null | undefined, currency: string = "US
   return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
 }
 
-export default async function MerchantTransactionsPage({ params, searchParams }: { params: { churchId: string }; searchParams: { search?: string } }) {
+export default async function MerchantTransactionsPage({
+  params,
+  searchParams
+}: {
+  params: Promise<{ churchId: string }> | { churchId: string };
+  searchParams: Promise<{ search?: string }> | { search?: string };
+}) {
   const session = await getAdminSession();
   if (!session) redirect("/admin/login");
 
-  const { churchId } = params;
-  const search = searchParams.search || "";
+  const { churchId } = await Promise.resolve(params);
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  const search = resolvedSearchParams?.search || "";
 
   // Query FinixTransfers
   let transfers = await prisma.finixTransfer.findMany({

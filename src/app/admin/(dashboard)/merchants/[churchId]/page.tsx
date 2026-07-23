@@ -4,12 +4,11 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { formatCents } from "@/lib/format";
 
-export default async function MerchantOverviewPage({ params }: { params: { churchId: string } }) {
+export default async function MerchantOverviewPage({ params }: { params: Promise<{ churchId: string }> | { churchId: string } }) {
   const session = await getAdminSession();
   if (!session) redirect("/admin/login");
   
-  // Await params per Next.js 15+ best practices if applicable, or just use it.
-  const churchId = params.churchId;
+  const { churchId } = await Promise.resolve(params);
   const church = await prisma.church.findUnique({
     where: { id: churchId },
   });

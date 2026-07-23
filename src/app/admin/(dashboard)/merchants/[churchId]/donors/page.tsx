@@ -7,11 +7,11 @@ function formatCurrency(cents: number | null | undefined, currency: string = "US
   return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
 }
 
-export default async function MerchantDonorsPage({ params }: { params: { churchId: string } }) {
+export default async function MerchantDonorsPage({ params }: { params: Promise<{ churchId: string }> | { churchId: string } }) {
   const session = await getAdminSession();
   if (!session) redirect("/admin/login");
 
-  const { churchId } = params;
+  const { churchId } = await Promise.resolve(params);
 
   const donorStats = await prisma.$queryRaw<
     Array<{
