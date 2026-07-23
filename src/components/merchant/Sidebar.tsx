@@ -24,6 +24,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import GatewayIcon from "@/components/ui/GatewayIcon";
 
 interface NavItem {
   name: string;
@@ -111,6 +112,11 @@ export default function Sidebar({ role }: { role?: string } = {}) {
         collapsed ? "w-20" : "w-64"
       )}
     >
+      <div className={cn("flex items-center mb-6 px-2", collapsed ? "justify-center" : "gap-2")}>
+        <GatewayIcon className="h-8 w-auto shrink-0" />
+        {!collapsed && <span className="text-lg font-bold tracking-[0.05em] text-[#010409]">WGC</span>}
+      </div>
+
       <div className={cn("flex mb-4 px-1", collapsed ? "justify-center" : "justify-end")}>
         <button
           onClick={toggle}
