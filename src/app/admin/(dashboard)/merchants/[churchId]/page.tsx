@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { formatCents } from "@/lib/format";
+import { checkNonprofitVerificationStatus } from "@/lib/onboarding/nonprofitVerificationGuard";
 
 export default async function MerchantOverviewPage({ params }: { params: Promise<{ churchId: string }> | { churchId: string } }) {
   const session = await getAdminSession();

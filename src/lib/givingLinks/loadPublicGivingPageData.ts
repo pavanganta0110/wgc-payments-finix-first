@@ -60,8 +60,6 @@ export async function loadPublicGivingPageData(slug: string): Promise<PublicGivi
   }
 
   const status = resolveGivingLinkStatus(link);
-  const branding = parseBrandingSettings(link.brandingSettingsJson);
-  const light = branding.light;
 
   if (status !== "ACTIVE") {
     const message =
