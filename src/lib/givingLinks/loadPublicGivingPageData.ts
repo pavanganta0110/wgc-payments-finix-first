@@ -89,7 +89,7 @@ export async function loadPublicGivingPageData(slug: string): Promise<PublicGivi
   // only used once Google has approved WGC's production Google Pay access —
   // otherwise every environment (including live Finix) runs Google Pay TEST.
   const googlePayGatewayMerchantId = process.env.FINIX_APPLICATION_OWNER_ID || null;
-  const googlePayMerchantId = process.env.GOOGLE_PAY_MERCHANT_ID || null;
+  const googlePayMerchantId = process.env.NEXT_PUBLIC_GOOGLE_PAY_MERCHANT_ID || null;
   const googlePayEnvironment: "TEST" | "PRODUCTION" =
     process.env.NEXT_PUBLIC_FINIX_ENV === "live" && process.env.GOOGLE_PAY_PRODUCTION_APPROVED === "true"
       ? "PRODUCTION"

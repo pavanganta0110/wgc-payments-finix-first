@@ -95,7 +95,7 @@ export async function getPaymentMethodAvailability(churchId: string): Promise<Pa
   );
   // FINIX_APPLICATION_OWNER_ID is what's actually required to build a valid
   // Google Pay request (it's the gatewayMerchantId — see loadPublicGivingPageData.ts
-  // and googlePay.ts). GOOGLE_PAY_MERCHANT_ID (Google's own merchantInfo.merchantId)
+  // and googlePay.ts). NEXT_PUBLIC_GOOGLE_PAY_MERCHANT_ID (Google's own merchantInfo.merchantId)
   // is real but per Google's own docs is "Required when PaymentsClient is
   // initialized with an environment property of PRODUCTION" — optional in
   // TEST. Gating "configured" on it unconditionally meant Google Pay could
