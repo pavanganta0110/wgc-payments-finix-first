@@ -128,13 +128,25 @@ export function buildSubscriptionScope(
  * adding attribution to a second table. Organization scope skips the
  * lookup entirely (still just churchId, including unattributed transfers).
  */
+// Every FinixTransfer row this scope produces is meant to represent a
+// donor payment. Finix also writes rows here for its own merchant
+// funding/settlement transfers (subtype starting "SETTLEMENT_" — e.g.
+// SETTLEMENT_MERCHANT, SETTLEMENT_NOOP — money moving OUT to the org's
+// bank account, not a donation coming in). Those never have a matching
+// Payment row and must be excluded everywhere this scope is used
+// (Payments list/detail/export/receipt, dashboard volume, donor payment
+// history, insights) rather than patched per call site.
+export const EXCLUDE_NON_DONATION_TRANSFERS: Prisma.FinixTransferWhereInput = {
+  OR: [{ subtype: null }, { NOT: { subtype: { contains: "SETTLEMENT" } } }],
+};
+
 export async function buildFinixTransferScope(
   auth: MerchantAuthContext,
   viewScope: ViewScope | ResolvedViewScope
 ): Promise<Prisma.FinixTransferWhereInput> {
   const scopedUserId = resolveScopedUserId(auth, viewScope);
   if (scopedUserId === null) {
-    return { churchId: auth.churchId };
+    return { churchId: auth.churchId, ...EXCLUDE_NON_DONATION_TRANSFERS };
   }
   const transferIds = await getOwnPaymentTransferIds(auth.churchId, scopedUserId);
   // No matching transfer IDs -> deliberately return an impossible filter
@@ -143,7 +155,7 @@ export async function buildFinixTransferScope(
   if (transferIds.length === 0) {
     return { churchId: auth.churchId, id: "__no_match__" };
   }
-  return { churchId: auth.churchId, finixTransferId: { in: transferIds } };
+  return { churchId: auth.churchId, finixTransferId: { in: transferIds }, ...EXCLUDE_NON_DONATION_TRANSFERS };
 }
 
 /**

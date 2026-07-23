@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { isAuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/prisma";
+import { EXCLUDE_NON_DONATION_TRANSFERS } from "@/lib/auth/scopes";
 
 /**
  * Basic dashboard summary for the logged-in church admin. Every query is
@@ -26,12 +27,12 @@ export async function GET() {
   const [grossVolumeAgg, recentTransfers, transactionCount, disputeCount] = await Promise.all([
     // Aggregate in DB — never load all transfers into memory
     prisma.finixTransfer.aggregate({
-      where: { churchId: auth.churchId, state: "SUCCEEDED" },
+      where: { churchId: auth.churchId, state: "SUCCEEDED", ...EXCLUDE_NON_DONATION_TRANSFERS },
       _sum: { amountCents: true },
       _count: { _all: true },
     }),
     prisma.finixTransfer.findMany({
-      where: { churchId: auth.churchId },
+      where: { churchId: auth.churchId, ...EXCLUDE_NON_DONATION_TRANSFERS },
       orderBy: { createdAtFinix: "desc" },
       take: 10,
       select: {
@@ -43,7 +44,7 @@ export async function GET() {
         createdAtFinix: true,
       },
     }),
-    prisma.finixTransfer.count({ where: { churchId: auth.churchId } }),
+    prisma.finixTransfer.count({ where: { churchId: auth.churchId, ...EXCLUDE_NON_DONATION_TRANSFERS } }),
     prisma.finixDispute.count({ where: { churchId: auth.churchId } }),
   ]);
 

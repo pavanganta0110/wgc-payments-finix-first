@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { MerchantAuthContext } from "@/lib/auth/requireMerchantSession";
-import { buildGivingLinkScope, buildPaymentScope, buildSubscriptionScope } from "@/lib/auth/scopes";
+import { buildGivingLinkScope, buildPaymentScope, buildSubscriptionScope, buildFinixTransferScope } from "@/lib/auth/scopes";
 
 function makeAuth(overrides: Partial<MerchantAuthContext> = {}): MerchantAuthContext {
   return {
@@ -34,6 +34,23 @@ describe("buildGivingLinkScope", () => {
     const scope = buildGivingLinkScope(auth, { kind: "user", userId: "target-9" });
     expect(scope).toEqual({ churchId: "church-a", ownerUserId: "target-9" });
     expect(scope.ownerUserId).not.toBeNull();
+  });
+});
+
+describe("buildFinixTransferScope", () => {
+  // Regression guard for a real production bug: this exclusion was
+  // completely absent from the live deployment (present only in a
+  // sandbox copy of this file) — Finix's own merchant funding/settlement
+  // transfers (SETTLEMENT_MERCHANT, SETTLEMENT_NOOP, no donor, no Payment
+  // row) were showing up in the merchant-facing Payments list, Home
+  // dashboard, and Insights as unattributed "transactions".
+  it("organization-wide scope excludes Finix settlement/payout transfers", async () => {
+    const auth = makeAuth({ role: "owner", rawRole: "owner", userId: "owner-1" });
+    const scope = await buildFinixTransferScope(auth, { kind: "organization" });
+    expect(scope).toEqual({
+      churchId: "church-a",
+      OR: [{ subtype: null }, { NOT: { subtype: { contains: "SETTLEMENT" } } }],
+    });
   });
 });
 

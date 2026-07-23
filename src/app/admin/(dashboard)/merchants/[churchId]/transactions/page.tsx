@@ -1,6 +1,7 @@
 import { getAdminSession } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { EXCLUDE_NON_DONATION_TRANSFERS } from "@/lib/auth/scopes";
 
 function formatCurrency(cents: number | null | undefined, currency: string = "USD") {
   if (cents == null) return "-";
@@ -21,9 +22,13 @@ export default async function MerchantTransactionsPage({
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const search = resolvedSearchParams?.search || "";
 
-  // Query FinixTransfers
+  // Query FinixTransfers — excludes Finix's own merchant funding/
+  // settlement transfers (subtype starting SETTLEMENT_), which are
+  // payouts to the org's bank account, not donor transactions, and have
+  // no corresponding Payment row. Same exclusion as the merchant-facing
+  // Payments pages (buildFinixTransferScope).
   let transfers = await prisma.finixTransfer.findMany({
-    where: { churchId },
+    where: { churchId, ...EXCLUDE_NON_DONATION_TRANSFERS },
     orderBy: { createdAtFinix: "desc" },
     take: 100,
   });

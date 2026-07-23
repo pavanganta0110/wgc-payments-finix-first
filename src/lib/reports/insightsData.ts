@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import { startOfDayCentral } from "@/lib/formatDateTimeCDT";
+import { EXCLUDE_NON_DONATION_TRANSFERS } from "@/lib/auth/scopes";
 
 const CENTRAL_TIME_ZONE = "America/Chicago";
 
@@ -112,6 +113,7 @@ export async function getPaymentsInsights(
   const transfers = await prisma.finixTransfer.findMany({
     where: {
       churchId,
+      ...EXCLUDE_NON_DONATION_TRANSFERS,
       ...(dateFilter ? { createdAtFinix: dateFilter } : {}),
       ...(scopedTransferIds ? { finixTransferId: { in: scopedTransferIds } } : {}),
     },
@@ -284,6 +286,7 @@ export async function getRefundsInsights(
   const transfers = await prisma.finixTransfer.findMany({
     where: {
       churchId,
+      ...EXCLUDE_NON_DONATION_TRANSFERS,
       ...(dateFilter ? { createdAtFinix: dateFilter } : {}),
       ...(scopedTransferIds ? { finixTransferId: { in: scopedTransferIds } } : {}),
     },
@@ -362,6 +365,7 @@ export async function getDisputesInsights(
   const transfers = await prisma.finixTransfer.findMany({
     where: {
       churchId,
+      ...EXCLUDE_NON_DONATION_TRANSFERS,
       ...(dateFilter ? { createdAtFinix: dateFilter } : {}),
       ...(scopedTransferIds ? { finixTransferId: { in: scopedTransferIds } } : {}),
     },
@@ -434,6 +438,7 @@ export async function getBankReturnsInsights(
     where: {
       churchId,
       finixPaymentInstrumentId: { not: null },
+      ...EXCLUDE_NON_DONATION_TRANSFERS,
       ...(dateFilter ? { createdAtFinix: dateFilter } : {}),
       ...(scopedTransferIds ? { finixTransferId: { in: scopedTransferIds } } : {}),
     },
