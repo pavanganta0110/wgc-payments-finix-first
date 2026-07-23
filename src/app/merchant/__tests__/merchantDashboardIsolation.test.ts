@@ -23,7 +23,7 @@ describe("Merchant dashboard layout — no public marketing chrome", () => {
   });
 
   it("shows the WGC brand mark, not a merchant-uploaded logo — this dashboard is not white-labeled", () => {
-    expect(DASHBOARD_LAYOUT).toContain("GatewayIcon");
+    expect(DASHBOARD_LAYOUT).toContain("/wgc-email-logo.png");
     expect(DASHBOARD_LAYOUT).not.toContain("church.logoUrl");
   });
 });

@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import Sidebar from "@/components/merchant/Sidebar";
 import LogoutButton from "@/components/merchant/LogoutButton";
 import ComplianceBanner from "@/components/merchant/ComplianceBanner";
-import GatewayIcon from "@/components/ui/GatewayIcon";
 
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { reconcileComplianceFormsForChurch, resolveComplianceStatus } from "@/lib/finix/sync/complianceForms";
@@ -104,10 +103,9 @@ export default async function MerchantDashboardLayout({
                   mark, never a merchant-uploaded logo. Org-uploaded logos
                   (Settings > Branding) are for donor-facing giving pages
                   only, a separate concern. */}
-              <div className="w-10 h-10 shrink-0 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
-                <GatewayIcon className="w-7 h-7" />
-              </div>
-              <div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/wgc-email-logo.png" alt="WGC Payments" className="h-9 w-auto shrink-0" />
+              <div className="border-l border-slate-200 pl-3">
                 <h1 className="text-lg font-bold text-slate-900">{church.name}</h1>
                 <p className="text-[11px] text-slate-400">Powered by WGC Payments</p>
               </div>

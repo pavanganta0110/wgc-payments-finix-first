@@ -112,9 +112,13 @@ export default function Sidebar({ role }: { role?: string } = {}) {
         collapsed ? "w-20" : "w-64"
       )}
     >
-      <div className={cn("flex items-center mb-6 px-2", collapsed ? "justify-center" : "gap-2")}>
-        <GatewayIcon className="h-8 w-auto shrink-0" />
-        {!collapsed && <span className="text-lg font-bold tracking-[0.05em] text-[#010409]">WGC</span>}
+      <div className={cn("flex items-center mb-6 px-2", collapsed ? "justify-center" : "")}>
+        {collapsed ? (
+          <GatewayIcon className="h-8 w-auto shrink-0" />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/wgc-email-logo.png" alt="WGC Payments" className="w-full h-auto max-h-14 object-contain" />
+        )}
       </div>
 
       <div className={cn("flex mb-4 px-1", collapsed ? "justify-center" : "justify-end")}>
