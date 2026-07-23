@@ -89,11 +89,19 @@ export default async function PaymentsListPage({
   const transfers = await prisma.finixTransfer.findMany({
     where: {
       ...transferScope,
-      // subtype is null for most transfers (only bank returns set it) —
-      // NOT: { subtype: { contains: "RETURN" } } alone would silently
-      // exclude every null-subtype row too, since SQL's NOT NULL is NULL,
-      // not TRUE. OR-ing in the null case keeps the exclusion working.
-      OR: [{ subtype: null }, { NOT: { subtype: { contains: "RETURN" } } }],
+      // transferScope already carries its own top-level OR (the
+      // Finix-settlement exclusion from buildFinixTransferScope) — a
+      // second `OR:` key here would silently overwrite it via object
+      // spread, which is exactly what let SETTLEMENT_* transfers leak
+      // back into this donor-facing list. Nesting the return-exclusion
+      // inside AND keeps both OR filters in effect at once.
+      AND: [
+        // subtype is null for most transfers (only bank returns set it) —
+        // NOT: { subtype: { contains: "RETURN" } } alone would silently
+        // exclude every null-subtype row too, since SQL's NOT NULL is NULL,
+        // not TRUE. OR-ing in the null case keeps the exclusion working.
+        { OR: [{ subtype: null }, { NOT: { subtype: { contains: "RETURN" } } }] },
+      ],
       ...(state && !isRefundDerivedFilter ? { state } : {}),
       ...(dateFilter ? { createdAtFinix: dateFilter } : {}),
       ...(fundMatchedTransferIds ? { finixTransferId: { in: fundMatchedTransferIds } } : {}),

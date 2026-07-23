@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { Loader2, X } from "lucide-react";
 import SettingsSaveBar from "@/components/merchant/SettingsSaveBar";
 import { useUnsavedChangesWarning } from "@/lib/settings/useUnsavedChanges";
 
@@ -14,6 +16,8 @@ interface FormValues {
 }
 
 const inputClass = "w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400";
+const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"];
+const MAX_LOGO_SIZE = 5 * 1024 * 1024;
 
 function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
@@ -28,9 +32,12 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
 }
 
 export default function BrandingSettingsForm({ initial }: { initial: FormValues }) {
+  const router = useRouter();
   const [values, setValues] = useState<FormValues>(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isDirty = JSON.stringify(values) !== JSON.stringify(initial);
   useUnsavedChangesWarning(isDirty);
@@ -52,6 +59,7 @@ export default function BrandingSettingsForm({ initial }: { initial: FormValues 
       }
       toast.success("Branding saved");
       Object.assign(initial, values);
+      router.refresh();
     } catch (err: any) {
       setError(err.message || "Failed to save branding");
     } finally {
@@ -59,16 +67,100 @@ export default function BrandingSettingsForm({ initial }: { initial: FormValues 
     }
   };
 
+  const handleLogoFileSelected = async (file: File | undefined) => {
+    if (!file) return;
+    if (!ALLOWED_LOGO_TYPES.includes(file.type)) {
+      toast.error("Only PNG, JPG, JPEG, SVG, and WEBP files are supported.");
+      return;
+    }
+    if (file.size > MAX_LOGO_SIZE) {
+      toast.error("File too large. Maximum size is 5MB.");
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/merchant/settings/branding/logo-upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to upload logo");
+      }
+      set("logoUrl", data.logoUrl);
+      Object.assign(initial, { logoUrl: data.logoUrl });
+      toast.success("Logo uploaded");
+      router.refresh();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to upload logo");
+    } finally {
+      setUploadingLogo(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removeLogo = async () => {
+    setUploadingLogo(true);
+    try {
+      const res = await fetch("/api/merchant/settings/branding", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logoUrl: null }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to remove logo");
+      }
+      set("logoUrl", "");
+      Object.assign(initial, { logoUrl: "" });
+      toast.success("Logo removed");
+      router.refresh();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to remove logo");
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
   return (
     <div className="max-w-md space-y-6">
       <div>
-        <label className="block text-xs font-semibold text-slate-500 mb-1">Logo URL</label>
-        <input className={inputClass} value={values.logoUrl} onChange={(e) => set("logoUrl", e.target.value)} placeholder="https://…" />
+        <label className="block text-xs font-semibold text-slate-500 mb-1">Organization Logo</label>
+        <p className="text-xs text-slate-400 mb-2">PNG, JPG, JPEG, SVG, or WEBP. Max 5MB.</p>
         {values.logoUrl && (
-          <div className="mt-2 p-3 bg-slate-50 rounded-lg">
+          <div className="mb-2 flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={values.logoUrl} alt="Logo preview" className="h-10 object-contain" onError={(e) => ((e.target as HTMLImageElement).style.display = "none")} />
+            <img
+              src={values.logoUrl}
+              alt="Logo preview"
+              className="h-12 w-12 object-contain rounded-lg bg-white border border-slate-200"
+              onError={(e) => ((e.target as HTMLImageElement).style.visibility = "hidden")}
+            />
+            <button
+              type="button"
+              onClick={removeLogo}
+              disabled={uploadingLogo}
+              className="flex items-center gap-1 text-xs font-semibold text-red-600 hover:underline disabled:opacity-50"
+            >
+              <X className="w-3 h-3" /> Remove logo
+            </button>
           </div>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ALLOWED_LOGO_TYPES.join(",")}
+          onChange={(e) => handleLogoFileSelected(e.target.files?.[0])}
+          disabled={uploadingLogo}
+          className="block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+        />
+        {uploadingLogo && (
+          <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+            <Loader2 className="w-3 h-3 animate-spin" /> {values.logoUrl ? "Uploading…" : "Uploading…"}
+          </p>
         )}
       </div>
       <div>

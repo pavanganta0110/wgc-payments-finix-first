@@ -161,6 +161,7 @@ export default function Sidebar({ role }: { role?: string } = {}) {
                         <Link
                           key={child.href}
                           href={child.href}
+                          prefetch={false}
                           className={cn(
                             "block py-2 rounded-lg text-sm transition-colors",
                             isActive
@@ -184,6 +185,7 @@ export default function Sidebar({ role }: { role?: string } = {}) {
               key={item.href}
               href={item.href}
               title={collapsed ? item.name : undefined}
+              prefetch={false}
               className={cn(
                 "flex items-center gap-3 py-2.5 rounded-xl text-sm font-semibold transition-colors",
                 collapsed ? "justify-center px-2" : "px-4",

@@ -1,8 +1,10 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import Sidebar from "@/components/merchant/Sidebar";
 import LogoutButton from "@/components/merchant/LogoutButton";
 import ComplianceBanner from "@/components/merchant/ComplianceBanner";
+import OrgLogoBadge from "@/components/merchant/OrgLogoBadge";
 
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { reconcileComplianceFormsForChurch, resolveComplianceStatus } from "@/lib/finix/sync/complianceForms";
@@ -31,7 +33,16 @@ export default async function MerchantDashboardLayout({
     throw err;
   }
 
-  const church = await prisma.church.findUnique({ where: { id: auth.churchId } });
+  // Independent of each other — complianceForm only depends on
+  // auth.churchId, not on the church row — so these run as one parallel
+  // round trip instead of two sequential ones.
+  const [church, complianceForm] = await Promise.all([
+    prisma.church.findUnique({ where: { id: auth.churchId } }),
+    prisma.complianceForm.findFirst({
+      where: { churchId: auth.churchId },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
 
   if (!church) {
     redirect("/merchant/login");
@@ -46,10 +57,6 @@ export default async function MerchantDashboardLayout({
     }
   });
 
-  const complianceForm = await prisma.complianceForm.findFirst({
-    where: { churchId: auth.churchId },
-    orderBy: { createdAt: "desc" },
-  });
   const complianceStatus = resolveComplianceStatus(
     complianceForm ? { state: complianceForm.state, dueAt: complianceForm.dueAt } : null
   );
@@ -91,20 +98,13 @@ export default async function MerchantDashboardLayout({
         <Sidebar role={auth.role ?? undefined} />
         <div className="flex-grow flex flex-col min-w-0">
           <div className="flex items-center justify-between px-6 md:px-10 py-6 border-b border-slate-100 bg-white">
-            <div className="flex items-center gap-3">
-              {church.logoUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={church.logoUrl}
-                  alt={`${church.name} logo`}
-                  className="w-9 h-9 rounded-lg object-contain"
-                />
-              )}
+            <Link href="/merchant/dashboard" className="flex items-center gap-3">
+              <OrgLogoBadge logoUrl={church.logoUrl} orgName={church.name} />
               <div>
                 <h1 className="text-lg font-bold text-slate-900">{church.name}</h1>
                 <p className="text-[11px] text-slate-400">Powered by WGC Payments</p>
               </div>
-            </div>
+            </Link>
             <div className="flex items-center gap-4">
               {scopeSelector}
               <span className="text-sm text-slate-600 hidden md:inline">{auth.email}</span>
