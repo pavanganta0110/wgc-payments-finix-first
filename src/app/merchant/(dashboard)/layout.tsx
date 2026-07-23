@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import Sidebar from "@/components/merchant/Sidebar";
 import LogoutButton from "@/components/merchant/LogoutButton";
 import ComplianceBanner from "@/components/merchant/ComplianceBanner";
-import OrgLogoBadge from "@/components/merchant/OrgLogoBadge";
+import GatewayIcon from "@/components/ui/GatewayIcon";
 
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { reconcileComplianceFormsForChurch, resolveComplianceStatus } from "@/lib/finix/sync/complianceForms";
@@ -99,7 +99,14 @@ export default async function MerchantDashboardLayout({
         <div className="flex-grow flex flex-col min-w-0">
           <div className="flex items-center justify-between px-6 md:px-10 py-6 border-b border-slate-100 bg-white">
             <Link href="/merchant/dashboard" className="flex items-center gap-3">
-              <OrgLogoBadge logoUrl={church.logoUrl} orgName={church.name} />
+              {/* This is WGC's own dashboard product, not a white-labeled
+                  tool per organization — the header always shows the WGC
+                  mark, never a merchant-uploaded logo. Org-uploaded logos
+                  (Settings > Branding) are for donor-facing giving pages
+                  only, a separate concern. */}
+              <div className="w-10 h-10 shrink-0 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
+                <GatewayIcon className="w-7 h-7" />
+              </div>
               <div>
                 <h1 className="text-lg font-bold text-slate-900">{church.name}</h1>
                 <p className="text-[11px] text-slate-400">Powered by WGC Payments</p>
