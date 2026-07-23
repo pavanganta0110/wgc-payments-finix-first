@@ -74,7 +74,7 @@ export default function UserSupportActions({
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        {user.setPasswordTokenHash && (
+        {(!user.passwordHash && !user.lastLoginAt && user.setPasswordTokenHash) && (
           <button
             onClick={() => handleAction("RESEND_INVITE")}
             disabled={loading}

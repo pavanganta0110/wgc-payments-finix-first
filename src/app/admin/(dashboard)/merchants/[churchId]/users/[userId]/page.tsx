@@ -68,7 +68,7 @@ export default async function MerchantUserDetailsPage({
                 <span className="inline-flex rounded-full bg-red-100 px-2 text-xs font-semibold leading-5 text-red-800">
                   Disabled
                 </span>
-              ) : user.setPasswordTokenHash ? (
+              ) : (!user.passwordHash && !user.lastLoginAt && user.setPasswordTokenHash) ? (
                 <span className="inline-flex rounded-full bg-yellow-100 px-2 text-xs font-semibold leading-5 text-yellow-800">
                   Pending Invite
                 </span>

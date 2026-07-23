@@ -23,11 +23,10 @@ export default async function MerchantUsersPage({
   const admins = users.filter((u) => u.role === "admin").length;
   const fundraisers = users.filter((u) => u.role === "fundraiser").length;
   const viewers = users.filter((u) => u.role === "viewer").length;
-  const active = users.filter(
-    (u) => !u.disabledAt && !u.setPasswordTokenHash,
-  ).length;
+  const isPendingUser = (u: any) => !u.disabledAt && !u.passwordHash && !u.lastLoginAt && !!u.setPasswordTokenHash;
+  const active = users.filter((u) => !u.disabledAt && !isPendingUser(u)).length;
   const disabled = users.filter((u) => !!u.disabledAt).length;
-  const pending = users.filter((u) => !!u.setPasswordTokenHash).length;
+  const pending = users.filter(isPendingUser).length;
 
   return (
     <div className="space-y-6">
@@ -101,7 +100,7 @@ export default async function MerchantUsersPage({
                     <span className="inline-flex rounded-full bg-red-100 px-2 text-xs font-semibold leading-5 text-red-800">
                       Disabled
                     </span>
-                  ) : user.setPasswordTokenHash ? (
+                  ) : isPendingUser(user) ? (
                     <span className="inline-flex rounded-full bg-yellow-100 px-2 text-xs font-semibold leading-5 text-yellow-800">
                       Pending Invite
                     </span>
