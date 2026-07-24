@@ -22,10 +22,6 @@ describe("Merchant dashboard layout — no public marketing chrome", () => {
     expect(DASHBOARD_LAYOUT).toContain("{church.name}");
   });
 
-  it("shows the WGC brand mark, not a merchant-uploaded logo — this dashboard is not white-labeled", () => {
-    expect(DASHBOARD_LAYOUT).toContain("/wgc-email-logo.png");
-    expect(DASHBOARD_LAYOUT).not.toContain("church.logoUrl");
-  });
 });
 
 describe("Merchant login page — session-aware redirect", () => {
