@@ -143,9 +143,6 @@ export default function GivingLinkPreviewPanel({
                       src={resolvedLogo}
                       alt={`${churchName} Logo`}
                       className="max-w-[160px] max-h-[96px] object-contain"
-                      onError={(e) => {
-                        e.currentTarget.style.display = "none";
-                      }}
                     />
                   </div>
                 ) : null;
