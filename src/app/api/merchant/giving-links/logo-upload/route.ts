@@ -52,8 +52,11 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
     const storageKey = `${auth.churchId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-    const logoUrl = await uploadPublicLogo(storageKey, file, file.type);
+    const logoUrl = await uploadPublicLogo(storageKey, buffer, file.type);
 
     // Invalidate giving pages for this church since they might use this logo
     const givingLinks = await prisma.givingLink.findMany({ where: { churchId: auth.churchId }, select: { publicSlug: true } });

@@ -42,8 +42,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Your organization is not initialized with a Finix account." }, { status: 400 });
     }
 
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
     const storageKey = `${session.churchId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-    const logoUrl = await uploadPublicLogo(storageKey, file, file.type);
+    const logoUrl = await uploadPublicLogo(storageKey, buffer, file.type);
 
     await prisma.church.update({ where: { id: session.churchId }, data: { logoUrl } });
 
