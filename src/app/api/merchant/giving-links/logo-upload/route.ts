@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { isAuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/prisma";
-import { finixClient } from "@/lib/finix/client";
 import { logDashboardAction } from "@/lib/dashboardAudit";
+import { uploadPublicLogo } from "@/lib/storage/logoStorage";
+import { revalidatePath } from "next/cache";
 
 export async function POST(req: Request) {
   let auth;
@@ -51,50 +52,15 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // 1. Create File Resource in Finix with fallback search for supported type enum
-    const candidateTypes = [
-      "ADDITIONAL_DOCUMENTATION",
-      "SUPPORTING_DOCUMENT",
-      "BUSINESS_REGISTRATION_DOCUMENT",
-      "BANK_STATEMENT",
-      "OTHER",
-      "IDENTITY_DOCUMENT"
-    ];
-    let fileResource = null;
-    let lastError = null;
+    const storageKey = `${auth.churchId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+    const logoUrl = await uploadPublicLogo(storageKey, file, file.type);
 
-    for (const type of candidateTypes) {
-      try {
-        console.log(`[Logo Upload] Trying file type: ${type}`);
-        fileResource = await finixClient.createFileResource({
-          display_name: `logo_${Date.now()}_${file.name}`,
-          linked_to: linkedTo,
-          type
-        });
-        console.log(`[Logo Upload] Successfully created file resource using type: ${type}`);
-        lastError = null;
-        break;
-      } catch (err: any) {
-        console.warn(`[Logo Upload] Type ${type} rejected:`, err.message);
-        lastError = err;
-      }
+    // Invalidate giving pages for this church since they might use this logo
+    const givingLinks = await prisma.givingLink.findMany({ where: { churchId: auth.churchId }, select: { publicSlug: true } });
+    for (const link of givingLinks) {
+      revalidatePath(`/g/${link.publicSlug}`);
+      revalidatePath(`/embed/${link.publicSlug}`);
     }
-
-    if (!fileResource) {
-      return NextResponse.json({
-        error: `Failed to create file resource in Finix. Last error: ${lastError?.message || "Unknown error"}`
-      }, { status: 502 });
-    }
-
-    const finixFileId = fileResource.id;
-    if (!finixFileId) {
-      return NextResponse.json({ error: "Failed to store file in Finix" }, { status: 502 });
-    }
-
-    // 2. Upload File Content to Finix
-    await finixClient.uploadFileContent(finixFileId, file);
-
-    const logoUrl = `/api/files/${finixFileId}`;
 
     // 3. Audit log
     await logDashboardAction({
@@ -104,7 +70,7 @@ export async function POST(req: Request) {
       actorRole: auth.rawRole,
       action: "giving_link.logo_uploaded",
       entityType: "giving_link",
-      metadata: { fileName: file.name, fileSize: file.size, fileId: finixFileId },
+      metadata: { fileName: file.name, fileSize: file.size, storageKey },
       req,
     });
 

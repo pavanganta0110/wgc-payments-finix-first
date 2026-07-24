@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
-import { finixClient } from "@/lib/finix/client";
 import { getSettingsPermissions } from "@/lib/settings/settingsPermissions";
 import { logDashboardAction } from "@/lib/dashboardAudit";
+import { uploadPublicLogo } from "@/lib/storage/logoStorage";
+import { revalidatePath } from "next/cache";
 
 const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"];
 const MAX_LOGO_SIZE = 5 * 1024 * 1024;
@@ -41,45 +42,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Your organization is not initialized with a Finix account." }, { status: 400 });
     }
 
-    // Same fallback-search-across-types approach as the giving-link logo
-    // upload route — Finix's file resource `type` enum varies by
-    // application configuration, so this probes for whichever one is
-    // actually accepted rather than hardcoding one.
-    const candidateTypes = [
-      "ADDITIONAL_DOCUMENTATION",
-      "SUPPORTING_DOCUMENT",
-      "BUSINESS_REGISTRATION_DOCUMENT",
-      "BANK_STATEMENT",
-      "OTHER",
-      "IDENTITY_DOCUMENT",
-    ];
-    let fileResource = null;
-    let lastError = null;
-    for (const type of candidateTypes) {
-      try {
-        fileResource = await finixClient.createFileResource({
-          display_name: `org_logo_${Date.now()}_${file.name}`,
-          linked_to: linkedTo,
-          type,
-        });
-        lastError = null;
-        break;
-      } catch (err: any) {
-        lastError = err;
-      }
-    }
+    const storageKey = `${session.churchId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+    const logoUrl = await uploadPublicLogo(storageKey, file, file.type);
 
-    if (!fileResource?.id) {
-      return NextResponse.json(
-        { error: `Failed to store logo in Finix. Last error: ${lastError?.message || "Unknown error"}` },
-        { status: 502 }
-      );
-    }
-
-    await finixClient.uploadFileContent(fileResource.id, file);
-
-    const logoUrl = `/api/files/${fileResource.id}`;
     await prisma.church.update({ where: { id: session.churchId }, data: { logoUrl } });
+
+    // Invalidate giving pages that rely on this logo
+    const givingLinks = await prisma.givingLink.findMany({ where: { churchId: session.churchId }, select: { publicSlug: true } });
+    for (const link of givingLinks) {
+      revalidatePath(`/g/${link.publicSlug}`);
+      revalidatePath(`/embed/${link.publicSlug}`);
+    }
 
     await logDashboardAction({
       churchId: session.churchId,
@@ -89,7 +62,7 @@ export async function POST(req: Request) {
       action: "settings.branding_logo_uploaded",
       entityType: "church",
       entityId: session.churchId,
-      metadata: { fileName: file.name, fileSize: file.size, fileId: fileResource.id },
+      metadata: { fileName: file.name, fileSize: file.size, storageKey },
       req,
     });
 

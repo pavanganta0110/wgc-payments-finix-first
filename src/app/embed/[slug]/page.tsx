@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import EmbedBridge from "@/components/embed/EmbedBridge";
+import OrganizationLogo from "@/components/merchant/OrganizationLogo";
 import { loadPublicGivingPageData } from "@/lib/givingLinks/loadPublicGivingPageData";
 import { isEmbedOriginAllowed, parseEmbedAllowedDomains } from "@/lib/giving/embedDomainCheck";
 
@@ -70,12 +71,7 @@ export default async function EmbedGivingPage({ params }: { params: Promise<{ sl
           // eslint-disable-next-line @next/next/no-img-element
           <img src={branding.campaignImageUrl} alt="" className="w-full h-28 object-cover rounded-xl mb-5" />
         )}
-        {logoUrl && (
-          <div className="flex justify-center mb-5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={logoUrl} alt={`${church.name} Logo`} className="max-w-[140px] max-h-[84px] object-contain" />
-          </div>
-        )}
+        <OrganizationLogo logoUrl={logoUrl} churchName={church.name} mode="embed" />
         <h1 className="text-lg font-bold text-center mb-1" style={{ color: light.headingColor }}>
           {link.publicTitle}
         </h1>
