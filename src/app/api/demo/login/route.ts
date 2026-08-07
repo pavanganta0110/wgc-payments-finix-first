@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { setSessionCookie } from "@/lib/auth/session";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   // Find a sandbox merchant user to log in as.
   // We'll pick the first user who is an "owner" of an organization.
