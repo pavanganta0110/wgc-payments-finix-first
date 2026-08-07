@@ -66,6 +66,60 @@ export async function GET(request: Request) {
       }
     })
 
+    const transfers: any[] = []
+    const refunds: any[] = []
+    const disputes: any[] = []
+
+    const now = new Date()
+    
+    // Generate 30 successful transfers over the last 30 days
+    for (let i = 0; i < 30; i++) {
+      const d = new Date()
+      d.setDate(now.getDate() - i)
+      const amountCents = Math.floor(Math.random() * 50000) + 1000 // $10 to $510
+      
+      transfers.push({
+        churchId,
+        finixTransferId: `TR_demo_${i}`,
+        state: "SUCCEEDED",
+        amountCents,
+        createdAtFinix: d,
+      })
+      
+      // Make 2 of them have refunds
+      if (i === 5 || i === 15) {
+        refunds.push({
+          churchId,
+          finixReversalId: `REV_demo_${i}`,
+          finixOriginalTransferId: `TR_demo_${i}`,
+          state: "SUCCEEDED",
+          amountCents: Math.floor(amountCents / 2),
+          createdAtFinix: d,
+        })
+      }
+
+      // Make 1 of them have a dispute
+      if (i === 10) {
+        disputes.push({
+          churchId,
+          finixDisputeId: `DISP_demo_${i}`,
+          finixTransferId: `TR_demo_${i}`,
+          state: "PENDING",
+          amountCents,
+          createdAtFinix: d,
+        })
+      }
+    }
+
+    // Cleanup previous dummy transactions just in case (though we did it above)
+    await prisma.finixDispute.deleteMany({ where: { churchId } })
+    await prisma.finixRefundOrReversal.deleteMany({ where: { churchId } })
+
+    // Insert new data
+    await prisma.finixTransfer.createMany({ data: transfers })
+    await prisma.finixRefundOrReversal.createMany({ data: refunds })
+    await prisma.finixDispute.createMany({ data: disputes })
+
     return NextResponse.json({ success: true, message: "Seeded demo successfully!" });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
