@@ -9,8 +9,6 @@ export async function GET(request: Request) {
 
     // Cleanup first
     await prisma.finixTransfer.deleteMany({ where: { churchId } })
-    await prisma.refund.deleteMany({ where: { charge: { transfer: { churchId } } } })
-    await prisma.charge.deleteMany({ where: { transfer: { churchId } } })
     await prisma.payment.deleteMany({ where: { churchId } })
     await prisma.invoice.deleteMany({ where: { churchId } })
     await prisma.client.deleteMany({ where: { churchId } })
@@ -51,17 +49,9 @@ export async function GET(request: Request) {
     await prisma.churchPricing.create({
       data: {
         churchId,
-        platformFeeCents: 0,
-        platformFeePercent: 0,
-        cardProcessingFeePercent: 2.9,
-        cardProcessingFeeCents: 30,
-        achProcessingFeePercent: 1.0,
-        achProcessingFeeCents: 0,
-        achProcessingFeeMaxCents: 500,
-        disputeFeeCents: 1500,
-        refundFeeCents: 0,
-        effectiveDate: new Date(),
-        status: "ACTIVE"
+        cardPercentageFee: 2.9,
+        cardFixedFeeCents: 30,
+        achFixedFeeCents: 0,
       }
     })
 
