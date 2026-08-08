@@ -20,7 +20,7 @@ export default function MerchantLoginForm() {
           mode={isReauth ? "reauth" : "login"}
           heading={isReauth ? "Verify your identity" : "Merchant Dashboard Login"}
           subheading={isReauth ? "Please authenticate using any login method connected to your account." : "Log in to your WGC Payments dashboard."}
-          redirectTo={searchParams.get("redirectTo") || undefined}
+          redirectTo={searchParams.get("next") || searchParams.get("redirectTo") || undefined}
           reauthType={searchParams.get("reauthType") || undefined}
         />
       </main>

@@ -110,7 +110,8 @@ export async function provisionChurchAccount(app: {
         },
       });
 
-  const setPasswordLink = `https://www.wgcpayments.com/merchant/set-password/${rawToken}`;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.wgcpayments.com";
+  const setPasswordLink = `${appUrl}/merchant/set-password/${rawToken}`;
 
   const result = await sendWgcEmail({
     to: app.contactEmail,

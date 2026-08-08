@@ -10,7 +10,7 @@ export default async function ActivateSubscriptionPage({ params }: { params: Pro
 
   let auth;
   try {
-    auth = await requireMerchantSession();
+    auth = await requireMerchantSession({ allowRestrictedAccess: true });
   } catch (err) {
     if (isAuthError(err)) redirect(`/merchant/login?next=/activate-subscription/${token}`);
     throw err;

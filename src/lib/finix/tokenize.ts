@@ -68,5 +68,10 @@ export async function mountFinixPaymentForm(
     throw new Error("Finix.js failed to initialize on window");
   }
 
+  const container = document.getElementById(elementId);
+  if (container) {
+    container.innerHTML = "";
+  }
+
   return window.Finix.PaymentForm(elementId, environment, applicationId, options);
 }
