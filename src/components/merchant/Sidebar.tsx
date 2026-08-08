@@ -28,7 +28,7 @@ import {
 import { cn } from "@/lib/utils";
 import GatewayIcon from "@/components/ui/GatewayIcon";
 
-interface NavItem {
+export interface NavItem {
   name: string;
   href: string;
   icon: typeof LayoutDashboard;
@@ -39,7 +39,7 @@ interface NavItem {
   organizationOnly?: boolean;
 }
 
-const NAV_ITEMS: NavItem[] = [
+export const NAV_ITEMS: NavItem[] = [
   { name: "Home", href: "/merchant/dashboard", icon: LayoutDashboard },
   { name: "Insights", href: "/merchant/insights", icon: LineChart },
   {
