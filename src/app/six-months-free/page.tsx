@@ -152,7 +152,7 @@ export default function SixMonthsFreePage() {
             <p className="sub">Step through our powerful merchant dashboard, view transaction insights, and track where your funds land. No account required.</p>
           </div>
           <div className="embed-shell">
-            <iframe src="/api/demo/login" title="WGC Merchant Dashboard Walkthrough" loading="lazy"></iframe>
+            <iframe src="/walkthrough" title="WGC Merchant Dashboard Walkthrough" loading="lazy"></iframe>
           </div>
           <div className="demo-cta">
             <p>Still need more info?</p>
