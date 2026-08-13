@@ -3,10 +3,6 @@
 import Link from "next/link";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
-import Link from "next/link";
-import Header from "@/components/layout/Header";
-import Footer from "@/components/layout/Footer";
-
 export default function FirstLookPage() {
   return (
     <div className="min-h-screen bg-white flex flex-col">
