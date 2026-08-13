@@ -1,280 +1,210 @@
-import Image from "next/image";
+"use client";
+
 import Link from "next/link";
-import FirstLookForm from "@/components/marketing/FirstLookForm";
-import GatewayIcon from "@/components/ui/GatewayIcon";
-
-const CALENDLY_URL = "https://calendly.com/collinsansom/1-on-1-wgc-first-look";
-
-export const metadata = {
-  title: "First Look | WGC Payments",
-  description: "Join the live working session for the giving platform built for churches.",
-};
-
-function DecorativeBar() {
-  return (
-    <div className="w-full h-[14px] flex">
-      {/* Repeating pattern of brass and stone */}
-      <div className="w-1/2 h-full bg-[#E8E0CF]"></div>
-      <div className="w-1/2 h-full bg-[#C9992E]"></div>
-    </div>
-  );
-}
-
-function Header() {
-  return (
-    <header className="w-full bg-[#FFFDF8] border-b border-[rgba(20,33,61,0.13)] px-6 py-3 flex justify-between items-center">
-      <a href="/" className="flex items-center gap-3">
-        <GatewayIcon className="h-9 w-auto shrink-0" />
-        <div className="flex flex-col">
-          <span className="font-serif text-lg font-bold text-[#14213D] leading-none">WGC</span>
-          <span className="text-[9px] uppercase font-mono tracking-widest text-[#41506F] mt-1">Waypoint Gateway Collective</span>
-        </div>
-      </a>
-      <a
-        href="#join"
-        className="text-xs font-bold uppercase tracking-wider text-[#14213D] border border-[#14213D] rounded-full px-5 py-2 hover:bg-[#14213D] hover:text-[#FFFDF8] transition-colors"
-      >
-        Schedule a Call
-      </a>
-    </header>
-  );
-}
-
-function Footer() {
-  return (
-    <footer className="w-full bg-[#14213D] text-[#FFFDF8] py-16 px-6 text-center border-t-4 border-[#C9992E]">
-      <div className="max-w-4xl mx-auto flex flex-col items-center">
-        <span className="font-serif text-2xl font-bold mb-2">Waypoint Gateway Collective</span>
-        <a href="https://www.wgcpayments.com" className="text-[#C9992E] hover:underline mb-8 font-mono text-sm">wgcpayments.com</a>
-        
-        <p className="font-serif italic text-[#E8E0CF] text-lg">“Thus far the Lord has helped us.” — 1 Samuel 7:12</p>
-      </div>
-    </footer>
-  );
-}
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
 
 export default function FirstLookPage() {
   return (
-    <div className="min-h-screen bg-[#F5F1E8] text-[#14213D] font-sans">
-      <DecorativeBar />
+    <div className="min-h-screen bg-white flex flex-col">
       <Header />
+      <style dangerouslySetInnerHTML={{ __html: `
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
 
-      <main>
-        {/* HERO SECTION */}
-        <section className="px-6 pt-10 pb-16 md:pt-14 md:pb-20 max-w-[1120px] mx-auto text-center">
-          <span className="inline-block text-[11px] uppercase font-mono font-bold text-[#8C5A33] mb-4 tracking-widest border-b-2 border-[#C9992E] pb-1">
-            First Look — Live Working Session
-          </span>
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-serif font-medium leading-[1.1] mb-6 text-[#14213D] max-w-4xl mx-auto">
-            We're betting your giving platform was built for retail and <span className="text-[#8C5A33] border-b-4 border-[#C9992E]">retrofitted</span> for church.
-          </h1>
-          <p className="text-lg md:text-xl text-[#41506F] max-w-2xl mx-auto mb-8 leading-relaxed">
-            Ours wasn't. We're building payments and giving infrastructure for churches and ministries from the first line of code. Click below to be one of the first to join us.
-          </p>
-          <div className="flex flex-col items-center gap-4">
-            <a
-              href={CALENDLY_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block text-center bg-[#14213D] hover:bg-[#203154] text-white font-bold py-4 px-6 sm:px-10 rounded-[3px] text-base sm:text-lg transition-colors shadow-sm"
-            >
-              Schedule a Time to Hear More
-            </a>
-            <span className="text-sm font-mono text-[#41506F]">Free. About 20 minutes. Bring your wish list.</span>
-          </div>
-        </section>
+        #smf-wrapper {
+          --gold:#eab308; --gold-deep:#c48f09; --gold-soft:#f5d372;
+          --ink:#1a1d29; --ink-soft:#3a3f4f;
+          --stone-50:#faf8f3; --stone-100:#f2ede3; --stone-200:#e4ddcd;
+          --stone-400:#a89f8c; --stone-500:#7a7466; --line:#e6dfd0;
+          --paper:#ffffff; --ok:#3f7d52;
+          --radius:14px; --shadow:0 18px 50px -20px rgba(26,29,41,.4);
+          --maxw:1160px;
+          font-family:'Inter',system-ui,sans-serif;
+          color:var(--ink);
+          line-height:1.55;
+          background:var(--paper);
+        }
+        #smf-wrapper * { box-sizing:border-box; margin:0; padding:0; }
+        #smf-wrapper a { text-decoration:none; color:inherit; }
+        #smf-wrapper .wrap { max-width:var(--maxw); margin:0 auto; padding:0 26px; }
 
-        {/* PRODUCT SCREENSHOT */}
-        <section className="px-6 pb-24 max-w-[1120px] mx-auto">
-          <div className="bg-[#FFFDF8] rounded-[6px] border border-[rgba(20,33,61,0.13)] shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-2 md:p-4">
-            <div className="w-full aspect-[16/9] bg-[#E8E0CF] rounded overflow-hidden relative flex items-center justify-center">
-              {/* Dashboard Preview Image */}
-              <Image 
-                src="/images/first-look-dashboard-v2.png"
-                alt="Admin View — Transaction Insights"
-                fill
-                className="object-cover object-top"
-                sizes="(max-width: 1120px) 100vw, 1120px"
-              />
-            </div>
-          </div>
-          <p className="text-center text-xs font-mono uppercase tracking-widest text-[#41506F] mt-4">Admin View — Transaction Insights, Live</p>
-        </section>
+        /* ---------- HERO ---------- */
+        #smf-wrapper .hero { position:relative; min-height:100vh; display:flex; align-items:center; justify-content:center; text-align:center; overflow:hidden; background:radial-gradient(120% 90% at 50% 8%, #4a2f14 0%, #2a1a10 42%, #14100b 100%); }
+        #smf-wrapper .hero video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:0; }
+        #smf-wrapper .hero .veil { position:absolute; inset:0; z-index:1; background:linear-gradient(180deg, rgba(10,8,6,.55) 0%, rgba(12,9,7,.35) 38%, rgba(10,8,6,.72) 100%), radial-gradient(90% 70% at 50% 40%, rgba(234,179,8,.10), rgba(10,8,6,0) 60%); }
+        #smf-wrapper .hero .glow { position:absolute; left:50%; top:-10%; transform:translateX(-50%); width:900px; height:520px; z-index:1; background:radial-gradient(closest-side, rgba(245,180,60,.28), rgba(245,180,60,0)); filter:blur(10px); pointer-events:none; }
+        #smf-wrapper .hero-content { position:relative; z-index:5; padding:120px 22px 80px; max-width:900px; width:100%; }
+        #smf-wrapper .eyebrow { display:inline-block; background:rgba(63,125,82,.9); color:#eafaef; font-size:12.5px; font-weight:600; letter-spacing:.3px; padding:7px 16px; border-radius:99px; margin-bottom:26px; backdrop-filter:blur(4px); border:1px solid rgba(255,255,255,.15); }
+        #smf-wrapper .hero h1 { font-family:'Fraunces',serif !important; font-weight:600 !important; color:#fff !important; font-size:clamp(38px,6.2vw,74px) !important; line-height:1.03 !important; letter-spacing:-1px !important; text-shadow:0 4px 30px rgba(0,0,0,.5) !important; margin:0 !important; }
+        #smf-wrapper .hero p.lede { color:rgba(255,255,255,.9) !important; font-size:clamp(16px,2vw,20px) !important; line-height:1.55 !important; max-width:640px; margin:24px auto 0 !important; text-shadow:0 2px 14px rgba(0,0,0,.55) !important; }
+        
+        #smf-wrapper .hero .cta-grid { margin-top:38px; display:grid; grid-template-columns:1fr 1fr; gap:14px; justify-content:center; max-width: 600px; margin-left: auto; margin-right: auto; }
+        @media(max-width:600px) {
+          #smf-wrapper .hero .cta-grid { grid-template-columns:1fr; }
+        }
+        
+        #smf-wrapper .btn-primary { font-family:'Inter' !important; font-weight:700 !important; font-size:16px !important; color:var(--ink) !important; background:linear-gradient(135deg,var(--gold-soft),var(--gold-deep)) !important; border:none !important; border-radius:14px !important; padding:17px 24px !important; cursor:pointer !important; display:inline-flex !important; align-items:center !important; justify-content:center !important; gap:10px !important; box-shadow:0 14px 34px -12px rgba(234,179,8,.75) !important; transition:transform .12s,box-shadow .15s !important; text-decoration:none !important; text-align:center; }
+        #smf-wrapper .btn-primary:hover { transform:translateY(-2px) !important; box-shadow:0 18px 40px -12px rgba(234,179,8,.85) !important; }
+        #smf-wrapper .btn-ghost { font-family:'Inter'; font-weight:700; font-size:16px; color:#ffe9a8; background:rgba(245,211,114,.10); border:1px solid rgba(245,211,114,.55); border-radius:14px; padding:17px 24px; cursor:pointer; backdrop-filter:blur(6px); transition:background .15s,color .15s; text-align:center; display:flex; align-items:center; justify-content:center; }
+        #smf-wrapper .btn-ghost:hover { background:rgba(245,211,114,.20); color:#fff4d6; }
+        #smf-wrapper .btn-white { font-family:'Inter' !important; font-weight:700 !important; font-size:16px !important; color:var(--ink) !important; background:#fff !important; border:none !important; border-radius:14px !important; padding:17px 24px !important; cursor:pointer !important; display:inline-flex !important; align-items:center !important; justify-content:center !important; transition:transform .12s,box-shadow .15s !important; text-decoration:none !important; text-align:center; box-shadow:0 10px 20px -10px rgba(0,0,0,.5); }
+        #smf-wrapper .btn-white:hover { transform:translateY(-2px) !important; box-shadow:0 14px 24px -10px rgba(0,0,0,.6); }
 
-        {/* FEATURE SECTION */}
-        <section className="bg-[#E8E0CF] border-y border-[rgba(20,33,61,0.13)] py-24 px-6">
-          <div className="max-w-[1120px] mx-auto">
-            <div className="mb-16 text-center max-w-3xl mx-auto">
-              <span className="inline-block text-[11px] uppercase font-mono font-bold text-[#8C5A33] mb-4 tracking-widest border-b-2 border-[#C9992E] pb-1">
-                What that actually means
-              </span>
-              <h2 className="text-3xl md:text-5xl font-serif text-[#14213D] mb-6">Built for how a church actually handles money.</h2>
-              <p className="text-[#41506F] text-lg leading-relaxed">
-                Not a retail checkout with the word “donation” swapped in. Every screen assumes funds, designations, recurring givers, and a treasurer who has to reconcile it all on Monday.
-              </p>
-            </div>
+        #smf-wrapper .fineprint { color:rgba(255,255,255,.62); font-size:12.5px; line-height:1.6; max-width:560px; margin:30px auto 0; }
+        #smf-wrapper .scrollcue { position:absolute; bottom:26px; left:50%; transform:translateX(-50%); z-index:5; color:rgba(255,255,255,.7); font-size:11px; letter-spacing:2px; text-transform:uppercase; display:flex; flex-direction:column; align-items:center; gap:8px; }
+        #smf-wrapper .scrollcue span { width:1px; height:34px; background:linear-gradient(rgba(255,255,255,.7),rgba(255,255,255,0)); animation:cue 1.8s ease-in-out infinite; }
+        @keyframes cue { 0%,100% { opacity:.3; transform:scaleY(.6) } 50% { opacity:1; transform:scaleY(1) } }
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-0.5 bg-[rgba(20,33,61,0.08)] border border-[rgba(20,33,61,0.08)]">
-              {[
-                { title: "Givers cover the fee", body: "One checkbox at checkout and the full gift lands in the fund. Most givers say yes when you simply ask." },
-                { title: "Recurring that holds", body: "We're building recurring to default to the 1st and 15th, with card updates handled quietly in the background — because that's how people actually get paid." },
-                { title: "Designated funds", body: "Building fund, missions, benevolence. Split at the point of the gift so it doesn't get sorted by hand later." },
-                { title: "Giving links anywhere", body: "Bulletin, text, kiosk, QR on the screen. Same page, same reporting, no separate system to babysit." },
-                { title: "Reporting a treasurer can read", body: "Deposits, settlements, and disputes in plain language, tied back to the gift that caused them." },
-                { title: "Enterprise-grade rails", body: "We didn't build our own payment infrastructure. We built on the same rails powering some of the largest platforms in fintech." }
-              ].map((feature, i) => (
-                <div key={i} className="bg-[#FFFDF8] p-8 md:p-10">
-                  <h3 className="font-serif text-2xl text-[#14213D] mb-3">{feature.title}</h3>
-                  <p className="text-[#41506F] leading-relaxed text-sm md:text-base">{feature.body}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+        /* ---------- WALKTHROUGH ---------- */
+        #smf-wrapper .walk { background:linear-gradient(180deg,#14100b 0%, #221a12 8%, var(--stone-50) 26%, var(--stone-50) 100%); padding:0 0 84px; }
+        #smf-wrapper .walk .head { text-align:center; max-width:720px; margin:0 auto; padding:74px 22px 12px; }
+        #smf-wrapper .walk .kick, #smf-wrapper .walk h2, #smf-wrapper .walk p.sub { background:linear-gradient(135deg,var(--gold-soft),var(--gold)); -webkit-background-clip:text; background-clip:text; color:transparent; -webkit-text-fill-color:transparent; }
+        #smf-wrapper .walk .kick { font-size:12px; font-weight:700; letter-spacing:1.6px; text-transform:uppercase; margin-bottom:12px; }
+        #smf-wrapper .walk h2 { font-family:'Fraunces',serif !important; font-weight:700 !important; font-size:clamp(28px,4vw,42px) !important; letter-spacing:-.5px !important; margin:0 !important; }
+        #smf-wrapper .walk p.sub { font-size:16px !important; font-weight:600 !important; margin-top:14px !important; }
+        #smf-wrapper .embed-shell { max-width:1090px; margin:26px auto 0; padding:0 14px; }
+        #smf-wrapper .embed-shell iframe { width:100%; height:900px; border:0; border-radius:16px; background:transparent; display:block; }
 
-        {/* GIVER FLOW SECTION */}
-        <DecorativeBar />
-        <section className="py-24 px-6 overflow-hidden">
-          <div className="max-w-[1120px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
-            <div>
-              <span className="inline-block text-[11px] uppercase font-mono font-bold text-[#8C5A33] mb-4 tracking-widest border-b-2 border-[#C9992E] pb-1">
-                The Giver's Side
-              </span>
-              <h2 className="text-3xl md:text-5xl font-serif text-[#14213D] mb-6 leading-tight">Three taps, on a phone, in a pew.</h2>
-              <p className="text-[#41506F] text-lg leading-relaxed mb-8">
-                The giving page is the only part of your system most of your congregation will ever see. It should look like it belongs to your church, load fast, and not ask for anything it doesn't need.
-              </p>
-              
-              <div className="border-l-2 border-[#C9992E] pl-6 py-2 mb-8">
-                <p className="font-serif text-xl md:text-2xl text-[#14213D] italic leading-relaxed">
-                  “I'll cover the $0.75 processing fee so my full $25.00 gift goes to First Community Church.”
-                </p>
-              </div>
-              
-              <p className="text-[#41506F] leading-relaxed">
-                That one line changes your effective rate more than any negotiation will. It's on by default.
-              </p>
-            </div>
-            
-            <div className="relative mx-auto w-full max-w-[320px]">
-              {/* Phone Frame Mock */}
-              <div className="aspect-[9/19] bg-[#14213D] rounded-[40px] p-3 shadow-2xl relative border-4 border-[#203154]">
-                <div className="w-full h-full bg-[#F5F1E8] rounded-[30px] overflow-hidden relative">
-                   <Image 
-                     src="/images/first-look-phone-v2.png"
-                     alt="Giving App Preview"
-                     fill
-                     className="object-cover object-top"
-                     sizes="320px"
-                   />
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        /* transparency band */
+        #smf-wrapper .transparency { background:var(--stone-100); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+        #smf-wrapper .tp-inner { display:flex; align-items:center; justify-content:space-between; gap:26px; padding:34px 26px; flex-wrap:wrap; }
+        #smf-wrapper .tp-inner .kick { font-size:12px; font-weight:700; letter-spacing:1.6px; text-transform:uppercase; color:var(--gold-deep); margin-bottom:8px; }
+        #smf-wrapper .tp-inner p { font-size:16px !important; color:var(--ink-soft) !important; max-width:620px; margin:0 !important; }
+        #smf-wrapper .tp-inner p strong { color:var(--ink); font-weight:700; }
+        #smf-wrapper .btn-outline { flex:0 0 auto; font-family:'Inter' !important; font-weight:700 !important; font-size:14.5px !important; color:var(--gold-deep) !important; background:#fff !important; border:1.5px solid var(--gold) !important; border-radius:12px !important; padding:13px 22px !important; cursor:pointer !important; transition:background .15s,color .15s !important; display:inline-block !important; }
+        #smf-wrapper .btn-outline:hover { background:var(--gold) !important; color:var(--ink) !important; }
+        #smf-wrapper .mid-cta { background:var(--stone-50); text-align:center; padding:2px 26px 62px; }
+        #smf-wrapper .demo-cta { text-align:center; margin:34px auto 0; max-width:540px; }
+        #smf-wrapper .demo-cta p { font-size:15.5px !important; color:var(--ink-soft) !important; margin-bottom:14px !important; font-weight:600 !important; }
 
-        {/* FOUNDER SECTION */}
-        <section className="bg-[#14213D] text-[#FFFDF8] py-24 px-6 border-y-4 border-[#C9992E]">
-          <div className="max-w-[1120px] mx-auto grid grid-cols-1 md:grid-cols-12 gap-12 items-center">
-            <div className="md:col-span-4 flex flex-col items-center md:items-start">
-              <span className="inline-block text-[11px] uppercase font-mono font-bold text-[#E3B94F] mb-6 tracking-widest border-b-2 border-[#C9992E] pb-1">
-                Who's building it
-              </span>
-              <div className="w-[170px] h-[170px] rounded-full border-4 border-[#C9992E] overflow-hidden bg-[#203154] mb-6 relative">
-                 <Image 
-                   src="/images/collin.png"
-                   alt="Collin Sansom"
-                   fill
-                   className="object-cover"
-                   sizes="170px"
-                 />
-              </div>
-              <p className="font-serif italic text-xl leading-relaxed text-[#E8E0CF] text-center md:text-left">
-                “I spent years watching ministries lose money to processors that didn't understand them. So I'm building one that does.”
-              </p>
-            </div>
-            
-            <div className="md:col-span-8 md:pl-12 md:border-l border-[rgba(255,255,255,0.1)]">
-              <p className="text-lg leading-relaxed text-[#E8E0CF] mb-8 font-light">
-                I've spent my career in nonprofit development, managing major donor portfolios, sitting in budget meetings, and watching good organizations quietly hand over money that was given for ministry. I'm finishing a Master of Theological Studies at Midwestern Baptist Theological Seminary. I know this world from the inside, and I'd rather build this with church leaders than guess at what you need.
-              </p>
-              <div className="flex flex-col">
-                <span className="font-serif text-2xl text-white mb-1">Collin Sansom</span>
-                <span className="font-mono text-xs uppercase tracking-widest text-[#E3B94F]">Founder, Waypoint Gateway Collective</span>
-              </div>
-              <a
-                href={CALENDLY_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 mt-8 bg-[#C9992E] hover:bg-[#E3B94F] text-[#14213D] font-bold py-3 px-8 rounded-[3px] text-sm transition-colors shadow-sm"
-              >
-                Book a 1-on-1 with Collin
+        /* ---------- VALUE ---------- */
+        #smf-wrapper .value { padding:84px 26px; max-width:var(--maxw); margin:0 auto; }
+        #smf-wrapper .value .head { text-align:center; max-width:680px; margin:0 auto 46px; }
+        #smf-wrapper .value .kick { font-size:12px; font-weight:700; letter-spacing:1.6px; text-transform:uppercase; color:var(--gold-deep); margin-bottom:12px; }
+        #smf-wrapper .value h2 { font-family:'Fraunces',serif !important; font-weight:600 !important; font-size:clamp(26px,3.6vw,38px) !important; letter-spacing:-.5px !important; margin:0 !important; color:var(--ink) !important; }
+        #smf-wrapper .cards { display:grid; grid-template-columns:repeat(3,1fr); gap:22px; }
+        #smf-wrapper .vcard { background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:28px 26px; box-shadow:0 10px 30px -22px rgba(26,29,41,.5); }
+        #smf-wrapper .vcard .ic { width:46px; height:46px; border-radius:12px; display:grid; place-items:center; background:linear-gradient(135deg,#fdf3d3,#f5d372); font-size:22px; margin-bottom:16px; }
+        #smf-wrapper .vcard h3 { font-family:'Fraunces',serif !important; font-weight:600 !important; font-size:20px !important; margin-bottom:8px !important; color:var(--ink) !important; }
+        #smf-wrapper .vcard p { font-size:14.5px !important; color:var(--ink-soft) !important; margin:0 !important; }
+
+        /* hero reassurance */
+        #smf-wrapper .reassure { color:#ffe9a8 !important; font-size:14.5px !important; font-weight:600 !important; margin:20px auto 0 !important; max-width:560px; }
+
+        /* ---------- CLOSING CTA ---------- */
+        #smf-wrapper .closer { position:relative; overflow:hidden; text-align:center; padding:96px 26px; color:#fff; background:radial-gradient(120% 120% at 50% 0%, #4a2f14 0%, #2a1a10 48%, #14100b 100%); }
+        #smf-wrapper .closer .glow { position:absolute; left:50%; top:-30%; transform:translateX(-50%); width:820px; height:520px; background:radial-gradient(closest-side, rgba(245,180,60,.22), rgba(245,180,60,0)); filter:blur(8px); }
+        #smf-wrapper .closer h2 { position:relative; font-family:'Fraunces',serif !important; font-weight:600 !important; font-size:clamp(30px,4.4vw,50px) !important; letter-spacing:-.6px !important; margin:0 !important; color:#fff !important; }
+        #smf-wrapper .closer p { position:relative; color:rgba(255,255,255,.85) !important; font-size:17px !important; margin:18px auto 34px !important; max-width:560px; }
+        #smf-wrapper .closer .btn-primary { position:relative; z-index:10; }
+        #smf-wrapper .closer .cta-grid { position:relative; z-index:10; display:grid; grid-template-columns:1fr 1fr; gap:14px; justify-content:center; max-width: 600px; margin-left: auto; margin-right: auto; }
+        @media(max-width:600px) {
+          #smf-wrapper .closer .cta-grid { grid-template-columns:1fr; }
+        }
+
+        @media(max-width:860px) {
+          #smf-wrapper .cards { grid-template-columns:1fr; }
+          #smf-wrapper .embed-shell iframe { height:760px; }
+        }
+      `}} />
+
+      <main id="smf-wrapper" className="flex-1">
+        <section className="hero" id="start">
+          <video autoPlay muted loop playsInline preload="auto" poster="https://assets.mixkit.co/videos/2796/2796-thumb-360-0.jpg">
+            <source src="https://assets.mixkit.co/videos/2796/2796-360.mp4" type="video/mp4" />
+            <source src="https://assets.mixkit.co/videos/515/515-360.mp4" type="video/mp4" />
+          </video>
+          <div className="glow"></div>
+          <div className="veil"></div>
+
+          <div className="hero-content">
+            <span className="eyebrow">First Look</span>
+            <h1>Explore WGC Payments</h1>
+            <p className="lede">See exactly how our platform helps ministries and nonprofits accept donations, manage funds, and increase their impact.</p>
+            <div className="cta-grid">
+              <Link href="/demo/church-dashboard" className="btn-white">
+                View Admin Demo
+              </Link>
+              <Link href="/demo/donation" className="btn-white">
+                View Donor Experience
+              </Link>
+              <a href="https://calendly.com/collinsansom/1-on-1-wgc-first-look" target="_blank" rel="noopener noreferrer" className="btn-ghost">
+                Book a Live Demo
               </a>
+              <Link href="/start" className="btn-primary">
+                Get Started
+              </Link>
+            </div>
+          </div>
+          <div className="scrollcue">Explore WGC<span></span></div>
+        </section>
+
+        <section className="walk" id="walkthrough">
+          <div className="head">
+            <div className="kick">Interactive walkthrough</div>
+            <h2>Explore your new dashboard</h2>
+            <p className="sub">Step through our powerful merchant dashboard, view transaction insights, and track where your funds land. No account required.</p>
+          </div>
+          <div className="embed-shell">
+            <iframe src="/walkthrough" title="WGC Merchant Dashboard Walkthrough" loading="lazy"></iframe>
+          </div>
+          <div className="demo-cta">
+            <p>Still need more info?</p>
+            <a className="btn-outline" href="https://calendly.com/collinsansom/1-on-1-wgc-first-look" target="_blank" rel="noopener noreferrer">Book a Live Demo →</a>
+          </div>
+        </section>
+
+        <section className="transparency">
+          <div className="wrap tp-inner">
+            <div>
+              <div className="kick">Full transparency</div>
+              <p>Simple pricing. No surprises. Our platform is just <strong>$10/month</strong> and you can cancel anytime.</p>
+            </div>
+            <Link className="btn-outline" href="/pricing">View full pricing →</Link>
+          </div>
+        </section>
+
+        <section className="value">
+          <div className="head">
+            <div className="kick">Built for ministries &amp; nonprofits</div>
+            <h2>Everything you need to receive, everything you need to make your impact</h2>
+          </div>
+          <div className="cards">
+            <div className="vcard">
+              <div className="ic">💛</div>
+              <h3>Keep more of every gift</h3>
+              <p>Accept one-time and recurring gifts from card or bank. Donors can cover the fees, so more of every dollar goes straight to your mission.</p>
+            </div>
+            <div className="vcard">
+              <div className="ic">🧾</div>
+              <h3>One platform, one payout</h3>
+              <p>Collect giving and invoices, for property rentals or anything else, in one place, deposited to a single account instead of scattered across tools.</p>
+            </div>
+            <div className="vcard">
+              <div className="ic">⛪</div>
+              <h3>Less admin, more mission</h3>
+              <p>Pricing and tools built around how churches, camps, and nonprofits actually run, so you spend less time on money and more on people.</p>
             </div>
           </div>
         </section>
 
-        {/* REGISTRATION FORM SECTION */}
-        <section className="py-24 px-6 relative">
-          <FirstLookForm />
-        </section>
-
-        {/* FAQ SECTION */}
-        <section className="bg-[#FFFDF8] border-t border-[rgba(20,33,61,0.13)] py-24 px-6">
-          <div className="max-w-3xl mx-auto">
-            <div className="text-center mb-16">
-              <span className="inline-block text-[11px] uppercase font-mono font-bold text-[#8C5A33] mb-4 tracking-widest border-b-2 border-[#C9992E] pb-1">
-                Before you ask
-              </span>
-              <h2 className="text-3xl md:text-5xl font-serif text-[#14213D]">Reasonable questions.</h2>
-            </div>
-
-            <div className="space-y-4">
-              {[
-                {
-                  q: "Is this a sales pitch?",
-                  a: "No. It's a walkthrough of what we've built with time set aside for you to tell us what's missing. If you want to talk pricing or onboarding afterward, we'll set up a separate call."
-                },
-                {
-                  q: "How long is it?",
-                  a: "About twenty minutes. Roughly ten minutes of walkthrough and ten minutes of open discussion."
-                },
-                {
-                  q: "Do I have to switch anything to attend?",
-                  a: "Nothing. Most people on this list are just watching us build."
-                },
-                {
-                  q: "What if my church is smaller than your target?",
-                  a: "Come anyway. The session is open to any size, and your input still shapes what we build."
-                },
-                {
-                  q: "We're a nonprofit, not a church. Does this apply?",
-                  a: "Yes. The same problems show up in donor management and fund accounting. Tell us your role on the form and we'll route you to the right session."
-                },
-                {
-                  q: "What happens to my information?",
-                  a: "We use it to send you the session invite and, only if you separately opt in, weekly build updates. We do not sell or share it."
-                }
-              ].map((faq, i) => (
-                <details key={i} className="group bg-[#F5F1E8] rounded border border-[rgba(20,33,61,0.13)] overflow-hidden">
-                  <summary className="flex cursor-pointer items-center justify-between p-6 font-serif text-lg font-bold text-[#14213D] list-none">
-                    {faq.q}
-                    <span className="ml-4 flex-shrink-0 text-[#C9992E] transition duration-300 group-open:-rotate-180">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    </span>
-                  </summary>
-                  <div className="px-6 pb-6 text-[#41506F] leading-relaxed border-t border-[rgba(20,33,61,0.05)] pt-4">
-                    {faq.a}
-                  </div>
-                </details>
-              ))}
-            </div>
-            
-            <div className="mt-12 text-center">
-              <p className="text-sm font-mono text-[#41506F]">
-                See our <Link href="/legal/privacy" className="text-[#8C5A33] hover:underline">Privacy Policy</Link> and <Link href="/legal/terms" className="text-[#8C5A33] hover:underline">Terms</Link>.
-              </p>
-            </div>
+        <section className="closer">
+          <div className="glow"></div>
+          <h2>Ready to get started?</h2>
+          <p>Get your giving page live today and only pay standard processing along the way.</p>
+          <div className="cta-grid">
+            <Link href="/demo/church-dashboard" className="btn-white">
+              View Admin Demo
+            </Link>
+            <Link href="/demo/donation" className="btn-white">
+              View Donor Experience
+            </Link>
+            <a href="https://calendly.com/collinsansom/1-on-1-wgc-first-look" target="_blank" rel="noopener noreferrer" className="btn-ghost">
+              Book a Live Demo
+            </a>
+            <Link href="/start" className="btn-primary">
+              Get Started
+            </Link>
           </div>
         </section>
       </main>

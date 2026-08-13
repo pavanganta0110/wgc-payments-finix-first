@@ -133,15 +133,18 @@ export default function Home() {
                 <p className="text-lg sm:text-xl font-medium leading-relaxed mb-12 text-white/70 max-w-2xl tracking-tight">
                   WGC provides the white-label donation engine and ministry settlement rails for the platforms building the future of Kingdom stewardship.
                 </p>
-                <div className="flex flex-col md:flex-row gap-4">
-                  <Link href="/contact" className="bg-wgc-gold-500 text-wgc-navy-950 inline-flex items-center justify-center px-8 py-5 text-[13px] font-bold rounded-2xl shadow-[0_20px_40px_rgba(234,179,8,0.2)] transform transition-all hover:scale-105 hover:bg-white uppercase tracking-widest">
-                    Get More Info
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
+                  <Link href="/demo/church-dashboard" className="bg-white/10 text-white inline-flex items-center justify-center px-6 py-4 text-[13px] font-bold rounded-2xl border border-white/20 transition-all hover:bg-white hover:text-wgc-navy-950 uppercase tracking-widest">
+                    View Admin Demo
                   </Link>
-                  <Link href="/start" className="bg-wgc-gold-500 text-wgc-navy-950 inline-flex items-center justify-center px-8 py-5 text-[13px] font-bold rounded-2xl shadow-[0_20px_40px_rgba(234,179,8,0.2)] transform transition-all hover:scale-105 hover:bg-white uppercase tracking-widest">
-                    Get Approved
+                  <Link href="/demo/donation" className="bg-white/10 text-white inline-flex items-center justify-center px-6 py-4 text-[13px] font-bold rounded-2xl border border-white/20 transition-all hover:bg-white hover:text-wgc-navy-950 uppercase tracking-widest">
+                    View Donor Exp
                   </Link>
-                  <Link href="/demo/church-dashboard" className="inline-flex items-center justify-center px-8 py-5 text-[13px] font-bold rounded-2xl transition-all border border-white/20 text-white/80 hover:bg-white hover:text-wgc-navy-950 uppercase tracking-widest">
-                    View Demo Dashboard
+                  <a href="https://calendly.com/collinsansom/1-on-1-wgc-first-look" target="_blank" rel="noopener noreferrer" className="bg-wgc-gold-500/10 text-wgc-gold-500 inline-flex items-center justify-center px-6 py-4 text-[13px] font-bold rounded-2xl border border-wgc-gold-500/30 transition-all hover:bg-wgc-gold-500 hover:text-wgc-navy-950 uppercase tracking-widest">
+                    Book Live Demo
+                  </a>
+                  <Link href="/start" className="bg-wgc-gold-500 text-wgc-navy-950 inline-flex items-center justify-center px-6 py-4 text-[13px] font-bold rounded-2xl shadow-[0_20px_40px_rgba(234,179,8,0.2)] transform transition-all hover:scale-105 hover:bg-white uppercase tracking-widest">
+                    Get Started
                   </Link>
                 </div>
               </ScrollFade>
