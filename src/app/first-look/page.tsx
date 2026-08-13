@@ -3,6 +3,9 @@
 import Link from "next/link";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import Link from "next/link";
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
 
 export default function FirstLookPage() {
   return (
@@ -33,23 +36,20 @@ export default function FirstLookPage() {
         #smf-wrapper .hero video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:0; }
         #smf-wrapper .hero .veil { position:absolute; inset:0; z-index:1; background:linear-gradient(180deg, rgba(10,8,6,.55) 0%, rgba(12,9,7,.35) 38%, rgba(10,8,6,.72) 100%), radial-gradient(90% 70% at 50% 40%, rgba(234,179,8,.10), rgba(10,8,6,0) 60%); }
         #smf-wrapper .hero .glow { position:absolute; left:50%; top:-10%; transform:translateX(-50%); width:900px; height:520px; z-index:1; background:radial-gradient(closest-side, rgba(245,180,60,.28), rgba(245,180,60,0)); filter:blur(10px); pointer-events:none; }
-        #smf-wrapper .hero-content { position:relative; z-index:5; padding:120px 22px 80px; max-width:900px; width:100%; }
+        #smf-wrapper .hero-content { position:relative; z-index:5; padding:120px 22px 80px; max-width:900px; }
         #smf-wrapper .eyebrow { display:inline-block; background:rgba(63,125,82,.9); color:#eafaef; font-size:12.5px; font-weight:600; letter-spacing:.3px; padding:7px 16px; border-radius:99px; margin-bottom:26px; backdrop-filter:blur(4px); border:1px solid rgba(255,255,255,.15); }
         #smf-wrapper .hero h1 { font-family:'Fraunces',serif !important; font-weight:600 !important; color:#fff !important; font-size:clamp(38px,6.2vw,74px) !important; line-height:1.03 !important; letter-spacing:-1px !important; text-shadow:0 4px 30px rgba(0,0,0,.5) !important; margin:0 !important; }
         #smf-wrapper .hero p.lede { color:rgba(255,255,255,.9) !important; font-size:clamp(16px,2vw,20px) !important; line-height:1.55 !important; max-width:640px; margin:24px auto 0 !important; text-shadow:0 2px 14px rgba(0,0,0,.55) !important; }
-        
         #smf-wrapper .hero .cta-grid { margin-top:38px; display:grid; grid-template-columns:1fr 1fr; gap:14px; justify-content:center; max-width: 600px; margin-left: auto; margin-right: auto; }
         @media(max-width:600px) {
           #smf-wrapper .hero .cta-grid { grid-template-columns:1fr; }
         }
-        
         #smf-wrapper .btn-primary { font-family:'Inter' !important; font-weight:700 !important; font-size:16px !important; color:var(--ink) !important; background:linear-gradient(135deg,var(--gold-soft),var(--gold-deep)) !important; border:none !important; border-radius:14px !important; padding:17px 24px !important; cursor:pointer !important; display:inline-flex !important; align-items:center !important; justify-content:center !important; gap:10px !important; box-shadow:0 14px 34px -12px rgba(234,179,8,.75) !important; transition:transform .12s,box-shadow .15s !important; text-decoration:none !important; text-align:center; }
         #smf-wrapper .btn-primary:hover { transform:translateY(-2px) !important; box-shadow:0 18px 40px -12px rgba(234,179,8,.85) !important; }
         #smf-wrapper .btn-ghost { font-family:'Inter'; font-weight:700; font-size:16px; color:#ffe9a8; background:rgba(245,211,114,.10); border:1px solid rgba(245,211,114,.55); border-radius:14px; padding:17px 24px; cursor:pointer; backdrop-filter:blur(6px); transition:background .15s,color .15s; text-align:center; display:flex; align-items:center; justify-content:center; }
         #smf-wrapper .btn-ghost:hover { background:rgba(245,211,114,.20); color:#fff4d6; }
         #smf-wrapper .btn-white { font-family:'Inter' !important; font-weight:700 !important; font-size:16px !important; color:var(--ink) !important; background:#fff !important; border:none !important; border-radius:14px !important; padding:17px 24px !important; cursor:pointer !important; display:inline-flex !important; align-items:center !important; justify-content:center !important; transition:transform .12s,box-shadow .15s !important; text-decoration:none !important; text-align:center; box-shadow:0 10px 20px -10px rgba(0,0,0,.5); }
         #smf-wrapper .btn-white:hover { transform:translateY(-2px) !important; box-shadow:0 14px 24px -10px rgba(0,0,0,.6); }
-
         #smf-wrapper .fineprint { color:rgba(255,255,255,.62); font-size:12.5px; line-height:1.6; max-width:560px; margin:30px auto 0; }
         #smf-wrapper .scrollcue { position:absolute; bottom:26px; left:50%; transform:translateX(-50%); z-index:5; color:rgba(255,255,255,.7); font-size:11px; letter-spacing:2px; text-transform:uppercase; display:flex; flex-direction:column; align-items:center; gap:8px; }
         #smf-wrapper .scrollcue span { width:1px; height:34px; background:linear-gradient(rgba(255,255,255,.7),rgba(255,255,255,0)); animation:cue 1.8s ease-in-out infinite; }
@@ -65,6 +65,13 @@ export default function FirstLookPage() {
         #smf-wrapper .embed-shell { max-width:1090px; margin:26px auto 0; padding:0 14px; }
         #smf-wrapper .embed-shell iframe { width:100%; height:900px; border:0; border-radius:16px; background:transparent; display:block; }
 
+        /* ---------- STATS ---------- */
+        #smf-wrapper .stats { background:var(--stone-50); border-top:1px solid var(--line); }
+        #smf-wrapper .stats-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:20px; padding:64px 26px; max-width:820px; margin:0 auto; text-align:center; }
+        #smf-wrapper .stat .num { font-family:'Fraunces',serif !important; font-weight:700 !important; font-size:56px !important; color:var(--ink) !important; line-height:1 !important; margin:0 !important; }
+        #smf-wrapper .stat .lbl { font-size:14.5px !important; color:var(--ink-soft) !important; margin-top:12px !important; max-width:230px; margin-left:auto; margin-right:auto; }
+        #smf-wrapper .stat.mid { border-left:1px solid var(--line); }
+
         /* transparency band */
         #smf-wrapper .transparency { background:var(--stone-100); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
         #smf-wrapper .tp-inner { display:flex; align-items:center; justify-content:space-between; gap:26px; padding:34px 26px; flex-wrap:wrap; }
@@ -73,6 +80,7 @@ export default function FirstLookPage() {
         #smf-wrapper .tp-inner p strong { color:var(--ink); font-weight:700; }
         #smf-wrapper .btn-outline { flex:0 0 auto; font-family:'Inter' !important; font-weight:700 !important; font-size:14.5px !important; color:var(--gold-deep) !important; background:#fff !important; border:1.5px solid var(--gold) !important; border-radius:12px !important; padding:13px 22px !important; cursor:pointer !important; transition:background .15s,color .15s !important; display:inline-block !important; }
         #smf-wrapper .btn-outline:hover { background:var(--gold) !important; color:var(--ink) !important; }
+        #smf-wrapper .btn-primary.btn-wide { font-size:19px !important; padding:20px 46px !important; }
         #smf-wrapper .mid-cta { background:var(--stone-50); text-align:center; padding:2px 26px 62px; }
         #smf-wrapper .demo-cta { text-align:center; margin:34px auto 0; max-width:540px; }
         #smf-wrapper .demo-cta p { font-size:15.5px !important; color:var(--ink-soft) !important; margin-bottom:14px !important; font-weight:600 !important; }
@@ -91,6 +99,20 @@ export default function FirstLookPage() {
         /* hero reassurance */
         #smf-wrapper .reassure { color:#ffe9a8 !important; font-size:14.5px !important; font-weight:600 !important; margin:20px auto 0 !important; max-width:560px; }
 
+        /* FAQ */
+        #smf-wrapper .faq { background:var(--paper); padding:84px 26px; }
+        #smf-wrapper .faq .faq-head { text-align:center; max-width:680px; margin:0 auto 40px; }
+        #smf-wrapper .faq .kick { font-size:12px; font-weight:700; letter-spacing:1.6px; text-transform:uppercase; color:var(--gold-deep); margin-bottom:12px; }
+        #smf-wrapper .faq h2 { font-family:'Fraunces',serif !important; font-weight:600 !important; font-size:clamp(26px,3.6vw,38px) !important; letter-spacing:-.5px !important; margin:0 !important; color:var(--ink) !important; }
+        #smf-wrapper .faq-list { max-width:780px; margin:0 auto; display:flex; flex-direction:column; gap:12px; }
+        #smf-wrapper .faq details { background:var(--stone-50); border:1px solid var(--line); border-radius:12px; padding:0 20px; transition:border-color .15s; }
+        #smf-wrapper .faq details[open] { border-color:var(--gold); }
+        #smf-wrapper .faq summary { cursor:pointer; list-style:none; padding:18px 0; font-weight:600; font-size:16px; color:var(--ink); display:flex; justify-content:space-between; align-items:center; gap:16px; }
+        #smf-wrapper .faq summary::-webkit-details-marker { display:none; }
+        #smf-wrapper .faq summary::after { content:"+"; font-size:22px; color:var(--gold-deep); font-weight:400; line-height:1; }
+        #smf-wrapper .faq details[open] summary::after { content:"\\2013"; }
+        #smf-wrapper .faq details p { padding:0 0 18px !important; font-size:15px !important; color:var(--ink-soft) !important; line-height:1.6 !important; margin:0 !important; }
+
         /* ---------- CLOSING CTA ---------- */
         #smf-wrapper .closer { position:relative; overflow:hidden; text-align:center; padding:96px 26px; color:#fff; background:radial-gradient(120% 120% at 50% 0%, #4a2f14 0%, #2a1a10 48%, #14100b 100%); }
         #smf-wrapper .closer .glow { position:absolute; left:50%; top:-30%; transform:translateX(-50%); width:820px; height:520px; background:radial-gradient(closest-side, rgba(245,180,60,.22), rgba(245,180,60,0)); filter:blur(8px); }
@@ -103,6 +125,8 @@ export default function FirstLookPage() {
         }
 
         @media(max-width:860px) {
+          #smf-wrapper .stats-grid { grid-template-columns:1fr; gap:36px; }
+          #smf-wrapper .stat.mid { border:none; border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:30px 0; }
           #smf-wrapper .cards { grid-template-columns:1fr; }
           #smf-wrapper .embed-shell iframe { height:760px; }
         }
@@ -150,15 +174,34 @@ export default function FirstLookPage() {
           </div>
           <div className="demo-cta">
             <p>Still need more info?</p>
-            <a className="btn-outline" href="https://calendly.com/collinsansom/1-on-1-wgc-first-look" target="_blank" rel="noopener noreferrer">Book a Live Demo →</a>
+            <a className="btn-outline" href="https://calendly.com/collinsansom/1-on-1-wgc-first-look" target="_blank" rel="noopener noreferrer">Get a live demo →</a>
           </div>
         </section>
+
+        <section className="stats">
+          <div className="stats-grid">
+            <div className="stat">
+              <div className="num">$0</div>
+              <div className="lbl">per month for your first six months</div>
+            </div>
+            <div className="stat mid">
+              <div className="num">$0</div>
+              <div className="lbl">setup fees to get started today</div>
+            </div>
+          </div>
+        </section>
+
+        <div className="mid-cta">
+          <SixMonthsFreeStartButton className="btn-primary btn-wide">
+            Set up your giving page →
+          </SixMonthsFreeStartButton>
+        </div>
 
         <section className="transparency">
           <div className="wrap tp-inner">
             <div>
               <div className="kick">Full transparency</div>
-              <p>Simple pricing. No surprises. Our platform is just <strong>$10/month</strong> and you can cancel anytime.</p>
+              <p>After your first six months, your WGC Platform subscription is just <strong>$10/month</strong>. No surprises, cancel anytime.</p>
             </div>
             <Link className="btn-outline" href="/pricing">View full pricing →</Link>
           </div>
@@ -184,6 +227,41 @@ export default function FirstLookPage() {
               <div className="ic">⛪</div>
               <h3>Less admin, more mission</h3>
               <p>Pricing and tools built around how churches, camps, and nonprofits actually run, so you spend less time on money and more on people.</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="faq">
+          <div className="wrap">
+            <div className="faq-head">
+              <div className="kick">Common questions</div>
+              <h2>Answers before you sign up</h2>
+            </div>
+            <div className="faq-list">
+              <details open>
+                <summary>Do I need a credit card to start?</summary>
+                <p>No. There's no card required and no setup fee. You'll connect a bank account at signup, which is simply where your funds are deposited.</p>
+              </details>
+              <details>
+                <summary>How do I actually receive the money?</summary>
+                <p>Gifts and payments settle to the bank account you connect and are deposited on a regular schedule, so funds land directly in your account with no separate transfers to chase.</p>
+              </details>
+              <details>
+                <summary>What does it cost after the six months?</summary>
+                <p>Your first six months of the WGC Platform subscription are free. After that it's $10/month and you can cancel anytime. Standard card, ACH, and related processing fees apply throughout. See full pricing for details.</p>
+              </details>
+              <details>
+                <summary>Is it secure?</summary>
+                <p>Yes. Payments run on encrypted, PCI-compliant infrastructure, so donor and payment information is protected.</p>
+              </details>
+              <details>
+                <summary>Who can use WGC?</summary>
+                <p>Churches, camps, ministries, and 501(c) nonprofits. The platform is built specifically for mission-driven organizations.</p>
+              </details>
+              <details>
+                <summary>How long does setup take?</summary>
+                <p>Typically less than an hour, depending on approval. You can walk through exactly how it works in the interactive demo above, or book a live demo.</p>
+              </details>
             </div>
           </div>
         </section>
