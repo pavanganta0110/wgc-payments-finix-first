@@ -1641,6 +1641,41 @@ export async function POST(req: Request) {
             console.error("Failed to provision church dashboard account:", provisionError);
           }
         } else if (onboardingState === "UPDATE_REQUESTED") {
+          // Work out what Finix is actually asking for on EVERY delivery of
+          // this state, not just the first — previously this whole capture
+          // was nested inside the "first transition" guard below, so a
+          // second/later MERCHANT.UPDATED webhook (still onboarding_state
+          // UPDATE_REQUESTED, e.g. Finix refining or re-sending the
+          // requirement) was silently skipped entirely and the admin
+          // dashboard's "Required Info / Errors" column stayed blank even
+          // though Finix had told us something (2026-08-15 admin bug
+          // report). Finix's exact field name for this on the Merchant
+          // resource isn't confirmed from a captured real UPDATE_REQUESTED
+          // payload yet (`messages` is our best guess, matching Finix's
+          // Verification resource convention) — so `data.messages` /
+          // `data.verification?.messages` / `data.outstanding_requirements`
+          // are tried in that order, and if none is present, the FULL
+          // redacted merchant payload is stored instead of nothing, so the
+          // real requirement is always recoverable from the admin UI even
+          // when our summarization guess doesn't match Finix's actual shape.
+          let requestedItemsStr = "Additional documentation is required to verify your business and identity.";
+          const messagesSource = data?.messages ?? data?.verification?.messages ?? data?.outstanding_requirements ?? null;
+          if (messagesSource) {
+            updateData.updateRequestedCodes = messagesSource;
+            try {
+              const msgs = Array.isArray(messagesSource) ? messagesSource : [messagesSource];
+              const items = msgs.map((m: any) => (typeof m === "object" ? (m.message || m.code || m.description || JSON.stringify(m)) : String(m)));
+              if (items.length > 0) {
+                requestedItemsStr = items.map((i: string) => `• ${i}`).join("<br/>");
+                updateData.updateRequestedItems = requestedItemsStr;
+              }
+            } catch (e) {
+              console.error("Failed to parse requested items:", e);
+            }
+          } else {
+            updateData.updateRequestedCodes = redactFinixPayload(data ?? {});
+          }
+
           if (app.onboardingStatus !== "MORE_INFORMATION_REQUIRED" && app.onboardingStatus !== "APPROVED") {
             updateData.onboardingStatus = "MORE_INFORMATION_REQUIRED";
             updateData.onboardingState = "UPDATE_REQUESTED";
@@ -1655,21 +1690,6 @@ export async function POST(req: Request) {
 
             updateData.updateTokenHash = tokenHash;
             updateData.updateTokenExpiresAt = expiresAt;
-
-            let requestedItemsStr = "Additional documentation is required to verify your business and identity.";
-            if (data?.messages) {
-              updateData.updateRequestedCodes = data.messages;
-              try {
-                const msgs = Array.isArray(data.messages) ? data.messages : [data.messages];
-                const items = msgs.map((m: any) => typeof m === "object" ? (m.message || m.code || JSON.stringify(m)) : m);
-                if (items.length > 0) {
-                  requestedItemsStr = items.map((i: string) => `• ${i}`).join("<br/>");
-                  updateData.updateRequestedItems = requestedItemsStr;
-                }
-              } catch (e) {
-                console.error("Failed to parse requested items:", e);
-              }
-            }
 
             const secureLink = `https://www.wgcpayments.com/onboarding/update/${rawToken}`;
 

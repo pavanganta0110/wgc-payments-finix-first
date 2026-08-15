@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Inbox, FileText, Users, UserCircle, Mail, LifeBuoy, Building, CreditCard, RefreshCw } from "lucide-react";
+import { LayoutDashboard, Inbox, FileText, Users, UserCircle, Mail, LifeBuoy, Building, CreditCard, RefreshCw, UserCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
   { name: "Merchants", href: "/admin/merchants", icon: Building },
+  { name: "Merchant Applications", href: "/admin/merchant-applications", icon: UserCheck },
   { name: "Billing & Subscriptions", href: "/admin/billing", icon: CreditCard },
   { name: "Aplos Sync", href: "/admin/aplos", icon: RefreshCw },
   { name: "Support Tickets", href: "/admin/support/tickets", icon: LifeBuoy },

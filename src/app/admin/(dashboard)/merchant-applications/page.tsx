@@ -34,7 +34,7 @@ interface Application {
 export default function MerchantApplicationsPage() {
   const [apps, setApps] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Upload Modal State
   const [uploadModalAppId, setUploadModalAppId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -61,7 +61,7 @@ export default function MerchantApplicationsPage() {
 
   const resendEmail = async (appId: string) => {
     if (!confirm("Are you sure you want to resend the latest status email to this merchant?")) return;
-    
+
     try {
       const res = await fetch('/api/admin/resend-email', {
         method: 'POST',
@@ -81,7 +81,7 @@ export default function MerchantApplicationsPage() {
 
   const regenerateToken = async (appId: string) => {
     if (!confirm("Are you sure you want to regenerate the secure link and send it to the merchant?")) return;
-    
+
     setRegenerating(appId);
     try {
       const res = await fetch('/api/admin/regenerate-token', {
@@ -108,19 +108,19 @@ export default function MerchantApplicationsPage() {
     if (!uploadFile || !uploadModalAppId) return;
 
     setUploading(true);
-    
+
     try {
       const formData = new FormData();
       formData.append("file", uploadFile);
       formData.append("applicationId", uploadModalAppId);
-      
+
       const res = await fetch('/api/admin/upload-evidence', {
         method: 'POST',
         body: formData,
       });
-      
+
       const data = await res.json();
-      
+
       if (data.success) {
         alert("Document uploaded to Finix successfully!");
         setUploadModalAppId(null);
@@ -141,9 +141,9 @@ export default function MerchantApplicationsPage() {
   }
 
   return (
-    <div className="p-8 max-w-[90rem] mx-auto">
+    <div className="max-w-[90rem] mx-auto">
       <h1 className="text-2xl font-bold mb-8">Merchant Applications</h1>
-      
+
       <div className="overflow-x-auto bg-white rounded-xl shadow">
         <table className="w-full text-left text-sm">
           <thead className="bg-gray-50 border-b">
@@ -168,8 +168,8 @@ export default function MerchantApplicationsPage() {
                 </td>
                 <td className="px-6 py-4">
                   <span className={`px-2 py-1 rounded text-xs font-semibold
-                    ${app.onboardingStatus === 'APPROVED' ? 'bg-green-100 text-green-800' : 
-                      app.onboardingStatus === 'REJECTED' ? 'bg-red-100 text-red-800' : 
+                    ${app.onboardingStatus === 'APPROVED' ? 'bg-green-100 text-green-800' :
+                      app.onboardingStatus === 'REJECTED' ? 'bg-red-100 text-red-800' :
                       app.onboardingStatus === 'UNDER_REVIEW' ? 'bg-yellow-100 text-yellow-800' :
                       app.onboardingStatus === 'MORE_INFORMATION_REQUIRED' ? 'bg-orange-100 text-orange-800' :
                       'bg-blue-100 text-blue-800'}`}>
@@ -230,14 +230,14 @@ export default function MerchantApplicationsPage() {
                   <div className="flex flex-col gap-2 w-32">
                     {app.onboardingStatus === 'MORE_INFORMATION_REQUIRED' && (
                       <>
-                        <button 
+                        <button
                           onClick={() => regenerateToken(app.id)}
                           disabled={regenerating === app.id}
                           className="text-xs bg-orange-100 hover:bg-orange-200 text-orange-800 px-2 py-1.5 rounded transition-colors font-semibold shadow-sm disabled:opacity-50"
                         >
                           {regenerating === app.id ? "Sending..." : "Send Upload Link"}
                         </button>
-                        <button 
+                        <button
                           onClick={() => setUploadModalAppId(app.id)}
                           className="text-xs border border-gray-300 hover:bg-gray-50 text-gray-700 px-2 py-1.5 rounded transition-colors"
                         >
@@ -245,14 +245,14 @@ export default function MerchantApplicationsPage() {
                         </button>
                       </>
                     )}
-                    <button 
+                    <button
                       onClick={() => resendEmail(app.id)}
                       className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-800 px-2 py-1.5 rounded transition-colors"
                     >
                       Resend Status Email
                     </button>
                     {app.finixMerchantId && (
-                      <a 
+                      <a
                         href={`https://dashboard.finix.com/merchants/${app.finixMerchantId}`}
                         target="_blank"
                         className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 px-2 py-1.5 rounded text-center transition-colors font-medium shadow-sm"
@@ -284,8 +284,8 @@ export default function MerchantApplicationsPage() {
             </p>
             <form onSubmit={handleUploadSubmit} className="space-y-4">
               <div>
-                <input 
-                  type="file" 
+                <input
+                  type="file"
                   accept=".jpg,.jpeg,.png,.pdf"
                   onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
                   className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
