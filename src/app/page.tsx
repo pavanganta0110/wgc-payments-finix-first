@@ -133,19 +133,13 @@ export default function Home() {
                 <p className="text-lg sm:text-xl font-medium leading-relaxed mb-12 text-white/70 max-w-2xl tracking-tight">
                   WGC provides the white-label donation engine and ministry settlement rails for the platforms building the future of Kingdom stewardship.
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
-                  <Link href="/demo/church-dashboard" className="bg-white/10 text-white inline-flex items-center justify-center px-6 py-4 text-[13px] font-bold rounded-2xl border border-white/20 transition-all hover:bg-white hover:text-wgc-navy-950 uppercase tracking-widest">
-                    View Admin Demo
-                  </Link>
-                  <Link href="/demo/donation" className="bg-white/10 text-white inline-flex items-center justify-center px-6 py-4 text-[13px] font-bold rounded-2xl border border-white/20 transition-all hover:bg-white hover:text-wgc-navy-950 uppercase tracking-widest">
-                    View Donor Exp
-                  </Link>
-                  <a href="https://calendly.com/collinsansom/1-on-1-wgc-first-look" target="_blank" rel="noopener noreferrer" className="bg-wgc-gold-500/10 text-wgc-gold-500 inline-flex items-center justify-center px-6 py-4 text-[13px] font-bold rounded-2xl border border-wgc-gold-500/30 transition-all hover:bg-wgc-gold-500 hover:text-wgc-navy-950 uppercase tracking-widest">
-                    Book Live Demo
-                  </a>
-                  <Link href="/start" className="bg-wgc-gold-500 text-wgc-navy-950 inline-flex items-center justify-center px-6 py-4 text-[13px] font-bold rounded-2xl shadow-[0_20px_40px_rgba(234,179,8,0.2)] transform transition-all hover:scale-105 hover:bg-white uppercase tracking-widest">
+                <div className="flex flex-col sm:flex-row gap-4 max-w-lg">
+                  <Link href="/start" className="bg-wgc-gold-500 text-wgc-navy-950 inline-flex items-center justify-center px-8 py-4 text-[13px] font-bold rounded-2xl shadow-[0_20px_40px_rgba(234,179,8,0.2)] transform transition-all hover:scale-105 hover:bg-white uppercase tracking-widest w-full sm:w-auto">
                     Get Started
                   </Link>
+                  <a href="https://calendly.com/collinsansom/1-on-1-wgc-first-look" target="_blank" rel="noopener noreferrer" className="bg-white/10 text-white inline-flex items-center justify-center px-8 py-4 text-[13px] font-bold rounded-2xl border border-white/20 transition-all hover:bg-white hover:text-wgc-navy-950 uppercase tracking-widest w-full sm:w-auto">
+                    Book Live Demo
+                  </a>
                 </div>
               </ScrollFade>
  
@@ -256,6 +250,21 @@ export default function Home() {
           </div>
         </section>
 
+        {/* INTERACTIVE DEMO CTA */}
+        <section className="py-20 bg-wgc-off border-y border-wgc-navy-100">
+          <div className="max-w-4xl mx-auto px-4 text-center">
+            <ScrollFade>
+              <h2 className="text-3xl md:text-5xl font-bold text-wgc-navy-950 mb-6 tracking-tight">Explore the Platform</h2>
+              <p className="text-lg text-wgc-navy-500 mb-10 max-w-2xl mx-auto">
+                Step into our interactive deployment environment. Experience both the admin dashboard and the white-labeled donor flow.
+              </p>
+              <Link href="/demo" className="bg-wgc-navy-950 text-white inline-flex items-center justify-center px-8 py-4 text-[13px] font-bold rounded-2xl shadow-xl transform transition-all hover:scale-105 hover:bg-wgc-gold-500 hover:text-wgc-navy-950 uppercase tracking-widest">
+                View Interactive Demo
+              </Link>
+            </ScrollFade>
+          </div>
+        </section>
+
         {/* MINISTRY IMPACT */}
         <section className="pt-20 pb-32 bg-white relative overflow-hidden">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -326,7 +335,7 @@ export default function Home() {
                   <div className="w-10 h-10 rounded-full bg-wgc-gold-500 text-wgc-navy-950 flex items-center justify-center text-lg font-black mb-10 shadow-xl group-hover:scale-110 transition-transform">02</div>
                   <h3 className="text-xl font-black !text-white mb-4 tracking-tight">Stewardship Flow</h3>
                   <p className="text-[13px] font-bold text-white/60 leading-relaxed mb-8 tracking-widest">Donors use the interface they already trust. WGC disappears behind your brand while managing complexity.</p>
-                  <Link href="/demo/donation" className="inline-flex items-center text-[11px] font-black text-wgc-gold-500 hover:text-white transition-colors tracking-[0.2em] font-mono">
+                  <Link href="/demo#donor-demo" className="inline-flex items-center text-[11px] font-black text-wgc-gold-500 hover:text-white transition-colors tracking-[0.2em] font-mono">
                     Demo Flow 
                   </Link>
                 </div>
