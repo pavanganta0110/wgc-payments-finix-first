@@ -1,96 +1,44 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import toast from "react-hot-toast";
-import { Loader2 } from "lucide-react";
-import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import AuthOptions from "@/components/auth/AuthOptions";
 import { resolveSafeMerchantRedirect } from "@/lib/safeReturnPath";
 
+/**
+ * Renders AuthOptions (email/password + Google + Apple sign-in) — this
+ * form was accidentally reverted to a plain email/password-only version
+ * on 2026-08-06 (commit 1257db9): that fix was built from a copy of this
+ * file that predated the Google/Apple social-login feature (commit
+ * efb1c04, same day, earlier), so applying it silently discarded the
+ * AuthOptions integration instead of merging with it. Restored here
+ * 2026-08-15 — see AuthOptions.tsx for the actual login UI/logic (kept
+ * unmodified) and oauth.ts for the Google/Apple callback flow.
+ */
 export default function MerchantLoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isReauth = searchParams.get("reauth") === "true";
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
-    try {
-      const res = await fetch("/api/merchant/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Login failed.");
-      }
-
-      // Previously hardcoded to /merchant/dashboard regardless of how this
-      // page was reached — a restricted org following an activation link
-      // that redirected here to log in first (e.g.
-      // /merchant/login?next=/activate-subscription/<token>) landed back
-      // on the gated dashboard instead of continuing to the page they
-      // actually came for. resolveSafeMerchantRedirect validates `next`
-      // is same-origin (/merchant/* or /activate-subscription/* only)
-      // before ever using it — no open redirect.
-      const next = resolveSafeMerchantRedirect(searchParams.get("next"));
-      // replace (not push) so the back button doesn't return to /merchant/login
-      router.replace(next);
-      router.refresh();
-    } catch (err: any) {
-      toast.error(err.message || "An error occurred");
-      setIsSubmitting(false);
-    }
-  };
+  // AuthOptions' own convention is `?redirectTo=` (used by the reauth
+  // links in SecuritySettingsForm.tsx) — but /activate-subscription/[token]
+  // sends restricted/unauthenticated merchants here with `?next=` instead
+  // (a second, independently-added convention). Accept either, always
+  // through resolveSafeMerchantRedirect's same-origin validation, so
+  // neither redirect path silently drops back to /merchant/dashboard.
+  const redirectTo = resolveSafeMerchantRedirect(searchParams.get("redirectTo") || searchParams.get("next"));
 
   return (
     <div className="flex flex-col min-h-screen">
       <Header />
       <main className="flex-grow max-w-md w-full mx-auto py-24 px-6">
-        <h1 className="text-2xl font-bold text-slate-900 mb-2 text-center">Merchant Dashboard Login</h1>
-        <p className="text-slate-600 text-sm text-center mb-8">Log in to your WGC Payments dashboard.</p>
-
-        <form onSubmit={handleSubmit} className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 space-y-5">
-          <div>
-            <label className="block text-sm font-semibold mb-2">Email</label>
-            <input
-              required
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]"
-            />
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-semibold">Password</label>
-              <Link href="/merchant/forgot-password" className="text-xs font-semibold text-blue-600 hover:underline">
-                Forgot password?
-              </Link>
-            </div>
-            <input
-              required
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308]"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full px-6 py-3 rounded-xl font-bold text-slate-900 metallic-gold shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Log in"}
-          </button>
-        </form>
+        <AuthOptions
+          mode={isReauth ? "reauth" : "login"}
+          heading={isReauth ? "Verify your identity" : "Merchant Dashboard Login"}
+          subheading={isReauth ? "Please authenticate using any login method connected to your account." : "Log in to your WGC Payments dashboard."}
+          redirectTo={redirectTo}
+          reauthType={searchParams.get("reauthType") || undefined}
+        />
       </main>
       <Footer />
     </div>
