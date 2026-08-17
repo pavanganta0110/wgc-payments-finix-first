@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendWgcEmail } from "@/lib/email";
 
@@ -40,18 +41,32 @@ export async function provisionChurchAccount(app: {
       slug = `${slugBase}-${suffix++}`;
     }
 
-    church = await prisma.church.create({
-      data: {
-        name: orgName,
-        slug,
-        primaryContactEmail: app.contactEmail,
-        onboardingApplicationId: app.id,
-        finixMerchantId: app.finixMerchantId,
-        finixIdentityId: app.finixIdentityId,
-        finixApplicationId: app.finixApplicationId,
-        status: "ACTIVE",
-      },
-    });
+    try {
+      church = await prisma.church.create({
+        data: {
+          name: orgName,
+          slug,
+          primaryContactEmail: app.contactEmail,
+          onboardingApplicationId: app.id,
+          finixMerchantId: app.finixMerchantId,
+          finixIdentityId: app.finixIdentityId,
+          finixApplicationId: app.finixApplicationId,
+          status: "ACTIVE",
+        },
+      });
+    } catch (err) {
+      // A concurrent provisioning attempt for the same application (e.g. a
+      // webhook redelivery racing an admin's manual retry) won the race and
+      // already created the Church row (Church.onboardingApplicationId is
+      // @unique) — re-resolve instead of failing provisioning entirely.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const raced = await prisma.church.findFirst({ where: { onboardingApplicationId: app.id } });
+        if (!raced) throw err;
+        church = raced;
+      } else {
+        throw err;
+      }
+    }
   } else {
     church = await prisma.church.update({
       where: { id: church.id },
