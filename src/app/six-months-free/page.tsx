@@ -140,7 +140,7 @@ export default function SixMonthsFreePage() {
               </SixMonthsFreeStartButton>
             </div>
             <p className="reassure">No credit card required. Just connect the bank account where you'd like your funds to land.</p>
-            <p className="fineprint">Standard card, ACH, refund, dispute, and other applicable payment-processing fees still apply during the promotional period.</p>
+            <p className="fineprint">Standard card, ACH, refund, dispute, and other applicable payment-processing fees still apply during the promotional period. Offer valid for organizations processing at least $100/month.</p>
           </div>
           <div className="scrollcue">Set up your giving page<span></span></div>
         </section>
