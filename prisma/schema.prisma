@@ -1246,6 +1246,47 @@ model PromotionEntitlement {
   @@index([status])
 }
 
+/// One row per organization per calendar month where a monthly compliance
+/// check (see promoShortfallDetection.ts) found the org's actual Finix
+/// processing volume fell below the promo's minimum-processing threshold
+/// while its PromotionEntitlement was ACTIVE. Deliberately review-first, not
+/// auto-charged: the row starts FLAGGED and a WGC billing admin must
+/// explicitly charge or waive it (see promoShortfallCharge.ts) — nothing
+/// automatically moves money. @@unique on (organizationId, billingPeriod)
+/// is the hard guarantee against the detection cron ever double-flagging
+/// (and therefore double-charging) the same org for the same month, even if
+/// the cron somehow runs twice.
+model PromoShortfallCharge {
+  id                     String    @id @default(cuid())
+  organizationId         String
+  promotionEntitlementId String
+  // e.g. "2026-09" — the calendar month that was found short.
+  billingPeriod          String
+  processedVolumeCents   Int
+  thresholdCents         Int
+  // Snapshotted from PromotionEntitlement.normalMonthlyAmountCents at
+  // detection time — the amount an admin's "Charge now" action will
+  // actually charge, immune to a later pricing-template edit.
+  chargeAmountCents      Int
+  currency               String    @default("USD")
+  // FLAGGED | CHARGED | CHARGE_FAILED | WAIVED
+  status                 String    @default("FLAGGED")
+  finixTransferId        String?
+  billingChargeId        String?
+  chargedByUserId        String?
+  chargedAt              DateTime?
+  waivedByUserId         String?
+  waivedAt               DateTime?
+  waiveReason            String?
+  failureMessage         String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@unique([organizationId, billingPeriod])
+  @@index([status])
+  @@index([organizationId])
+}
+
 /// A promotional signup lead, captured server-side the moment a visitor
 /// clicks "Start Six Months Free" on the trusted /six-months-free landing
 /// page — never derived from a client-submitted query parameter, cookie

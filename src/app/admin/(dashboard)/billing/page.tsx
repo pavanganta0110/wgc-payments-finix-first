@@ -51,7 +51,7 @@ function cents(c: number | undefined) {
   return c != null ? `$${(c / 100).toFixed(2)}` : "—";
 }
 
-const TABS = ["Organizations", "Pricing", "Invoice Billing", "Promotions", "Failed Payments", "Settings", "Terms", "Audit Log"] as const;
+const TABS = ["Organizations", "Pricing", "Invoice Billing", "Promotions", "Promo Compliance", "Failed Payments", "Settings", "Terms", "Audit Log"] as const;
 type Tab = (typeof TABS)[number];
 
 interface PromotionRow {
@@ -209,6 +209,7 @@ export default function AdminBillingPage() {
       {tab === "Pricing" && <PricingTab />}
       {tab === "Invoice Billing" && <InvoiceBillingTab />}
       {tab === "Promotions" && <PromotionsTab />}
+      {tab === "Promo Compliance" && <PromoComplianceTab />}
       {tab === "Failed Payments" && <FailedPaymentsTab />}
       {tab === "Settings" && <SettingsTab />}
       {tab === "Terms" && <TermsTab />}
@@ -1065,6 +1066,202 @@ function EntitlementActionModal({ entitlement, onClose, onDone }: { entitlement:
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+interface PromoShortfallRow {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  billingPeriod: string;
+  processedVolumeCents: number;
+  thresholdCents: number;
+  chargeAmountCents: number;
+  status: string;
+  failureMessage: string | null;
+}
+
+/**
+ * "Offer valid for organizations processing at least $100/month" —
+ * see src/app/six-months-free/page.tsx. Nothing here charges anything
+ * automatically; the monthly cron only FLAGS a row, an admin must
+ * explicitly confirm each charge or waive.
+ */
+function PromoComplianceTab() {
+  const [rows, setRows] = useState<PromoShortfallRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [canManageBilling, setCanManageBilling] = useState(false);
+  const [confirmingChargeId, setConfirmingChargeId] = useState<string | null>(null);
+  const [chargeConfirmed, setChargeConfirmed] = useState(false);
+  const [waivingId, setWaivingId] = useState<string | null>(null);
+  const [waiveReason, setWaiveReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    fetch("/api/admin/billing/promo-shortfalls")
+      .then((r) => r.json())
+      .then((d) => {
+        setRows(d.shortfalls || []);
+        setCanManageBilling(Boolean(d.canManageBilling));
+      })
+      .catch(() => toast.error("Failed to load promo compliance data"))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => {
+    load();
+  }, []);
+
+  const charge = async (id: string) => {
+    if (!chargeConfirmed) {
+      toast.error("Confirmation is required to charge a real payment method.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/billing/promo-shortfalls/${id}/charge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed: true }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Charge failed");
+      toast.success("Charge submitted.");
+      setConfirmingChargeId(null);
+      setChargeConfirmed(false);
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Charge failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const waive = async (id: string) => {
+    if (!waiveReason.trim()) {
+      toast.error("A reason is required to waive.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/billing/promo-shortfalls/${id}/waive`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: waiveReason }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Waive failed");
+      toast.success("Shortfall waived.");
+      setWaivingId(null);
+      setWaiveReason("");
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Waive failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6">
+      <div className="mb-4">
+        <h3 className="text-sm font-bold text-slate-900">Promo Compliance</h3>
+        <p className="text-xs text-slate-400 mt-0.5">
+          Organizations flagged by the monthly check for processing under the $100/month minimum during their promo period. Nothing here is charged automatically — review and confirm each one.
+        </p>
+      </div>
+
+      <table className="w-full text-sm">
+        <thead className="text-xs text-slate-400 uppercase">
+          <tr>
+            <th className="text-left py-2">Organization</th>
+            <th className="text-left py-2">Period</th>
+            <th className="text-left py-2">Processed</th>
+            <th className="text-left py-2">Threshold</th>
+            <th className="text-left py-2">Charge</th>
+            <th className="text-left py-2">Status</th>
+            <th className="text-left py-2">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map((r) => (
+            <Fragment key={r.id}>
+              <tr>
+                <td className="py-2 font-medium text-slate-800">
+                  <a href={`/admin/organizations/${r.organizationId}`} className="text-blue-600 hover:underline">{r.organizationName}</a>
+                </td>
+                <td className="py-2 text-slate-500">{r.billingPeriod}</td>
+                <td className="py-2 text-slate-500">{cents(r.processedVolumeCents)}</td>
+                <td className="py-2 text-slate-500">{cents(r.thresholdCents)}</td>
+                <td className="py-2 text-slate-500">{cents(r.chargeAmountCents)}</td>
+                <td className="py-2 text-slate-500">{r.status}{r.failureMessage ? ` — ${r.failureMessage}` : ""}</td>
+                <td className="py-2">
+                  {r.status === "FLAGGED" && canManageBilling && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setConfirmingChargeId(r.id); setWaivingId(null); }}
+                        className="px-3 py-1.5 rounded-full text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800"
+                      >
+                        Charge now
+                      </button>
+                      <button
+                        onClick={() => { setWaivingId(r.id); setConfirmingChargeId(null); }}
+                        className="px-3 py-1.5 rounded-full text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200"
+                      >
+                        Waive
+                      </button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+              {confirmingChargeId === r.id && (
+                <tr>
+                  <td colSpan={7} className="py-3 bg-amber-50 px-3 rounded-lg">
+                    <p className="text-xs text-slate-700 mb-2">
+                      This will charge <strong>{r.organizationName}</strong>'s on-file payment method <strong>{cents(r.chargeAmountCents)}</strong> through Finix, right now. This cannot be undone from here.
+                    </p>
+                    <label className="flex items-center gap-2 text-xs text-slate-700 mb-2">
+                      <input type="checkbox" checked={chargeConfirmed} onChange={(e) => setChargeConfirmed(e.target.checked)} />
+                      I understand this charges a real payment method.
+                    </label>
+                    <div className="flex gap-2">
+                      <button onClick={() => charge(r.id)} disabled={busy} className="px-4 py-1.5 rounded-full bg-red-600 text-white text-xs font-semibold disabled:opacity-50">
+                        {busy ? "Charging…" : "Confirm charge"}
+                      </button>
+                      <button onClick={() => { setConfirmingChargeId(null); setChargeConfirmed(false); }} className="px-4 py-1.5 rounded-full text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                        Cancel
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {waivingId === r.id && (
+                <tr>
+                  <td colSpan={7} className="py-3 bg-slate-50 px-3 rounded-lg">
+                    <input
+                      value={waiveReason}
+                      onChange={(e) => setWaiveReason(e.target.value)}
+                      placeholder="Reason for waiving this month (required)"
+                      className="w-full max-w-md px-3 py-1.5 rounded-lg border border-slate-200 text-xs mb-2"
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={() => waive(r.id)} disabled={busy} className="px-4 py-1.5 rounded-full bg-slate-900 text-white text-xs font-semibold disabled:opacity-50">
+                        {busy ? "Saving…" : "Confirm waive"}
+                      </button>
+                      <button onClick={() => { setWaivingId(null); setWaiveReason(""); }} className="px-4 py-1.5 rounded-full text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                        Cancel
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+          {!loading && rows.length === 0 && (
+            <tr><td colSpan={7} className="py-6 text-center text-slate-400">No organizations currently flagged.</td></tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
