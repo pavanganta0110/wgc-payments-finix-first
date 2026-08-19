@@ -3,6 +3,7 @@ import { graph } from "@/lib/schema";
 import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "react-hot-toast";
+import { Analytics } from "@vercel/analytics/next";
 import MetaPixel from "@/components/common/MetaPixel";
 import CookieConsentBanner from "@/components/common/CookieConsentBanner";
 
@@ -91,6 +92,7 @@ export default function RootLayout({
         />
         <MetaPixel />
         <CookieConsentBanner />
+        <Analytics />
       </body>
     </html>
   );
