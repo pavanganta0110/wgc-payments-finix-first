@@ -103,8 +103,17 @@ export async function provisionChurchAccount(app: {
     const existingUser = await tx.user.findUnique({ where: { email: app.contactEmail } });
 
     if (existingUser && (existingUser.passwordHash || existingUser.lastLoginAt)) {
-      if (existingUser.churchId !== church.id) {
-        await tx.user.update({ where: { id: existingUser.id }, data: { churchId: church.id } });
+      const churchIdChanged = existingUser.churchId !== church.id;
+      const needsNameBackfill = !existingUser.name;
+      if (churchIdChanged || needsNameBackfill) {
+        const updated = await tx.user.update({
+          where: { id: existingUser.id },
+          data: {
+            ...(churchIdChanged ? { churchId: church.id } : {}),
+            ...(needsNameBackfill ? { name: app.contactName } : {}),
+          },
+        });
+        return { alreadySetUp: true as const, user: updated };
       }
       return { alreadySetUp: true as const, user: existingUser };
     }
@@ -114,14 +123,27 @@ export async function provisionChurchAccount(app: {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
+    // contactName is a required field on OnboardingApplication (always
+    // captured at signup) but was never copied onto the User row here,
+    // leaving the admin Merchants Directory's "Primary Owner" column
+    // showing "Unnamed owner" for every organization that hadn't had a
+    // WGC support agent manually patch it in later. Only backfills an
+    // existing user's name if it's currently unset — never overwrites a
+    // name the merchant (or a support agent) has since set themselves.
     const user = existingUser
       ? await tx.user.update({
           where: { id: existingUser.id },
-          data: { churchId: church.id, setPasswordTokenHash: tokenHash, setPasswordTokenExpiresAt: expiresAt },
+          data: {
+            churchId: church.id,
+            setPasswordTokenHash: tokenHash,
+            setPasswordTokenExpiresAt: expiresAt,
+            ...(existingUser.name ? {} : { name: app.contactName }),
+          },
         })
       : await tx.user.create({
           data: {
             email: app.contactEmail,
+            name: app.contactName,
             role: "church_admin",
             churchId: church.id,
             setPasswordTokenHash: tokenHash,
