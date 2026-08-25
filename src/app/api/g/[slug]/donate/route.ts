@@ -260,6 +260,7 @@ async function handleDonate(req: Request, slug: string) {
         name: fullName,
         email: donor.email,
         phone: donor.phone || null,
+        companyName: fieldSettings.companyName !== "HIDDEN" ? donor.companyName?.trim() || null : null,
       });
     } else {
       const [firstName, ...rest] = fullName.trim().split(" ");
@@ -376,6 +377,7 @@ async function handleDonate(req: Request, slug: string) {
         name: fullName,
         email: donor.email,
         phone: donor.phone || null,
+        companyName: fieldSettings.companyName !== "HIDDEN" ? donor.companyName?.trim() || null : null,
       });
 
       try {
