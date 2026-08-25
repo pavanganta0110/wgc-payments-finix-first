@@ -1236,6 +1236,7 @@ export default function GivingLinkBuilderForm({
             assignedFunds={funds
               .filter((f) => f.isActive)
               .map((f) => ({ fundId: f.fundId, name: f.name, description: f.description || null, isDefault: f.isDefault, displayOrder: f.displayOrder }))}
+            pageType={pageType}
           />
         </div>
       </div>
