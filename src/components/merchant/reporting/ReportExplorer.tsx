@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import toast from "react-hot-toast";
 import { Download, Save, SlidersHorizontal, Columns3, X } from "lucide-react";
+import ClickableTableRow from "@/components/merchant/ClickableTableRow";
 
 const DONOR_REPORT_COLUMNS = [
   "donorName", "firstName", "lastName", "email", "phone", "companyName", "address", "city", "state", "postalCode",
@@ -380,23 +381,33 @@ export default function ReportExplorer({
                 </tr>
               ) : reportType === "RECURRING" ? (
                 result.rows.map((row) => (
-                  <tr key={row.donorId} className="border-b border-slate-50 last:border-0">
+                  <ClickableTableRow
+                    key={row.donorId}
+                    id={row.donorId}
+                    targetHref={`/merchant/donors/${row.donorId}`}
+                    className="border-b border-slate-50 last:border-0 hover:bg-slate-50"
+                  >
                     <td className="px-4 py-3">{String(row.donorName ?? "—")}</td>
                     <td className="px-4 py-3">{formatCentsDisplay(Number(row.monthlyValueCents ?? 0))}</td>
                     <td className="px-4 py-3">{String(row.frequencies ?? "—")}</td>
                     <td className="px-4 py-3">{String(row.overallStatus ?? "—")}</td>
                     <td className="px-4 py-3">{formatDateDisplay(row.nextBillingDate as string | null)}</td>
-                  </tr>
+                  </ClickableTableRow>
                 ))
               ) : (
                 result.rows.map((row) => (
-                  <tr key={row.donorId} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+                  <ClickableTableRow
+                    key={row.donorId}
+                    id={row.donorId}
+                    targetHref={`/merchant/donors/${row.donorId}`}
+                    className="border-b border-slate-50 last:border-0 hover:bg-slate-50"
+                  >
                     {columns.map((col) => (
                       <td key={col} className="px-4 py-3 whitespace-nowrap text-slate-700">
                         {cellValue(row, col)}
                       </td>
                     ))}
-                  </tr>
+                  </ClickableTableRow>
                 ))
               )}
             </tbody>
