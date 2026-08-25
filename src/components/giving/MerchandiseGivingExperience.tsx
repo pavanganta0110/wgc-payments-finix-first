@@ -97,6 +97,8 @@ export default function MerchandiseGivingExperience({
   const [shippingOptionId, setShippingOptionId] = useState<string | null>(null);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [coverFees, setCoverFees] = useState(feeCoverDefaultOn);
+  const [paymentMethod, setPaymentMethod] = useState<"card" | "bank">("card");
+  const cardBankMethods = allowedPaymentMethods.filter((m) => m === "CARD" || m === "BANK");
 
   const [submitting, setSubmitting] = useState(false);
   const [walletProcessing, setWalletProcessing] = useState<"apple_pay" | "google_pay" | null>(null);
@@ -118,17 +120,30 @@ export default function MerchandiseGivingExperience({
   }, [slug]);
 
   useEffect(() => {
-    // Mounted exactly once — Finix.PaymentForm appends into its container
-    // rather than replacing content, so remounting on every submit
-    // (as an earlier version of this component did) would stack duplicate
-    // card forms, the same bug already fixed once in ActivationForm.tsx.
-    mountFinixPaymentForm("merch-giving-finix-form", APPLICATION_ID, { paymentMethods: ["card"], showAddress: false }, FINIX_ENV)
+    // Remounts whenever paymentMethod changes (card <-> bank) — Finix.
+    // PaymentForm appends into its container rather than replacing content,
+    // so the container is cleared first (same pattern GivingLinkForm.tsx
+    // uses for its own card/bank toggle) to avoid stacking duplicate forms,
+    // the bug an earlier "mount exactly once" version of this component was
+    // written to avoid — that only worked because card was the only option.
+    let cancelled = false;
+    const container = document.getElementById("merch-giving-finix-form");
+    if (container) container.innerHTML = "";
+    setFinixForm(null);
+    setFormReady(false);
+
+    mountFinixPaymentForm("merch-giving-finix-form", APPLICATION_ID, { paymentMethods: [paymentMethod], showAddress: false }, FINIX_ENV)
       .then((form) => {
+        if (cancelled) return;
         setFinixForm(form);
         setFormReady(true);
       })
       .catch((err) => console.error("Failed to mount Finix payment form:", err));
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [paymentMethod]);
 
   const donationCents = customAmount ? Math.round(Number(customAmount) * 100) || 0 : donationAmount || 0;
 
@@ -142,7 +157,7 @@ export default function MerchandiseGivingExperience({
   // server always recomputes this itself before charging, so a stale or
   // manipulated client value here can never change what's actually
   // charged, only what's displayed before submission.
-  const donorCoveredFeeResult = calculateWgcFeeAmounts({ donationAmountCents: baseTotal, paymentMethod: "CARD", cardBrand: null, donorCoversFee: true });
+  const donorCoveredFeeResult = calculateWgcFeeAmounts({ donationAmountCents: baseTotal, paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD", cardBrand: null, donorCoversFee: true });
   const feeCoveredCents = donorCoveredFeeResult.supplementalFeeCents;
   const grandTotal = feeCoverEnabled && coverFees ? baseTotal + feeCoveredCents : baseTotal;
 
@@ -308,14 +323,18 @@ export default function MerchandiseGivingExperience({
 
     setSubmitting(true);
     try {
-      const fraudSessionId = await getFraudSessionId(finixMerchantId, FINIX_ENV);
+      // Mirrors /api/g/[slug]/donate's own rule: Finix.Auth's fraud-session
+      // callback never fires for a bank/ACH submission, so this is skipped
+      // (not awaited-and-hung-forever) exactly when the donate route also
+      // treats it as optional.
+      const fraudSessionId = paymentMethod === "bank" ? "" : await getFraudSessionId(finixMerchantId, FINIX_ENV);
       const token = await new Promise<string>((resolve, reject) => {
         finixForm.submit((err, response) => {
-          if (err || !response?.data?.id) return reject(new Error("Could not process card details."));
+          if (err || !response?.data?.id) return reject(new Error(paymentMethod === "bank" ? "Could not process bank account details." : "Could not process card details."));
           resolve(response.data.id);
         });
       });
-      await submitCheckout({ token, fraudSessionId });
+      await submitCheckout({ token, fraudSessionId, paymentMethod });
     } catch (err: any) {
       setError(err.message || "Something went wrong. Please try again.");
     } finally {
@@ -576,13 +595,37 @@ export default function MerchandiseGivingExperience({
             </div>
             <div className="flex items-center gap-3 my-4">
               <div className="flex-grow h-px bg-slate-100" />
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Or pay with card</span>
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Or pay another way</span>
               <div className="flex-grow h-px bg-slate-100" />
             </div>
           </div>
         )}
 
         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Payment</h4>
+
+        {cardBankMethods.length > 1 && (
+          <div className="flex rounded-xl border border-slate-200 p-1 mb-3">
+            {cardBankMethods.includes("CARD") && (
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("card")}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold ${paymentMethod === "card" ? "bg-slate-900 text-white" : "text-slate-600"}`}
+              >
+                Card
+              </button>
+            )}
+            {cardBankMethods.includes("BANK") && (
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("bank")}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold ${paymentMethod === "bank" ? "bg-slate-900 text-white" : "text-slate-600"}`}
+              >
+                Bank Account
+              </button>
+            )}
+          </div>
+        )}
+
         <div id="merch-giving-finix-form" className="mb-4 min-h-[120px] border border-slate-200 rounded-xl p-3" />
 
         <div className="bg-slate-50 rounded-xl p-4 space-y-1 text-sm mb-4">

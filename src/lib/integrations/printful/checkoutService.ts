@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { finixClient } from "@/lib/finix/client";
 import { resolveProcessingMerchant, buildIdempotencyKey } from "@/lib/billing/paymentRouting";
 import { resolveOrCreateDonor } from "@/lib/donors/resolveOrCreateDonor";
@@ -7,6 +8,7 @@ import { priceCartServerSide, getShippingQuote, createMerchandiseOrder, type Car
 import { OrderSubmissionError } from "./errors";
 import { resolveWgcTransferFeeStrategy } from "@/lib/giving/serverFeeStrategy";
 import { FEE_CALCULATION_VERSION } from "@/lib/giving/feeCalculator";
+import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import type { WgcAddress } from "./types";
 
 /**
@@ -63,7 +65,7 @@ export interface CheckoutInput {
   // church's own Finix identity — wallet tokens are scoped to whichever
   // identity they were tokenized against client-side, see googlePay.ts/
   // applePay.ts).
-  paymentMethod?: "card" | "apple_pay" | "google_pay";
+  paymentMethod?: "card" | "bank" | "apple_pay" | "google_pay";
   walletToken?: string;
   walletBillingContact?: WalletBillingContact;
   fraudSessionId: string;
@@ -175,6 +177,10 @@ export async function processCombinedCheckout(input: CheckoutInput) {
     if (!instrumentId) throw new CheckoutValidationError("Could not process wallet payment instrument.");
     cardBrand = instrument?.card?.brand || null;
   } else if (input.token) {
+    // Handles both card and bank/ACH tokens — Finix's hosted form returns
+    // the same token shape either way (see mountFinixPaymentForm's
+    // paymentMethods config on the frontend), so no branching is needed
+    // here beyond what the fee calc and paymentMethodType below already do.
     const [firstName, ...rest] = input.donor.name.trim().split(" ");
     const identity = await finixClient.createBuyerIdentity({ entity: { first_name: firstName, last_name: rest.join(" ") || firstName, email: input.donor.email, phone: input.donor.phone || undefined } });
     identityId = identity?.id;
@@ -189,6 +195,16 @@ export async function processCombinedCheckout(input: CheckoutInput) {
 
   const donorRecord = await resolveOrCreateDonor({ churchId: input.churchId, finixIdentityId: identityId, name: input.donor.name, email: input.donor.email, phone: input.donor.phone ?? null });
 
+  // Was missing entirely on this checkout path — the plain donation flow
+  // (/api/g/[slug]/donate) snapshots the payment instrument so the
+  // Transactions list can show a donor name/card; merchandise checkout
+  // never did, so every merch-page transaction showed no donor here.
+  try {
+    await syncPaymentInstrument(instrumentId, { churchId: input.churchId, donorId: donorRecord.id });
+  } catch (err) {
+    console.error("Failed to snapshot payment instrument for merchandise checkout:", err);
+  }
+
   // --- WGC processing fee — same fee matrix, same donor-covers-fee
   // toggle, and same Finix fee_profile mechanism as the plain donation
   // flow (/api/g/[slug]/donate). Previously entirely absent from
@@ -199,7 +215,7 @@ export async function processCombinedCheckout(input: CheckoutInput) {
   try {
     feeStrategy = resolveWgcTransferFeeStrategy({
       donationAmountCents: baseTotal,
-      paymentMethod: "CARD",
+      paymentMethod: input.paymentMethod === "bank" ? "ACH" : "CARD",
       cardBrand,
       donorCoversFee: Boolean(link.feeCoverEnabled && input.coverFees),
     });
@@ -222,7 +238,7 @@ export async function processCombinedCheckout(input: CheckoutInput) {
     fee_profile: feeStrategy.feeProfileId,
     ...(input.fraudSessionId && { fraud_session_id: input.fraudSessionId }),
     idempotency_id: idempotencyId,
-    statement_descriptor: (link.statementDescriptor || church.name).slice(0, 18).toUpperCase(),
+    statement_descriptor: (link.statementDescriptor || church.name).slice(0, input.paymentMethod === "bank" ? 10 : 18).toUpperCase(),
     tags: {
       source: "wgc_merchandise_checkout",
       givingLinkId: link.id,
@@ -256,6 +272,31 @@ export async function processCombinedCheckout(input: CheckoutInput) {
     throw new CheckoutValidationError("Payment was not successful. No order was created.");
   }
 
+  // Was missing entirely on this checkout path — the real Finix transfer
+  // above always carried the correct grandTotal, but nothing synced a
+  // local FinixTransfer row afterward (unlike /api/g/[slug]/donate), so
+  // every merch-page transaction was invisible on the Transactions list
+  // and excluded from the FinixTransfer-driven dashboard aggregates even
+  // though the charge itself succeeded.
+  await prisma.finixTransfer.upsert({
+    where: { finixTransferId: transfer.id },
+    create: {
+      finixTransferId: transfer.id,
+      churchId: input.churchId,
+      finixMerchantId: resolved.merchantId,
+      finixPaymentInstrumentId: instrumentId,
+      type: transfer.type ?? "DEBIT",
+      state: transfer.state ?? "PENDING",
+      amountCents: grandTotal,
+      currency: "USD",
+      source: "wgc_merchandise_checkout",
+      tagsJson: transferPayload.tags as Prisma.InputJsonValue,
+      createdAtFinix: new Date(),
+      lastSyncedAt: new Date(),
+    },
+    update: { state: transfer.state ?? undefined, lastSyncedAt: new Date() },
+  });
+
   // --- Payment record for the donation portion ONLY (never the grand total) ---
   let paymentId: string | null = null;
   if (input.donationAmountCents > 0) {
@@ -271,11 +312,27 @@ export async function processCombinedCheckout(input: CheckoutInput) {
         // grandTotal) — the merchandise/shipping/tax portion is recorded
         // exclusively on MerchandiseOrder, never folded into this Payment,
         // so donation reporting is never inflated by a merchandise
-        // purchase (spec item 66).
+        // purchase (spec item 66). The processing-fee portion (also not
+        // part of "the donation" or "the merchandise") was previously
+        // dropped entirely — feeCoveredCents now records it explicitly,
+        // the same way the plain donation flow does, so amountCents +
+        // feeCoveredCents reconciles to what the donor's card actually
+        // shows for the donation+fee slice of this charge.
         amountCents: input.donationAmountCents,
         donationAmountCents: input.donationAmountCents,
+        feeCoveredCents: feeStrategy.supplementalFeeCents || null,
         currency: "USD",
-        paymentMethodType: input.paymentInstrumentId ? "PAYMENT_CARD" : "PAYMENT_CARD",
+        // Was hardcoded to "PAYMENT_CARD" unconditionally (a no-op ternary,
+        // regardless of what was actually charged) — now reflects the real
+        // instrument, matching the donate route's equivalent mapping.
+        paymentMethodType:
+          input.paymentMethod === "apple_pay"
+            ? "APPLE_PAY"
+            : input.paymentMethod === "google_pay"
+              ? "GOOGLE_PAY"
+              : input.paymentMethod === "bank"
+                ? "BANK_ACCOUNT"
+                : "PAYMENT_CARD",
         status: transfer.state ?? "PENDING",
         isAnonymous: Boolean(input.isAnonymous),
         donorCoversFee: Boolean(link.feeCoverEnabled && input.coverFees),
@@ -315,6 +372,23 @@ export async function processCombinedCheckout(input: CheckoutInput) {
       console.error("Merchandise order creation failed after successful payment — requires manual follow-up:", err);
     }
   }
+
+  // Was missing entirely on this checkout path — the plain donation flow
+  // (/api/g/[slug]/donate) always updates the giving link's own attempt/
+  // success/collected counters after a charge; this path never did, so a
+  // giving link with merchandise enabled always showed "0 attempts" no
+  // matter how many real, successful checkouts went through it. A failed
+  // transfer already throws before reaching this point (payment-failure
+  // rule above), so every checkout that gets here is a success.
+  await prisma.givingLink.update({
+    where: { id: link.id },
+    data: {
+      totalAttempts: { increment: 1 },
+      successfulDonations: { increment: 1 },
+      totalCollectedCents: { increment: grandTotal },
+      lastUsedAt: new Date(),
+    },
+  });
 
   const checkout = await prisma.wgcCheckout.create({
     data: {

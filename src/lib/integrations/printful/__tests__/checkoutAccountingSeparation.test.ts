@@ -11,11 +11,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     church: { findUnique: vi.fn() },
-    givingLink: { findUnique: vi.fn() },
+    givingLink: { findUnique: vi.fn(), update: vi.fn() },
     wgcCheckout: { findUnique: vi.fn(), create: vi.fn() },
     payment: { create: vi.fn() },
+    finixTransfer: { upsert: vi.fn() },
   },
 }));
+vi.mock("@/lib/finix/sync/syncPaymentInstruments", () => ({ syncPaymentInstrument: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/finix/client", () => ({
   finixClient: { getPaymentInstrument: vi.fn(), createBuyerIdentity: vi.fn(), createPaymentInstrument: vi.fn(), createTransfer: vi.fn() },
 }));

@@ -38,7 +38,13 @@ export async function POST(req: Request) {
     coverFees,
   } = body;
 
-  if (!slug || !clientAttemptId || !donor?.name || !donor?.email || !fraudSessionId) {
+  // fraudSessionId is required for every method except bank/ACH — mirrors
+  // /api/g/[slug]/donate, where Finix.Auth's fraud-session callback never
+  // fires for a bank submission, so the frontend sends "" rather than
+  // hanging forever waiting for one. Previously this route required it
+  // unconditionally, which would have rejected every real bank submission
+  // with "Missing required fields." before it ever reached checkoutService.
+  if (!slug || !clientAttemptId || !donor?.name || !donor?.email || (paymentMethod !== "bank" && !fraudSessionId)) {
     return NextResponse.json({ success: false, error: "Missing required fields." }, { status: 400 });
   }
 
@@ -57,7 +63,7 @@ export async function POST(req: Request) {
       donor,
       paymentInstrumentId,
       token,
-      paymentMethod: paymentMethod === "apple_pay" || paymentMethod === "google_pay" ? paymentMethod : "card",
+      paymentMethod: paymentMethod === "apple_pay" || paymentMethod === "google_pay" || paymentMethod === "bank" ? paymentMethod : "card",
       walletToken,
       walletBillingContact,
       fraudSessionId,

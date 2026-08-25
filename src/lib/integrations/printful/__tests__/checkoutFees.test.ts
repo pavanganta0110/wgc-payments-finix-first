@@ -14,11 +14,13 @@ vi.mock("@/lib/giving/serverFeeStrategy", () => ({ resolveWgcTransferFeeStrategy
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     church: { findUnique: vi.fn() },
-    givingLink: { findUnique: vi.fn() },
+    givingLink: { findUnique: vi.fn(), update: vi.fn() },
     wgcCheckout: { findUnique: vi.fn(), create: vi.fn() },
     payment: { create: vi.fn() },
+    finixTransfer: { upsert: vi.fn() },
   },
 }));
+vi.mock("@/lib/finix/sync/syncPaymentInstruments", () => ({ syncPaymentInstrument: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/finix/client", () => ({
   finixClient: { getPaymentInstrument: vi.fn(), createBuyerIdentity: vi.fn(), createPaymentInstrument: vi.fn(), createTransfer: vi.fn() },
 }));
@@ -147,5 +149,106 @@ describe("processCombinedCheckout — WGC processing fee", () => {
     // the org's own feeCoverEnabled setting always gates this, matching
     // the donation flow's identical rule.
     expect(mockResolveWgcTransferFeeStrategy).toHaveBeenCalledWith(expect.objectContaining({ donorCoversFee: false }));
+  });
+
+  it("syncs a FinixTransfer row for the real charge, snapshots the payment instrument, and records the fee separately from the donation amount — previously all three were silently skipped on this checkout path even though the Finix charge itself succeeded", async () => {
+    const SUPPLEMENTAL_FEE = 305;
+    mockResolveWgcTransferFeeStrategy.mockReturnValue({
+      feePaidBy: "DONOR",
+      amountToChargeCents: BASE_TOTAL + SUPPLEMENTAL_FEE,
+      expectedFeeCents: SUPPLEMENTAL_FEE,
+      supplementalFeeCents: SUPPLEMENTAL_FEE,
+      percentageBasisPoints: 300,
+      fixedFeeCents: 0,
+      normalizedCardBrand: "VISA",
+      feeProfileId: "FP_DONOR_COVERED_ZERO",
+    });
+    const { finixClient, prisma } = await setup({ feeCoverEnabled: true });
+    const { syncPaymentInstrument } = await import("@/lib/finix/sync/syncPaymentInstruments");
+    const { processCombinedCheckout } = await import("../checkoutService");
+
+    await processCombinedCheckout({ ...baseCheckoutInput, clientAttemptId: "attempt-sync-check", donationAmountCents: DONATION_CENTS, coverFees: true });
+
+    expect(finixClient.createTransfer).toHaveBeenCalled();
+    expect(prisma.finixTransfer.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { finixTransferId: "TR123" },
+        create: expect.objectContaining({ finixTransferId: "TR123", churchId: "church-a", amountCents: BASE_TOTAL + SUPPLEMENTAL_FEE }),
+      })
+    );
+    expect(syncPaymentInstrument).toHaveBeenCalledWith("PI123", { churchId: "church-a", donorId: "donor-1" });
+
+    const paymentArgs = vi.mocked(prisma.payment.create).mock.calls[0][0] as any;
+    expect(paymentArgs.data.amountCents).toBe(DONATION_CENTS);
+    expect(paymentArgs.data.feeCoveredCents).toBe(SUPPLEMENTAL_FEE);
+  });
+
+  it("increments the giving link's attempt/success/collected stats on a successful checkout — previously this path never touched them at all, so a giving link with merchandise enabled always showed 0 attempts no matter how many real checkouts went through it", async () => {
+    mockResolveWgcTransferFeeStrategy.mockReturnValue({
+      feePaidBy: "ORGANIZATION",
+      amountToChargeCents: BASE_TOTAL,
+      expectedFeeCents: 255,
+      supplementalFeeCents: 0,
+      percentageBasisPoints: 230,
+      fixedFeeCents: 25,
+      normalizedCardBrand: "VISA",
+      feeProfileId: "FP_ORG_PAID",
+    });
+    const { prisma } = await setup({ feeCoverEnabled: false });
+    const { processCombinedCheckout } = await import("../checkoutService");
+
+    await processCombinedCheckout({ ...baseCheckoutInput, clientAttemptId: "attempt-link-stats", donationAmountCents: DONATION_CENTS, coverFees: false });
+
+    expect(prisma.givingLink.update).toHaveBeenCalledWith({
+      where: { id: "link-1" },
+      data: {
+        totalAttempts: { increment: 1 },
+        successfulDonations: { increment: 1 },
+        totalCollectedCents: { increment: BASE_TOTAL },
+        lastUsedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it("uses the ACH fee matrix and records paymentMethodType BANK_ACCOUNT for a bank checkout — previously this whole checkout path always requested a CARD-rate fee_profile and always recorded PAYMENT_CARD, regardless of what was actually submitted", async () => {
+    mockResolveWgcTransferFeeStrategy.mockReturnValue({
+      feePaidBy: "ORGANIZATION",
+      amountToChargeCents: BASE_TOTAL,
+      expectedFeeCents: 25,
+      supplementalFeeCents: 0,
+      percentageBasisPoints: 0,
+      fixedFeeCents: 25,
+      normalizedCardBrand: "NONE",
+      feeProfileId: "FP_ORG_PAID",
+    });
+    const { prisma } = await setup({ feeCoverEnabled: false });
+    const { processCombinedCheckout } = await import("../checkoutService");
+
+    await processCombinedCheckout({ ...baseCheckoutInput, clientAttemptId: "attempt-ach", donationAmountCents: DONATION_CENTS, coverFees: false, paymentMethod: "bank" });
+
+    expect(mockResolveWgcTransferFeeStrategy).toHaveBeenCalledWith(expect.objectContaining({ paymentMethod: "ACH" }));
+
+    const paymentArgs = vi.mocked(prisma.payment.create).mock.calls[0][0] as any;
+    expect(paymentArgs.data.paymentMethodType).toBe("BANK_ACCOUNT");
+  });
+
+  it("truncates the ACH statement descriptor to 10 characters (Finix's stricter bank-transfer limit), not the 18-character card limit", async () => {
+    mockResolveWgcTransferFeeStrategy.mockReturnValue({
+      feePaidBy: "ORGANIZATION",
+      amountToChargeCents: BASE_TOTAL,
+      expectedFeeCents: 25,
+      supplementalFeeCents: 0,
+      percentageBasisPoints: 0,
+      fixedFeeCents: 25,
+      normalizedCardBrand: "NONE",
+      feeProfileId: "FP_ORG_PAID",
+    });
+    const { finixClient } = await setup({ feeCoverEnabled: false });
+    const { processCombinedCheckout } = await import("../checkoutService");
+
+    await processCombinedCheckout({ ...baseCheckoutInput, clientAttemptId: "attempt-ach-descriptor", donationAmountCents: DONATION_CENTS, coverFees: false, paymentMethod: "bank" });
+
+    const transferArgs = vi.mocked(finixClient.createTransfer).mock.calls[0][0] as any;
+    expect(transferArgs.statement_descriptor.length).toBeLessThanOrEqual(10);
   });
 });
