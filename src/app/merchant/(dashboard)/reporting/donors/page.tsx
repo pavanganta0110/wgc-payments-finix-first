@@ -20,7 +20,7 @@ export default async function DonorReportPage() {
         <h3 className="text-sm font-bold text-slate-900">Donor Report</h3>
         <p className="text-xs text-slate-500 mt-0.5">Filter, customize, and export donor giving data across every source.</p>
       </div>
-      <ReportExplorer reportType="DONORS" canManageSavedReports={hasPermission(auth, "canManageSavedReports")} />
+      <ReportExplorer reportType="DONORS" canManageSavedReports={hasPermission(auth, "canManageSavedReports")} canExportReports={hasPermission(auth, "canExportReports")} />
     </div>
   );
 }

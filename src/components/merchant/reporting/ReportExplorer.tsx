@@ -86,10 +86,12 @@ export default function ReportExplorer({
   reportType,
   fixedDateRange,
   canManageSavedReports,
+  canExportReports,
 }: {
   reportType: "DONORS" | "ANNUAL" | "LAPSED" | "RECURRING";
   fixedDateRange?: { key: string; year?: number };
   canManageSavedReports: boolean;
+  canExportReports: boolean;
 }) {
   const [dateRangeKey, setDateRangeKey] = useState(fixedDateRange?.key ?? "ytd");
   const [year, setYear] = useState<number>(fixedDateRange?.year ?? new Date().getFullYear());
@@ -298,16 +300,18 @@ export default function ReportExplorer({
             Save Report
           </button>
         )}
-        <div className="flex items-center gap-1 ml-auto">
-          <button disabled={exporting} onClick={() => handleExport("csv")} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold disabled:opacity-50">
-            <Download className="w-4 h-4" />
-            CSV
-          </button>
-          <button disabled={exporting} onClick={() => handleExport("xlsx")} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold disabled:opacity-50">
-            <Download className="w-4 h-4" />
-            Excel
-          </button>
-        </div>
+        {canExportReports && (
+          <div className="flex items-center gap-1 ml-auto">
+            <button disabled={exporting} onClick={() => handleExport("csv")} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold disabled:opacity-50">
+              <Download className="w-4 h-4" />
+              CSV
+            </button>
+            <button disabled={exporting} onClick={() => handleExport("xlsx")} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold disabled:opacity-50">
+              <Download className="w-4 h-4" />
+              Excel
+            </button>
+          </div>
+        )}
       </div>
 
       {activeFilterCount > 0 && (

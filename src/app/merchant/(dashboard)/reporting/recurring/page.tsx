@@ -22,7 +22,7 @@ export default async function RecurringGivingReportPage() {
           Every active/paused/canceled recurring donor, built on the same subscription data as the Recurring Donors page — nothing here is a second copy of that data.
         </p>
       </div>
-      <ReportExplorer reportType="RECURRING" canManageSavedReports={hasPermission(auth, "canManageSavedReports")} />
+      <ReportExplorer reportType="RECURRING" canManageSavedReports={hasPermission(auth, "canManageSavedReports")} canExportReports={hasPermission(auth, "canExportReports")} />
     </div>
   );
 }

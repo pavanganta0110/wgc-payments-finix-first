@@ -20,7 +20,7 @@ export default async function LapsedDonorReportPage() {
         <h3 className="text-sm font-bold text-slate-900">Lapsed Donors</h3>
         <p className="text-xs text-slate-500 mt-0.5">Donors with real giving history who haven't given recently — useful for follow-up. Nothing here contacts a donor automatically.</p>
       </div>
-      <ReportExplorer reportType="LAPSED" fixedDateRange={{ key: "all" }} canManageSavedReports={hasPermission(auth, "canManageSavedReports")} />
+      <ReportExplorer reportType="LAPSED" fixedDateRange={{ key: "all" }} canManageSavedReports={hasPermission(auth, "canManageSavedReports")} canExportReports={hasPermission(auth, "canExportReports")} />
     </div>
   );
 }

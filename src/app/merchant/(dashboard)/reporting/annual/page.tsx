@@ -20,7 +20,7 @@ export default async function AnnualGivingReportPage() {
         <h3 className="text-sm font-bold text-slate-900">Annual Giving Report</h3>
         <p className="text-xs text-slate-500 mt-0.5">Select a year to see every donor's total giving for that calendar year. Uses the same eligibility rules as Annual Statements, so totals never conflict.</p>
       </div>
-      <ReportExplorer reportType="ANNUAL" fixedDateRange={{ key: "year", year: new Date().getFullYear() }} canManageSavedReports={hasPermission(auth, "canManageSavedReports")} />
+      <ReportExplorer reportType="ANNUAL" fixedDateRange={{ key: "year", year: new Date().getFullYear() }} canManageSavedReports={hasPermission(auth, "canManageSavedReports")} canExportReports={hasPermission(auth, "canExportReports")} />
     </div>
   );
 }
