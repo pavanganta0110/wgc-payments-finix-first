@@ -6,9 +6,17 @@ import { parseReportDefinition, ReportValidationError } from "@/lib/reporting/va
 import { queryDonorReport } from "@/lib/reporting/donorReport";
 import { queryAnnualGivingReport } from "@/lib/reporting/annualReport";
 import { queryLapsedDonorReport } from "@/lib/reporting/lapsedReport";
-import { donorReportCsvResponse, buildDonorReportWorkbook, excelResponse } from "@/lib/reporting/export";
+import { queryRecurringReport } from "@/lib/reporting/recurringReport";
+import {
+  donorReportCsvResponse,
+  buildDonorReportWorkbook,
+  recurringReportCsvResponse,
+  buildRecurringReportWorkbook,
+  excelResponse,
+} from "@/lib/reporting/export";
 import { rangeLabel } from "@/lib/dateRangePresets";
 import { MAX_EXPORT_ROWS, type ReportDefinition, type DonorReportRow } from "@/lib/reporting/types";
+import type { RecurringDonorRow } from "@/lib/subscriptions/subscriptionAggregates";
 
 /**
  * Export never accepts a churchId/merchantId from the browser (item 17) —
@@ -45,6 +53,28 @@ export async function POST(req: Request) {
     throw err;
   }
 
+  const dateRangeLabel = rangeLabel(def.dateRange.key === "year" ? "custom" : def.dateRange.key, def.dateRange.from, def.dateRange.to) || `Year ${def.dateRange.year}`;
+  const timestamp = new Date().toISOString().slice(0, 10);
+  const baseFilename = `wgc-${def.reportType.toLowerCase()}-report-${timestamp}`;
+
+  if (def.reportType === "RECURRING") {
+    let recurringResult: { rows: RecurringDonorRow[]; totalCount: number };
+    try {
+      recurringResult = await queryRecurringReport(auth, def);
+    } catch (err) {
+      console.error("Reporting export failed:", err);
+      return NextResponse.json({ error: "Failed to generate export. Please try again." }, { status: 500 });
+    }
+    if (format === "csv") return recurringReportCsvResponse(recurringResult.rows, `${baseFilename}.csv`);
+    const buffer = await buildRecurringReportWorkbook({
+      rows: recurringResult.rows,
+      dateRangeLabel,
+      generatedAt: new Date(),
+      totalRowsAvailable: recurringResult.totalCount,
+    });
+    return excelResponse(buffer, `${baseFilename}.xlsx`);
+  }
+
   let result: { rows: DonorReportRow[]; totalCount: number };
   try {
     if (def.reportType === "LAPSED") {
@@ -60,10 +90,6 @@ export async function POST(req: Request) {
     console.error("Reporting export failed:", err);
     return NextResponse.json({ error: "Failed to generate export. Please try again." }, { status: 500 });
   }
-
-  const dateRangeLabel = rangeLabel(def.dateRange.key === "year" ? "custom" : def.dateRange.key, def.dateRange.from, def.dateRange.to) || `Year ${def.dateRange.year}`;
-  const timestamp = new Date().toISOString().slice(0, 10);
-  const baseFilename = `wgc-${def.reportType.toLowerCase()}-report-${timestamp}`;
 
   if (format === "csv") {
     return donorReportCsvResponse(result.rows, def.columns, `${baseFilename}.csv`);

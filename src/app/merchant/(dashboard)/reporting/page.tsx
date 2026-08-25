@@ -7,9 +7,13 @@ import { isAuthError } from "@/lib/auth/errors";
 import { resolveViewScope } from "@/lib/auth/viewScope";
 import { resolveScopedDonorIds } from "@/lib/auth/scopes";
 import { loadReportingKpis } from "@/lib/reporting/dashboard";
+import { loadGivingByFund, loadOrgPaymentMethodMix, bucketDonorsByLifetimeGiving } from "@/lib/reporting/orgCharts";
+import { loadDonorAggregatesBatch } from "@/lib/donors/donorAggregates";
 import { loadDonationTrend } from "@/lib/donors/donorAnalytics";
+import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import DonationTrendChart from "@/components/merchant/DonationTrendChart";
+import BarChart from "@/components/merchant/BarChart";
 
 export default async function ReportingDashboardPage() {
   let auth;
@@ -24,10 +28,23 @@ export default async function ReportingDashboardPage() {
   const viewScope = await resolveViewScope(auth);
   const scopedDonorIds = await resolveScopedDonorIds(auth, viewScope);
 
-  const [kpis, trend] = await Promise.all([
+  const [kpis, trend, givingByFund, paymentMethodMix] = await Promise.all([
     loadReportingKpis(auth),
     loadDonationTrend(auth.churchId, undefined, "monthly", scopedDonorIds ?? undefined, "all"),
+    loadGivingByFund(auth.churchId, undefined, scopedDonorIds ?? undefined),
+    loadOrgPaymentMethodMix(auth.churchId, undefined, scopedDonorIds ?? undefined),
   ]);
+
+  // Donor distribution needs a per-donor lifetime figure — capped at the
+  // same MAX_AGGREGATED_DONORS bound the reporting engine itself uses, so
+  // this dashboard chart never triggers an unbounded per-donor scan.
+  const distributionDonorWhere = { churchId: auth.churchId, archivedAt: null, ...(scopedDonorIds ? { id: { in: scopedDonorIds } } : {}) };
+  const distributionDonors = await prisma.donor.findMany({ where: distributionDonorWhere, select: { id: true }, take: 5000 });
+  const lifetimeAgg = await loadDonorAggregatesBatch(
+    distributionDonors.map((d) => d.id),
+    auth.churchId,
+  );
+  const donorDistribution = bucketDonorsByLifetimeGiving([...lifetimeAgg.values()].map((a) => a.netDonatedCents));
 
   const cards: { label: string; value: string; icon: React.ReactNode }[] = [
     { label: "Total Donors", value: kpis.totalDonors.toLocaleString(), icon: <Users className="w-4 h-4" /> },
@@ -69,6 +86,43 @@ export default async function ReportingDashboardPage() {
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
         <h4 className="text-sm font-bold text-slate-900 mb-4">Giving by Month</h4>
         <DonationTrendChart data={trend} />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+          <h4 className="text-sm font-bold text-slate-900 mb-4">New vs Returning Donors</h4>
+          <BarChart
+            data={[
+              { label: "New", value: kpis.newDonors },
+              { label: "Returning", value: kpis.returningDonors },
+              { label: "Recurring", value: kpis.recurringDonors },
+              { label: "Lapsed", value: kpis.lapsedDonors },
+            ]}
+            formatValue={(n) => n.toLocaleString()}
+          />
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+          <h4 className="text-sm font-bold text-slate-900 mb-4">Payment Method Mix</h4>
+          <BarChart
+            data={paymentMethodMix.map((m) => ({ label: m.method, value: m.amountCents }))}
+            formatValue={(n) => formatCents(n)}
+          />
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+          <h4 className="text-sm font-bold text-slate-900 mb-4">Donor Distribution (Lifetime Giving)</h4>
+          <BarChart
+            data={donorDistribution.map((d) => ({ label: d.label, value: d.donorCount }))}
+            formatValue={(n) => n.toLocaleString()}
+          />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+        <h4 className="text-sm font-bold text-slate-900 mb-4">Giving by Fund</h4>
+        <BarChart
+          data={givingByFund.slice(0, 10).map((f) => ({ label: f.fundName, value: f.amountCents }))}
+          formatValue={(n) => formatCents(n)}
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

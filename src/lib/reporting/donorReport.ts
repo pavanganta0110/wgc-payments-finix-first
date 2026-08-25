@@ -13,7 +13,7 @@ import type { MerchantAuthContext } from "@/lib/auth/requireMerchantSession";
 import { resolveViewScope } from "@/lib/auth/viewScope";
 import { resolveScopedDonorIds, resolveScopedUserId } from "@/lib/auth/scopes";
 import { loadDonorAggregatesBatch, EMPTY_DONOR_AGGREGATES, type DonorAggregates } from "@/lib/donors/donorAggregates";
-import { loadPaymentMethodBreakdownBatch, EMPTY_BREAKDOWN } from "./aggregations";
+import { loadPaymentMethodBreakdownBatch, EMPTY_BREAKDOWN, loadSmallestDonationBatch } from "./aggregations";
 import { resolveReportDateRange, toPrismaDateFilter, ytdRange, previousYearRange } from "./dateRange";
 import { donorMatchesSegment, SEGMENTS_REQUIRING_BREAKDOWN } from "./segments";
 import {
@@ -25,6 +25,7 @@ import {
 } from "./types";
 
 const METHOD_SPLIT_COLUMNS: DonorReportColumn[] = ["cardGivingCents", "achGivingCents", "externalGivingCents", "cashGivingCents", "checkGivingCents", "inKindValueCents"];
+const SMALLEST_DONATION_COLUMNS: DonorReportColumn[] = ["smallestDonationCents"];
 const YTD_COLUMNS: DonorReportColumn[] = ["ytdGivingCents"];
 const PREV_YEAR_COLUMNS: DonorReportColumn[] = ["previousYearGivingCents"];
 const ATTRIBUTION_COLUMNS: DonorReportColumn[] = ["givingPage", "fund", "purpose"];
@@ -84,8 +85,9 @@ export async function queryDonorReport(auth: MerchantAuthContext, def: ReportDef
   const needsPrevYear = needsAny(def.columns, PREV_YEAR_COLUMNS) || def.filters.segment === "INCREASED_GIVING" || def.filters.segment === "DECREASED_GIVING";
   const needsBreakdown = needsAny(def.columns, METHOD_SPLIT_COLUMNS) || (def.filters.segment ? SEGMENTS_REQUIRING_BREAKDOWN.includes(def.filters.segment) : false);
   const needsAttribution = needsAny(def.columns, ATTRIBUTION_COLUMNS);
+  const needsSmallest = needsAny(def.columns, SMALLEST_DONATION_COLUMNS);
 
-  const [lifetimeAgg, periodAgg, ytdAgg, prevYearAgg, breakdown, recurring, attribution] = await Promise.all([
+  const [lifetimeAgg, periodAgg, ytdAgg, prevYearAgg, breakdown, recurring, attribution, smallest] = await Promise.all([
     loadDonorAggregatesBatch(donorIds, churchId, undefined, effectiveAttributedUserId),
     loadDonorAggregatesBatch(donorIds, churchId, periodFilter, effectiveAttributedUserId),
     needsYtd ? loadDonorAggregatesBatch(donorIds, churchId, toPrismaDateFilter(ytdRange()), effectiveAttributedUserId) : Promise.resolve(new Map()),
@@ -93,6 +95,7 @@ export async function queryDonorReport(auth: MerchantAuthContext, def: ReportDef
     needsBreakdown ? loadPaymentMethodBreakdownBatch(donorIds, churchId, periodFilter, effectiveAttributedUserId) : Promise.resolve(new Map()),
     loadRecurringSummaryBatch(donorIds, churchId),
     needsAttribution ? loadAttributionBatch(donorIds, churchId) : Promise.resolve(new Map()),
+    needsSmallest ? loadSmallestDonationBatch(donorIds, churchId, periodFilter) : Promise.resolve(new Map()),
   ]);
 
   let rows: DonorReportRow[] = candidateDonors.map((d) => {
@@ -126,7 +129,7 @@ export async function queryDonorReport(auth: MerchantAuthContext, def: ReportDef
       cashGivingCents: split.cashGivingCents,
       checkGivingCents: split.checkGivingCents,
       inKindValueCents: split.inKindValueCents,
-      smallestDonationCents: 0, // not tracked by the shared aggregator; documented gap, see final report
+      smallestDonationCents: smallest.get(d.id) ?? 0,
       isRecurringDonor: Boolean(rec?.active),
       recurringAmountCents: rec?.amountCents ?? 0,
       givingFrequency: rec?.failed ? "FAILED" : rec?.frequency ?? null,

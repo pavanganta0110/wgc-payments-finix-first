@@ -7,13 +7,12 @@
  * the same pattern loadDonorAggregatesBatch itself uses internally, not a
  * new one.
  *
- * SCOPE NOTE (see final report "remaining issues"): these are GROSS
- * per-method figures. The authoritative NET figure (gross - refunds -
- * returns) is computed at the whole-donor level by
- * donorAggregates.loadDonorAggregatesBatch and is what Reporting's
- * lifetimeGivingCents/periodGivingCents/netGivingCents columns show —
- * this module only answers "how much of that gross came in as card vs ACH
- * vs cash vs check vs in-kind," not a per-method net.
+ * Card/ACH figures ARE net of refunds/returns (each refund/return is tied
+ * to a specific FinixTransfer, which is already bucketed by method here,
+ * so subtracting it from the right bucket is exact, not a proportional
+ * allocation). External sources have no refund concept (a returned/
+ * bounced check is simply excluded, same rule donorAggregates uses) —
+ * "net" and "gross" are the same number for cash/check/external/in-kind.
  */
 import { prisma } from "@/lib/prisma";
 import { externalDonationEligibilityWhere, type DateRangeFilter } from "@/lib/donors/donorAggregates";
@@ -63,23 +62,41 @@ export async function loadPaymentMethodBreakdownBatch(
   const instrumentMeta = new Map(instruments.map((i) => [i.finixPaymentInstrumentId, i]));
   const instrumentIds = [...instrumentMeta.keys()];
 
-  const [transfers, externalRows] = await Promise.all([
-    instrumentIds.length
-      ? prisma.finixTransfer.findMany({
-          where: {
-            churchId,
-            finixPaymentInstrumentId: { in: instrumentIds },
-            state: "SUCCEEDED",
-            ...(dateFilter ? { createdAtFinix: dateFilter } : {}),
-          },
-          select: { finixPaymentInstrumentId: true, amountCents: true },
-        })
+  const transfers = instrumentIds.length
+    ? await prisma.finixTransfer.findMany({
+        where: {
+          churchId,
+          finixPaymentInstrumentId: { in: instrumentIds },
+          state: "SUCCEEDED",
+          ...(dateFilter ? { createdAtFinix: dateFilter } : {}),
+        },
+        select: { finixTransferId: true, finixPaymentInstrumentId: true, amountCents: true },
+      })
+    : [];
+  const transferIds = transfers.map((t) => t.finixTransferId);
+
+  const [refunds, returns, externalRows] = await Promise.all([
+    transferIds.length
+      ? prisma.finixRefundOrReversal.findMany({ where: { churchId, finixOriginalTransferId: { in: transferIds }, state: "SUCCEEDED" }, select: { finixOriginalTransferId: true, amountCents: true } })
+      : Promise.resolve([]),
+    transferIds.length
+      ? prisma.bankReturn.findMany({ where: { churchId, originalTransferId: { in: transferIds } }, select: { originalTransferId: true, amountCents: true } })
       : Promise.resolve([]),
     prisma.externalDonation.findMany({
       where: externalDonationEligibilityWhere(churchId, { donorIds, dateFilter, attributedUserId }),
       select: { donorId: true, donationAmountCents: true, paymentMethod: true, otherPaymentMethodName: true, donationPurpose: true, depositStatus: true },
     }),
   ]);
+  const refundByTransfer = new Map<string, number>();
+  for (const r of refunds) {
+    if (!r.finixOriginalTransferId) continue;
+    refundByTransfer.set(r.finixOriginalTransferId, (refundByTransfer.get(r.finixOriginalTransferId) ?? 0) + (r.amountCents ?? 0));
+  }
+  const returnByTransfer = new Map<string, number>();
+  for (const r of returns) {
+    if (!r.originalTransferId) continue;
+    returnByTransfer.set(r.originalTransferId, (returnByTransfer.get(r.originalTransferId) ?? 0) + (r.amountCents ?? 0));
+  }
 
   for (const t of transfers) {
     if (!t.finixPaymentInstrumentId) continue;
@@ -87,8 +104,9 @@ export async function loadPaymentMethodBreakdownBatch(
     if (!meta?.donorId) continue;
     const acc = result.get(meta.donorId);
     if (!acc) continue;
-    if (meta.paymentMethodType === "BANK_ACCOUNT") acc.achGivingCents += t.amountCents ?? 0;
-    else acc.cardGivingCents += t.amountCents ?? 0;
+    const net = (t.amountCents ?? 0) - (refundByTransfer.get(t.finixTransferId) ?? 0) - (returnByTransfer.get(t.finixTransferId) ?? 0);
+    if (meta.paymentMethodType === "BANK_ACCOUNT") acc.achGivingCents += net;
+    else acc.cardGivingCents += net;
   }
 
   for (const r of externalRows) {
@@ -104,6 +122,54 @@ export async function loadPaymentMethodBreakdownBatch(
     } else {
       acc.externalOtherGivingCents += r.donationAmountCents;
     }
+  }
+
+  return result;
+}
+
+/**
+ * Smallest successful donation per donor — donorAggregates.ts tracks
+ * largest but not smallest (not needed by its existing callers), so this
+ * is computed separately here rather than modifying that shared, heavily-
+ * relied-on function for one extra Reporting-only column.
+ */
+export async function loadSmallestDonationBatch(donorIds: string[], churchId: string, dateFilter?: DateRangeFilter): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  if (donorIds.length === 0) return result;
+
+  const instruments = await prisma.finixPaymentInstrumentSnapshot.findMany({
+    where: { churchId, donorId: { in: donorIds } },
+    select: { finixPaymentInstrumentId: true, donorId: true },
+  });
+  const instrumentToDonor = new Map(instruments.map((i) => [i.finixPaymentInstrumentId, i.donorId!]));
+  const instrumentIds = [...instrumentToDonor.keys()];
+
+  const [transfers, externalRows] = await Promise.all([
+    instrumentIds.length
+      ? prisma.finixTransfer.findMany({
+          where: { churchId, finixPaymentInstrumentId: { in: instrumentIds }, state: "SUCCEEDED", ...(dateFilter ? { createdAtFinix: dateFilter } : {}) },
+          select: { finixPaymentInstrumentId: true, amountCents: true },
+        })
+      : Promise.resolve([]),
+    prisma.externalDonation.findMany({
+      where: externalDonationEligibilityWhere(churchId, { donorIds, dateFilter }),
+      select: { donorId: true, donationAmountCents: true, depositStatus: true },
+    }),
+  ]);
+
+  const consider = (donorId: string | undefined, amountCents: number | null | undefined) => {
+    if (!donorId || amountCents === null || amountCents === undefined) return;
+    const current = result.get(donorId);
+    if (current === undefined || amountCents < current) result.set(donorId, amountCents);
+  };
+
+  for (const t of transfers) {
+    if (!t.finixPaymentInstrumentId) continue;
+    consider(instrumentToDonor.get(t.finixPaymentInstrumentId), t.amountCents);
+  }
+  for (const r of externalRows) {
+    if (r.depositStatus === "RETURNED") continue;
+    consider(r.donorId ?? undefined, r.donationAmountCents);
   }
 
   return result;
