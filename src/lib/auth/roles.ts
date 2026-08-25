@@ -131,7 +131,12 @@ export type PermissionKey =
   // could grant order visibility without also granting pricing/catalog
   // control.
   | "canManageMerchandise"
-  | "canViewMerchandiseOrders";
+  | "canViewMerchandiseOrders"
+  // Reporting read access itself piggybacks on canViewDonors (report pages
+  // show nothing canViewDonors already wouldn't) — this one key is only
+  // for saving/renaming/deleting a Saved Report, since that's a write
+  // action with no existing equivalent gate.
+  | "canManageSavedReports";
 
 export type PermissionMatrix = Record<PermissionKey, boolean>;
 
@@ -186,6 +191,7 @@ const ALL_FALSE: PermissionMatrix = {
   canViewInvoiceBilling: false,
   canManageMerchandise: false,
   canViewMerchandiseOrders: false,
+  canManageSavedReports: false,
 };
 
 /** Base permission matrix per normalized role, per the approved Checkpoint 2 spec. */
@@ -243,6 +249,7 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     canViewInvoiceBilling: true,
     canManageMerchandise: true,
     canViewMerchandiseOrders: true,
+    canManageSavedReports: true,
   },
   admin: {
     ...ALL_FALSE,
@@ -285,6 +292,7 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     canDownloadBillingReceipts: true,
     canManageMerchandise: true,
     canViewMerchandiseOrders: true,
+    canManageSavedReports: true,
     // canManageTeam, canIssueRefunds, canManageBankAccount, canManageBilling,
     // canViewAsUser, canVoidExternalDonation, canViewExternalDonationProof:
     // false by default, override-able — voiding a donation record and
