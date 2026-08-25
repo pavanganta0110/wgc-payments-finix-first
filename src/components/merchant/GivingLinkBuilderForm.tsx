@@ -1027,7 +1027,7 @@ export default function GivingLinkBuilderForm({
               <FieldLabel>Receipt Subject</FieldLabel>
               <input
                 value={state.receiptSettings.subject}
-                onChange={(e) => update("receiptSettings", { ...state.receiptSettings, replyTo: e.target.value })}
+                onChange={(e) => update("receiptSettings", { ...state.receiptSettings, subject: e.target.value })}
                 className={inputClass}
               />
             </div>
