@@ -17,6 +17,7 @@ export default function GivingLinkPreviewPanel({
   maxAmountCents,
   suggestedAmountsCents,
   allowCustomAmount,
+  quantityItemLabel,
   recurringEnabled,
   allowedFrequencies,
   allowedPaymentMethods,
@@ -38,12 +39,13 @@ export default function GivingLinkPreviewPanel({
   churchName: string;
   light: BrandingModeSettings;
   churchLogoUrl?: string | null;
-  amountType: "FIXED" | "VARIABLE";
+  amountType: "FIXED" | "VARIABLE" | "FIXED_QUANTITY";
   fixedAmountCents: number | null;
   minAmountCents: number | null;
   maxAmountCents: number | null;
   suggestedAmountsCents: number[];
   allowCustomAmount: boolean;
+  quantityItemLabel?: string | null;
   recurringEnabled: boolean;
   allowedFrequencies: FrequencyKey[];
   allowedPaymentMethods: PaymentMethodKey[];
@@ -199,6 +201,7 @@ export default function GivingLinkPreviewPanel({
                     maxAmountCents={maxAmountCents}
                     suggestedAmountsCents={suggestedAmountsCents}
                     allowCustomAmount={allowCustomAmount}
+                    quantityItemLabel={quantityItemLabel}
                     recurringEnabled={recurringEnabled}
                     allowedFrequencies={allowedFrequencies}
                     allowedPaymentMethods={allowedPaymentMethods}
