@@ -142,7 +142,11 @@ export async function processCombinedCheckout(input: CheckoutInput) {
     const instrument = await finixClient.getPaymentInstrument(instrumentId);
     if (!instrument?.id) throw new CheckoutValidationError("Payment method not found.");
     identityId = instrument.identity;
-    cardBrand = instrument.card?.brand || null;
+    // Finix's payment_instrument response has `brand` as a flat top-level
+    // field, not nested under `card` — instrument.card?.brand always
+    // evaluated to undefined, silently charging every Amex order at the
+    // non-Amex fee rate.
+    cardBrand = instrument.brand || null;
   } else if (isWallet) {
     if (!input.walletToken) throw new CheckoutValidationError("Missing wallet payment token.");
     const [firstName, ...rest] = input.donor.name.trim().split(" ");
@@ -175,7 +179,7 @@ export async function processCombinedCheckout(input: CheckoutInput) {
     });
     instrumentId = instrument?.id;
     if (!instrumentId) throw new CheckoutValidationError("Could not process wallet payment instrument.");
-    cardBrand = instrument?.card?.brand || null;
+    cardBrand = instrument?.brand || null;
   } else if (input.token) {
     // Handles both card and bank/ACH tokens — Finix's hosted form returns
     // the same token shape either way (see mountFinixPaymentForm's
@@ -188,7 +192,7 @@ export async function processCombinedCheckout(input: CheckoutInput) {
     const instrument = await finixClient.createPaymentInstrument({ identity: identityId, token: input.token, type: "TOKEN" });
     instrumentId = instrument?.id;
     if (!instrumentId) throw new CheckoutValidationError("Could not process payment instrument.");
-    cardBrand = instrument?.card?.brand || null;
+    cardBrand = instrument?.brand || null;
   } else {
     throw new CheckoutValidationError("Missing payment token.");
   }
