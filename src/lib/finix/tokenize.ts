@@ -59,6 +59,13 @@ export async function mountFinixPaymentForm(
   options: {
     paymentMethods?: ("card" | "bank")[];
     showAddress?: boolean;
+    // Per docs.finix.com/guides/online-payments/payment-tokenization/tokenization-forms:
+    // fires as the buyer types into the hosted card field, before submit()/
+    // tokenization. binInformation carries the network's own live BIN
+    // lookup — the same brand detection that renders the network logo next
+    // to the card field — never exposed as raw card data, safe for a host
+    // page to read for a client-side fee preview.
+    onUpdate?: (state: unknown, binInformation?: unknown, hasErrors?: boolean) => void;
   },
   environment: "sandbox" | "live" = (process.env.NEXT_PUBLIC_FINIX_ENV as "sandbox" | "live") || "sandbox"
 ): Promise<FinixPaymentFormInstance> {

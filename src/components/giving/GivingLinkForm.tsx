@@ -131,6 +131,11 @@ export default function GivingLinkForm({
   const [customAmount, setCustomAmount] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [extraAmount, setExtraAmount] = useState("");
+  // Live BIN-detected card brand — see mountFinixPaymentForm's onUpdate.
+  // Only ever affects the client-side fee PREVIEW below; the actual charge
+  // always uses the real brand Finix reports at tokenization time
+  // server-side, regardless of whether this detection fires.
+  const [detectedCardBrand, setDetectedCardBrand] = useState<string | null>(null);
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequency, setFrequency] = useState<FrequencyKey>(allowedFrequencies[0] ?? "MONTHLY");
   const [coverFees, setCoverFees] = useState(feeCoverDefaultOn);
@@ -672,10 +677,17 @@ export default function GivingLinkForm({
     if (container) container.innerHTML = "";
     formInstanceRef.current = null;
     setFormReady(false);
+    setDetectedCardBrand(null);
 
     mountFinixPaymentForm("giving-link-finix-form", APPLICATION_ID, {
       paymentMethods: [paymentMethod],
       showAddress: false,
+      onUpdate: (_state, binInformation) => {
+        if (paymentMethod !== "card") return;
+        const info = binInformation as { brand?: string; card_brand?: string; network?: string } | undefined;
+        const brand = info?.brand || info?.card_brand || info?.network || null;
+        setDetectedCardBrand((prev) => (brand ? brand : prev));
+      },
     })
       .then((instance) => {
         if (cancelled) return;
@@ -696,14 +708,14 @@ export default function GivingLinkForm({
   const feeResult = calculateWgcFeeAmounts({
     donationAmountCents: effectiveAmountCents || 0,
     paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
-    cardBrand: null,
+    cardBrand: paymentMethod === "card" ? detectedCardBrand : null,
     donorCoversFee: feeCoverEnabled ? coverFees : false,
   });
-  
+
   const donorCoveredFeeResult = calculateWgcFeeAmounts({
     donationAmountCents: effectiveAmountCents || 0,
     paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
-    cardBrand: null,
+    cardBrand: paymentMethod === "card" ? detectedCardBrand : null,
     donorCoversFee: true,
   });
   
