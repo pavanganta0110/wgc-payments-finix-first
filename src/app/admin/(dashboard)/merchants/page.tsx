@@ -29,6 +29,7 @@ interface MerchantData {
     users: number;
     locations?: number;
     transactions: number;
+    activeRecurring?: number;
   };
   lastActivity: string;
   createdAt: string;
@@ -268,6 +269,7 @@ export default function MerchantsDirectoryPage() {
                         <div className="flex justify-between max-w-[100px]"><span className="text-slate-400">Users:</span> <span className="font-medium text-slate-700">{merchant.counts?.users ?? 0}</span></div>
                         <div className="flex justify-between max-w-[100px]"><span className="text-slate-400">Locs:</span> <span className="font-medium text-slate-700">{merchant.counts?.locations ?? 0}</span></div>
                         <div className="flex justify-between max-w-[100px]"><span className="text-slate-400">Txns:</span> <span className="font-medium text-slate-700">{merchant.counts?.transactions ?? 0}</span></div>
+                        <div className="flex justify-between max-w-[100px]"><span className="text-slate-400">Subs:</span> <span className="font-medium text-slate-700">{merchant.counts?.activeRecurring ?? 0}</span></div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-slate-500">
