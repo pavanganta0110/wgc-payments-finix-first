@@ -1287,45 +1287,6 @@ model PromoShortfallCharge {
   @@index([organizationId])
 }
 
-/// A Finix operational cost (chargeback, ACH return) that WGC's own Finix
-/// platform account is charged, tracked here so it can be passed through to
-/// the organization instead of silently absorbed. Mirrors
-/// PromoShortfallCharge's exact detect-then-admin-approves-then-charge
-/// design: created FLAGGED automatically from a dispute/bank-return webhook,
-/// never auto-charged — a human must review and click "Charge" (see
-/// merchantFeePassthrough.ts), same real-money safety gate as shortfalls.
-model MerchantFeePassthroughCharge {
-  id             String    @id @default(cuid())
-  organizationId String
-  // CHARGEBACK_NOTIFICATION | ACH_RETURN — see FEE_PASSTHROUGH_AMOUNTS_CENTS
-  // in merchantFeePassthrough.ts for the current dollar amount per type,
-  // matching Finix's Default Merchant Fee Profile.
-  feeType        String
-  // DISPUTE | BANK_RETURN — which record triggered this charge.
-  sourceType     String
-  sourceId       String
-  // Snapshotted at detection time from the fee-type amount table, immune to
-  // a later pricing change — same pattern as chargeAmountCents above.
-  amountCents    Int
-  currency       String    @default("USD")
-  // FLAGGED | CHARGED | CHARGE_FAILED | WAIVED
-  status         String    @default("FLAGGED")
-  finixTransferId String?
-  billingChargeId String?
-  chargedByUserId String?
-  chargedAt      DateTime?
-  waivedByUserId String?
-  waivedAt       DateTime?
-  waiveReason    String?
-  failureMessage String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  @@unique([sourceType, sourceId])
-  @@index([status])
-  @@index([organizationId])
-}
-
 /// A promotional signup lead, captured server-side the moment a visitor
 /// clicks "Start Six Months Free" on the trusted /six-months-free landing
 /// page — never derived from a client-submitted query parameter, cookie

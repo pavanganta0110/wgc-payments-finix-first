@@ -663,15 +663,6 @@ export async function syncFinixDataFromWebhookEvent(
         },
       });
 
-      if (!priorReturn && churchId) {
-        const { flagAchReturnFee } = await import("@/lib/billing/merchantFeePassthrough");
-        try {
-          await flagAchReturnFee(churchId, data.id);
-        } catch (err) {
-          console.error("Failed to flag ACH return pass-through fee:", err);
-        }
-      }
-
       // Link the buyer (donor) via the payment instrument snapshot so the
       // Bank Returns table/drawer can show who the return belongs to
       // without a second round-trip at read time.
@@ -762,13 +753,6 @@ export async function syncFinixDataFromWebhookEvent(
     });
 
     if (!existingDispute && churchId) {
-      const { flagChargebackFee } = await import("@/lib/billing/merchantFeePassthrough");
-      try {
-        await flagChargebackFee(churchId, data.id);
-      } catch (err) {
-        console.error("Failed to flag chargeback pass-through fee:", err);
-      }
-
       const { notifyEvent } = await import("@/lib/settings/notificationDispatch");
       await notifyEvent({
         churchId,
