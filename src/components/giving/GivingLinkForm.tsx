@@ -684,8 +684,13 @@ export default function GivingLinkForm({
       showAddress: false,
       onUpdate: (_state, binInformation) => {
         if (paymentMethod !== "card") return;
-        const info = binInformation as { brand?: string; card_brand?: string; network?: string } | undefined;
-        const brand = info?.brand || info?.card_brand || info?.network || null;
+        // Confirmed against Finix's own hosted-form bundle (js.finix.com/v/2/application/app.js):
+        // BIN_INFORMATION_UPDATED posts { cardBrand, bin } — cardBrand is a
+        // card-validator-style string (e.g. "american-express"), not
+        // "brand"/"card_brand"/"network" as originally guessed, which is why
+        // this never actually updated the preview despite being wired up.
+        const info = binInformation as { cardBrand?: string | null } | undefined;
+        const brand = info?.cardBrand || null;
         setDetectedCardBrand((prev) => (brand ? brand : prev));
       },
     })
