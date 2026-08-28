@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { alertCronMisconfiguration } from "@/lib/cron/alertCronMisconfiguration";
 import { syncSettlementById } from "@/lib/finix/sync/syncSettlements";
 import { syncFinixDataFromWebhookEvent } from "@/app/api/webhooks/finix/route";
 import { finixClient } from "@/lib/finix/client";
@@ -24,6 +25,7 @@ export async function GET(req: Request) {
   if (process.env.NODE_ENV === "production") {
     if (!process.env.CRON_SECRET) {
       console.error("CRON_SECRET is not configured in production");
+      alertCronMisconfiguration("reconcile");
       return NextResponse.json({ error: "Configuration Error" }, { status: 500 });
     }
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
