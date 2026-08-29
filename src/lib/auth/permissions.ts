@@ -62,6 +62,15 @@ export const OVERRIDABLE_PERMISSION_KEYS: readonly PermissionKey[] = [
   "canManageMerchandise",
   "canViewMerchandiseOrders",
   "canManageSavedReports",
+  "canCreatePledgeCampaign",
+  "canEditPledgeCampaign",
+  "canArchivePledgeCampaign",
+  "canViewPledges",
+  "canCreatePledge",
+  "canEditPledge",
+  "canCancelPledge",
+  "canRecordPledgeFulfillment",
+  "canExportPledges",
 ];
 
 /**
@@ -149,6 +158,15 @@ export function resolveEffectivePermissions(auth: Pick<MerchantAuthContext, "rol
       canManageMerchandise: false,
       canViewMerchandiseOrders: false,
       canManageSavedReports: false,
+      canCreatePledgeCampaign: false,
+      canEditPledgeCampaign: false,
+      canArchivePledgeCampaign: false,
+      canViewPledges: false,
+      canCreatePledge: false,
+      canEditPledge: false,
+      canCancelPledge: false,
+      canRecordPledgeFulfillment: false,
+      canExportPledges: false,
     };
   }
 

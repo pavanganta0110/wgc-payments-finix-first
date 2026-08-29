@@ -136,7 +136,23 @@ export type PermissionKey =
   // show nothing canViewDonors already wouldn't) — this one key is only
   // for saving/renaming/deleting a Saved Report, since that's a write
   // action with no existing equivalent gate.
-  | "canManageSavedReports";
+  | "canManageSavedReports"
+  // Pledges — canCreatePledgeCampaign/canEditPledgeCampaign/
+  // canArchivePledgeCampaign gate the campaign itself (goal, dates, fund);
+  // canCreatePledge/canEditPledge/canCancelPledge gate an individual
+  // donor's promise; canRecordPledgeFulfillment gates linking an
+  // ExternalDonation/Payment to a pledge as evidence it was (partially)
+  // kept. canViewPledges is separate from all of the above so a
+  // read-only role can see pledge data without any mutation rights.
+  | "canCreatePledgeCampaign"
+  | "canEditPledgeCampaign"
+  | "canArchivePledgeCampaign"
+  | "canViewPledges"
+  | "canCreatePledge"
+  | "canEditPledge"
+  | "canCancelPledge"
+  | "canRecordPledgeFulfillment"
+  | "canExportPledges";
 
 export type PermissionMatrix = Record<PermissionKey, boolean>;
 
@@ -192,6 +208,15 @@ const ALL_FALSE: PermissionMatrix = {
   canManageMerchandise: false,
   canViewMerchandiseOrders: false,
   canManageSavedReports: false,
+  canCreatePledgeCampaign: false,
+  canEditPledgeCampaign: false,
+  canArchivePledgeCampaign: false,
+  canViewPledges: false,
+  canCreatePledge: false,
+  canEditPledge: false,
+  canCancelPledge: false,
+  canRecordPledgeFulfillment: false,
+  canExportPledges: false,
 };
 
 /** Base permission matrix per normalized role, per the approved Checkpoint 2 spec. */
@@ -250,6 +275,15 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     canManageMerchandise: true,
     canViewMerchandiseOrders: true,
     canManageSavedReports: true,
+    canCreatePledgeCampaign: true,
+    canEditPledgeCampaign: true,
+    canArchivePledgeCampaign: true,
+    canViewPledges: true,
+    canCreatePledge: true,
+    canEditPledge: true,
+    canCancelPledge: true,
+    canRecordPledgeFulfillment: true,
+    canExportPledges: true,
   },
   admin: {
     ...ALL_FALSE,
@@ -293,6 +327,17 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     canManageMerchandise: true,
     canViewMerchandiseOrders: true,
     canManageSavedReports: true,
+    canCreatePledgeCampaign: true,
+    canEditPledgeCampaign: true,
+    canViewPledges: true,
+    canCreatePledge: true,
+    canEditPledge: true,
+    canRecordPledgeFulfillment: true,
+    canExportPledges: true,
+    // canArchivePledgeCampaign, canCancelPledge: false by default,
+    // override-able — archiving a campaign and canceling a pledge are
+    // treated like canVoidExternalDonation/canVoidInvoices, not a
+    // routine edit.
     // canManageTeam, canIssueRefunds, canManageBankAccount, canManageBilling,
     // canViewAsUser, canVoidExternalDonation, canViewExternalDonationProof:
     // false by default, override-able — voiding a donation record and
@@ -342,6 +387,11 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     // activity (read-only) but never connect/disconnect Printful, sync
     // products, or change prices by default — override-able.
     canViewMerchandiseOrders: true,
+    canViewPledges: true,
+    canCreatePledge: true, // same rationale as canCreateExternalDonation — front-line entry for pledge cards/phone calls
+    canRecordPledgeFulfillment: true,
+    // No campaign creation/management, no editing/canceling an existing
+    // pledge, no export by default — override-able.
     // No refunds, no voiding, no offline-payment recording, no invoice
     // settings, no export by default — override-able per the approved spec.
   },
