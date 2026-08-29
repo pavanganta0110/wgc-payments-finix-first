@@ -675,7 +675,7 @@ async function handleDonate(req: Request, slug: string) {
         data: { status: "SUCCEEDED", donorId: donorRecord.id },
       });
 
-      await sendReceiptEmail(donor.email, fullName, church.name, totalCents, true, interval);
+      await sendReceiptEmail(donor.email, fullName, church.name, totalCents, true, interval, church.id, donorRecord.id);
 
       await prisma.givingLink.update({
         where: { id: link.id },

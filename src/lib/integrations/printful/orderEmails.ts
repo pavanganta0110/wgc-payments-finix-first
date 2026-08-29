@@ -63,6 +63,14 @@ export async function sendMerchandiseOrderConfirmation(orderId: string) {
       <p style="color:#64748B;font-size:13px;">Shipping to:<br>${addressLines || "—"}</p>
       <p>We'll email you again once your order ships.</p>
     `,
+    log: {
+      churchId: order.churchId,
+      donorId: order.donorId,
+      recipientName: order.shippingName,
+      category: "MERCHANDISE_ORDER",
+      relatedEntityType: "MerchandiseOrder",
+      relatedEntityId: orderId,
+    },
   });
 
   await prisma.emailLog.create({
