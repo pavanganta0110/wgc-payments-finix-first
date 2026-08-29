@@ -111,7 +111,7 @@ export default function AudienceLandingPage({ content }: { content: AudienceLand
                   <Link href="/start" className="metallic-gold inline-flex items-center justify-center px-10 py-5 text-[13px] font-bold rounded-2xl transition-all shadow-2xl hover:-translate-y-1 tracking-wide">
                     Get Started
                   </Link>
-                  <Link href="/demo/donation" className="inline-flex items-center justify-center px-10 py-5 text-[13px] font-bold rounded-2xl transition-all border border-white/20 text-white hover:bg-white/10 tracking-wide">
+                  <Link href="/demo" className="inline-flex items-center justify-center px-10 py-5 text-[13px] font-bold rounded-2xl transition-all border border-white/20 text-white hover:bg-white/10 tracking-wide">
                     See a Live Demo
                   </Link>
                 </div>
