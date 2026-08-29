@@ -59,12 +59,13 @@ interface BuilderState {
   internalName: string;
   publicTitle: string;
   description: string;
-  amountType: "FIXED" | "VARIABLE";
+  amountType: "FIXED" | "VARIABLE" | "FIXED_QUANTITY";
   fixedAmount: string;
   minAmount: string;
   maxAmount: string;
   suggestedAmounts: string;
   allowCustomAmount: boolean;
+  quantityItemLabel: string;
   linkType: "ONE_TIME" | "MULTI_USE";
   validityKey: string;
   customExpiresAt: string;
@@ -100,6 +101,7 @@ function defaultState(): BuilderState {
     maxAmount: "",
     suggestedAmounts: "25, 50, 100, 250",
     allowCustomAmount: true,
+    quantityItemLabel: "",
     linkType: "MULTI_USE",
     validityKey: "none",
     customExpiresAt: "",
@@ -200,6 +202,14 @@ export default function GivingLinkBuilderForm({
 }) {
   const router = useRouter();
   const [state, setState] = useState<BuilderState>({ ...defaultState(), ...(initial || {}) });
+  // Create-mode-only concept — not a stored field. Existing links (edit
+  // mode) already made this choice implicitly via the separate Merchandise
+  // tab and keep using that; this only front-loads the decision for a
+  // brand-new link so donation-amount config isn't shown/required for a
+  // merchandise-only page. "MERCHANDISE"/"BOTH" both enable merchandise
+  // immediately after creation and land the merchant on the product picker
+  // instead of the Overview tab.
+  const [pageType, setPageType] = useState<"DONATIONS" | "MERCHANDISE" | "BOTH">("DONATIONS");
   const [ownerUserId, setOwnerUserId] = useState<string>(initialOwnerUserId || "");
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
@@ -414,7 +424,7 @@ export default function GivingLinkBuilderForm({
   const isValid = 
     state.internalName.trim() !== "" && 
     state.publicTitle.trim() !== "" && 
-    (state.amountType !== "FIXED" || (state.fixedAmount !== "" && parseFloat(state.fixedAmount) >= 1)) && 
+    ((state.amountType !== "FIXED" && state.amountType !== "FIXED_QUANTITY") || (state.fixedAmount !== "" && parseFloat(state.fixedAmount) >= 1)) &&
     state.allowedPaymentMethods.length > 0;
 
   const update = <K extends keyof BuilderState>(key: K, value: BuilderState[K]) => {
@@ -463,8 +473,8 @@ export default function GivingLinkBuilderForm({
       toast.error("Internal name and public title are required");
       return;
     }
-    if (state.amountType === "FIXED" && (!state.fixedAmount || parseFloat(state.fixedAmount) < 1)) {
-      toast.error("Fixed amount must be at least $1.00");
+    if ((state.amountType === "FIXED" || state.amountType === "FIXED_QUANTITY") && (!state.fixedAmount || parseFloat(state.fixedAmount) < 1)) {
+      toast.error("Amount must be at least $1.00");
       return;
     }
     if (state.allowedPaymentMethods.length === 0) {
@@ -485,11 +495,12 @@ export default function GivingLinkBuilderForm({
       publicTitle: state.publicTitle.trim(),
       description: state.description.trim() || null,
       amountType: state.amountType,
-      fixedAmountCents: state.amountType === "FIXED" ? Math.round(parseFloat(state.fixedAmount || "0") * 100) : undefined,
+      fixedAmountCents: state.amountType === "FIXED" || state.amountType === "FIXED_QUANTITY" ? Math.round(parseFloat(state.fixedAmount || "0") * 100) : undefined,
       minAmountCents: state.amountType === "VARIABLE" && state.minAmount ? Math.round(parseFloat(state.minAmount) * 100) : null,
       maxAmountCents: state.amountType === "VARIABLE" && state.maxAmount ? Math.round(parseFloat(state.maxAmount) * 100) : null,
       suggestedAmountsCents: amountsToCents(state.suggestedAmounts),
       allowCustomAmount: state.allowCustomAmount,
+      quantityItemLabel: state.amountType === "FIXED_QUANTITY" ? state.quantityItemLabel.trim() || null : null,
       linkType: state.linkType,
       maxSuccessfulUses: state.maxSuccessfulUses ? parseInt(state.maxSuccessfulUses, 10) : null,
       maxCollectedAmountCents: state.maxCollectedAmount ? Math.round(parseFloat(state.maxCollectedAmount) * 100) : null,
@@ -537,8 +548,33 @@ export default function GivingLinkBuilderForm({
       const data = await res.json();
       setSaveStatus("success");
       toast.success(mode === "create" ? "Giving link created" : "Giving link updated");
+
+      // A "Merchandise Only" or "Both" page needs merchandiseEnabled turned
+      // on before it'll show anything but an empty donation form — that
+      // flag lives on a completely separate API (the Merchandise tab's own
+      // PUT route, not this create/update endpoint), so it's set here as a
+      // second call rather than taught to this endpoint, matching how the
+      // Merchandise tab already manages it independently. No product
+      // selection happens here — "items: []" is deliberate; the merchant
+      // picks products on the very next screen they land on.
+      if (mode === "create" && pageType !== "DONATIONS") {
+        try {
+          await fetch(`/api/merchant/merchandise/giving-pages/${data.link.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ merchandiseEnabled: true, items: [] }),
+          });
+        } catch (err) {
+          console.error("Failed to enable merchandise on new giving page:", err);
+        }
+      }
+
       setTimeout(() => {
-        router.push(`/merchant/giving-links/${data.link.id}`);
+        router.push(
+          mode === "create" && pageType !== "DONATIONS"
+            ? `/merchant/giving-links/${data.link.id}?tab=merchandise`
+            : `/merchant/giving-links/${data.link.id}`
+        );
       }, 1000);
     } catch (err: any) {
       console.error("Save error:", err);
@@ -605,6 +641,46 @@ export default function GivingLinkBuilderForm({
                 Display a small ‘Powered by WGC’ link on your giving page or embedded form. You can turn this off for a fully white-labeled experience.
               </p>
             </div>
+            {mode === "create" && (
+              <div>
+                <FieldLabel>Page Type</FieldLabel>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { key: "DONATIONS", label: "Donations Only" },
+                    { key: "MERCHANDISE", label: "Merchandise Only" },
+                    { key: "BOTH", label: "Both" },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => {
+                        setPageType(opt.key);
+                        // Amount config is irrelevant on a merchandise-only
+                        // page (MerchandiseGivingExperience has its own
+                        // independent donation-amount picker, never reads
+                        // this link's amountType/fixedAmount at all) — force
+                        // a trivially-valid default so submission validation
+                        // never blocks on a hidden field.
+                        if (opt.key === "MERCHANDISE") update("amountType", "VARIABLE");
+                      }}
+                      className={`py-2.5 rounded-xl text-sm font-semibold border ${
+                        pageType === opt.key ? "bg-slate-900 text-white border-slate-900" : "text-slate-600 border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                  {pageType === "DONATIONS"
+                    ? "Donors give a monetary gift. You can add merchandise to this page later from its Merchandise tab."
+                    : pageType === "MERCHANDISE"
+                    ? "Donors shop your products — no donation-amount step. You'll pick which products to sell right after creating this page."
+                    : "Donors can give and shop in the same checkout. You'll pick which products to sell right after creating this page."}
+                </p>
+              </div>
+            )}
+
             <div>
               <FieldLabel>Internal Name *</FieldLabel>
               <input
@@ -751,56 +827,93 @@ export default function GivingLinkBuilderForm({
               )}
             </div>
 
-            <div>
-              <FieldLabel>Amount Type</FieldLabel>
-              <div className="flex rounded-xl border border-slate-200 p-1">
-                <button
-                  onClick={() => update("amountType", "FIXED")}
-                  className={`flex-1 py-2 rounded-lg text-sm font-semibold ${state.amountType === "FIXED" ? "bg-slate-900 text-white" : "text-slate-600"}`}
-                >
-                  Fixed Amount
-                </button>
-                <button
-                  onClick={() => update("amountType", "VARIABLE")}
-                  className={`flex-1 py-2 rounded-lg text-sm font-semibold ${state.amountType === "VARIABLE" ? "bg-slate-900 text-white" : "text-slate-600"}`}
-                >
-                  Variable Amount
-                </button>
-              </div>
-            </div>
-
-            {state.amountType === "FIXED" ? (
-              <div>
-                <FieldLabel>Amount ($) *</FieldLabel>
-                <input
-                  type="number"
-                  min="1"
-                  step="0.01"
-                  value={state.fixedAmount}
-                  onChange={(e) => update("fixedAmount", e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-            ) : (
+            {pageType !== "MERCHANDISE" && (
               <>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <FieldLabel>Minimum Amount ($)</FieldLabel>
-                    <input type="number" min="1" step="0.01" value={state.minAmount} onChange={(e) => update("minAmount", e.target.value)} className={inputClass} />
-                  </div>
-                  <div>
-                    <FieldLabel>Maximum Amount ($)</FieldLabel>
-                    <input type="number" min="1" step="0.01" value={state.maxAmount} onChange={(e) => update("maxAmount", e.target.value)} className={inputClass} />
-                  </div>
-                </div>
                 <div>
-                  <FieldLabel>Suggested Amounts ($, comma-separated)</FieldLabel>
-                  <input value={state.suggestedAmounts} onChange={(e) => update("suggestedAmounts", e.target.value)} className={inputClass} />
+                  <FieldLabel>Amount Type</FieldLabel>
+                  <div className="flex rounded-xl border border-slate-200 p-1">
+                    <button
+                      onClick={() => update("amountType", "FIXED")}
+                      className={`flex-1 py-2 rounded-lg text-sm font-semibold ${state.amountType === "FIXED" ? "bg-slate-900 text-white" : "text-slate-600"}`}
+                    >
+                      Fixed Amount
+                    </button>
+                    <button
+                      onClick={() => update("amountType", "FIXED_QUANTITY")}
+                      className={`flex-1 py-2 rounded-lg text-sm font-semibold ${state.amountType === "FIXED_QUANTITY" ? "bg-slate-900 text-white" : "text-slate-600"}`}
+                    >
+                      Fixed + Quantity
+                    </button>
+                    <button
+                      onClick={() => update("amountType", "VARIABLE")}
+                      className={`flex-1 py-2 rounded-lg text-sm font-semibold ${state.amountType === "VARIABLE" ? "bg-slate-900 text-white" : "text-slate-600"}`}
+                    >
+                      Variable Amount
+                    </button>
+                  </div>
                 </div>
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input type="checkbox" checked={state.allowCustomAmount} onChange={(e) => update("allowCustomAmount", e.target.checked)} />
-                  Allow custom amount
-                </label>
+
+                {state.amountType === "FIXED" ? (
+                  <div>
+                    <FieldLabel>Amount ($) *</FieldLabel>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={state.fixedAmount}
+                      onChange={(e) => update("fixedAmount", e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+                ) : state.amountType === "FIXED_QUANTITY" ? (
+                  <>
+                    <div>
+                      <FieldLabel>Price Per Item ($) *</FieldLabel>
+                      <input
+                        type="number"
+                        min="1"
+                        step="0.01"
+                        value={state.fixedAmount}
+                        onChange={(e) => update("fixedAmount", e.target.value)}
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel>Item Name (optional)</FieldLabel>
+                      <input
+                        type="text"
+                        placeholder="e.g. Backpack"
+                        value={state.quantityItemLabel}
+                        onChange={(e) => update("quantityItemLabel", e.target.value)}
+                        className={inputClass}
+                      />
+                      <p className="text-xs text-slate-400 mt-1">
+                        Shown next to the quantity selector on the giving page (e.g. "$75 / Backpack"). Donors can set quantity to 0 and give any Additional Donation Amount on its own — e.g. $25 instead of the full $75.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <FieldLabel>Minimum Amount ($)</FieldLabel>
+                        <input type="number" min="1" step="0.01" value={state.minAmount} onChange={(e) => update("minAmount", e.target.value)} className={inputClass} />
+                      </div>
+                      <div>
+                        <FieldLabel>Maximum Amount ($)</FieldLabel>
+                        <input type="number" min="1" step="0.01" value={state.maxAmount} onChange={(e) => update("maxAmount", e.target.value)} className={inputClass} />
+                      </div>
+                    </div>
+                    <div>
+                      <FieldLabel>Suggested Amounts ($, comma-separated)</FieldLabel>
+                      <input value={state.suggestedAmounts} onChange={(e) => update("suggestedAmounts", e.target.value)} className={inputClass} />
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input type="checkbox" checked={state.allowCustomAmount} onChange={(e) => update("allowCustomAmount", e.target.checked)} />
+                      Allow custom amount
+                    </label>
+                  </>
+                )}
               </>
             )}
 
@@ -950,7 +1063,7 @@ export default function GivingLinkBuilderForm({
               <FieldLabel>Receipt Subject</FieldLabel>
               <input
                 value={state.receiptSettings.subject}
-                onChange={(e) => update("receiptSettings", { ...state.receiptSettings, replyTo: e.target.value })}
+                onChange={(e) => update("receiptSettings", { ...state.receiptSettings, subject: e.target.value })}
                 className={inputClass}
               />
             </div>
@@ -1141,6 +1254,7 @@ export default function GivingLinkBuilderForm({
             maxAmountCents={state.maxAmount ? Math.round(parseFloat(state.maxAmount) * 100) : null}
             suggestedAmountsCents={amountsToCents(state.suggestedAmounts)}
             allowCustomAmount={state.allowCustomAmount}
+            quantityItemLabel={state.quantityItemLabel}
             recurringEnabled={state.recurringEnabled}
             allowedFrequencies={state.allowedFrequencies}
             allowedPaymentMethods={state.allowedPaymentMethods}
@@ -1159,6 +1273,7 @@ export default function GivingLinkBuilderForm({
             assignedFunds={funds
               .filter((f) => f.isActive)
               .map((f) => ({ fundId: f.fundId, name: f.name, description: f.description || null, isDefault: f.isDefault, displayOrder: f.displayOrder }))}
+            pageType={pageType}
           />
         </div>
       </div>

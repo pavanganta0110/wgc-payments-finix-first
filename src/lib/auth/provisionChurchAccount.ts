@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendWgcEmail } from "@/lib/email";
 
@@ -40,18 +41,32 @@ export async function provisionChurchAccount(app: {
       slug = `${slugBase}-${suffix++}`;
     }
 
-    church = await prisma.church.create({
-      data: {
-        name: orgName,
-        slug,
-        primaryContactEmail: app.contactEmail,
-        onboardingApplicationId: app.id,
-        finixMerchantId: app.finixMerchantId,
-        finixIdentityId: app.finixIdentityId,
-        finixApplicationId: app.finixApplicationId,
-        status: "ACTIVE",
-      },
-    });
+    try {
+      church = await prisma.church.create({
+        data: {
+          name: orgName,
+          slug,
+          primaryContactEmail: app.contactEmail,
+          onboardingApplicationId: app.id,
+          finixMerchantId: app.finixMerchantId,
+          finixIdentityId: app.finixIdentityId,
+          finixApplicationId: app.finixApplicationId,
+          status: "ACTIVE",
+        },
+      });
+    } catch (err) {
+      // A concurrent provisioning attempt for the same application (e.g. a
+      // webhook redelivery racing an admin's manual retry) won the race and
+      // already created the Church row (Church.onboardingApplicationId is
+      // @unique) — re-resolve instead of failing provisioning entirely.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const raced = await prisma.church.findFirst({ where: { onboardingApplicationId: app.id } });
+        if (!raced) throw err;
+        church = raced;
+      } else {
+        throw err;
+      }
+    }
   } else {
     church = await prisma.church.update({
       where: { id: church.id },
@@ -64,45 +79,112 @@ export async function provisionChurchAccount(app: {
     });
   }
 
-  const existingUser = await prisma.user.findUnique({ where: { email: app.contactEmail } });
+  // Two different Finix events for the same merchant (e.g.
+  // merchant.updated + merchant.underwritten) can both land within
+  // milliseconds of each other and both reach this function concurrently —
+  // confirmed in production (two DASHBOARD_ACCESS emails logged 21ms
+  // apart for the same application). The plain "check existingUser, then
+  // create/update, then send" sequence below has a real race window
+  // between the check and the write, so both concurrent calls could pass
+  // the check before either had written anything. pg_try_advisory_xact_lock
+  // makes the check-and-claim atomic (same pattern as sendWebhookEmail in
+  // the webhook route) without needing a schema migration — a losing
+  // concurrent caller sees locked=false and skips sending entirely, since
+  // the winner already owns this send. The lock is intentionally scoped to
+  // just this instant of concurrency, not "ever" — a genuinely later,
+  // separate webhook redelivery still resends the invite if the merchant
+  // hasn't completed setup yet, which is deliberate (see the comment this
+  // replaced): a User row existing is not proof the email ever arrived.
+  const lockKey = `dashboard-access-invite:${church.id}`;
+  const claim = await prisma.$transaction(async (tx) => {
+    const [{ locked }] = await tx.$queryRaw<{ locked: boolean }[]>`SELECT pg_try_advisory_xact_lock(hashtext(${lockKey})) AS locked`;
+    if (!locked) return null;
 
-  // A User row existing does NOT mean the invite email ever actually
-  // arrived — if sendWgcEmail failed or threw on a prior attempt (a
-  // transient Resend error, for example), the User row is already
-  // created by the time that happens, so every later webhook retry used
-  // to hit this branch and return immediately without ever retrying the
-  // email. That permanently strands a merchant with an account that
-  // exists but no way to ever receive the link. Only skip re-sending
-  // once the merchant has actually completed setup (set a password or
-  // logged in) — never just because a row exists.
-  if (existingUser && (existingUser.passwordHash || existingUser.lastLoginAt)) {
-    if (existingUser.churchId !== church.id) {
-      await prisma.user.update({ where: { id: existingUser.id }, data: { churchId: church.id } });
+    const existingUser = await tx.user.findUnique({ where: { email: app.contactEmail } });
+
+    if (existingUser && (existingUser.passwordHash || existingUser.lastLoginAt)) {
+      const churchIdChanged = existingUser.churchId !== church.id;
+      const needsNameBackfill = !existingUser.name;
+      if (churchIdChanged || needsNameBackfill) {
+        const updated = await tx.user.update({
+          where: { id: existingUser.id },
+          data: {
+            ...(churchIdChanged ? { churchId: church.id } : {}),
+            ...(needsNameBackfill ? { name: app.contactName } : {}),
+          },
+        });
+        return { alreadySetUp: true as const, user: updated };
+      }
+      return { alreadySetUp: true as const, user: existingUser };
     }
-    return { church, user: existingUser, emailSent: false };
+
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    // contactName is a required field on OnboardingApplication (always
+    // captured at signup) but was never copied onto the User row here,
+    // leaving the admin Merchants Directory's "Primary Owner" column
+    // showing "Unnamed owner" for every organization that hadn't had a
+    // WGC support agent manually patch it in later. Only backfills an
+    // existing user's name if it's currently unset — never overwrites a
+    // name the merchant (or a support agent) has since set themselves.
+    // A church with no primaryOwnerUserId yet has no "owner"-role user at
+    // all (this function is the only place a church's first user gets
+    // created), which used to deadlock the org: billing activation and
+    // team-role editing both require role "owner", and nothing could ever
+    // grant it. The first user provisioned for a church becomes its owner;
+    // later invites (existingUser already set up, or a church that already
+    // has an owner) keep the non-owner "church_admin" role as before.
+    const grantsOwner = !church.primaryOwnerUserId;
+
+    const user = existingUser
+      ? await tx.user.update({
+          where: { id: existingUser.id },
+          data: {
+            churchId: church.id,
+            setPasswordTokenHash: tokenHash,
+            setPasswordTokenExpiresAt: expiresAt,
+            ...(existingUser.name ? {} : { name: app.contactName }),
+            ...(grantsOwner ? { role: "owner" } : {}),
+          },
+        })
+      : await tx.user.create({
+          data: {
+            email: app.contactEmail,
+            name: app.contactName,
+            role: grantsOwner ? "owner" : "church_admin",
+            churchId: church.id,
+            setPasswordTokenHash: tokenHash,
+            setPasswordTokenExpiresAt: expiresAt,
+          },
+        });
+
+    if (grantsOwner) {
+      await tx.church.update({ where: { id: church.id }, data: { primaryOwnerUserId: user.id } });
+    }
+
+    return { alreadySetUp: false as const, user, rawToken };
+  });
+
+  if (!claim) {
+    // Lost the race — a concurrent call for this same church already
+    // claimed (or is actively handling) this send.
+    return { church, user: null, emailSent: false };
+  }
+  if (claim.alreadySetUp) {
+    return { church, user: claim.user, emailSent: false };
   }
 
-  const rawToken = crypto.randomBytes(32).toString("hex");
-  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
+  const { user, rawToken } = claim;
 
-  const user = existingUser
-    ? await prisma.user.update({
-        where: { id: existingUser.id },
-        data: { churchId: church.id, setPasswordTokenHash: tokenHash, setPasswordTokenExpiresAt: expiresAt },
-      })
-    : await prisma.user.create({
-        data: {
-          email: app.contactEmail,
-          role: "church_admin",
-          churchId: church.id,
-          setPasswordTokenHash: tokenHash,
-          setPasswordTokenExpiresAt: expiresAt,
-        },
-      });
-
-  const setPasswordLink = `https://www.wgcpayments.com/merchant/set-password/${rawToken}`;
+  // Previously hardcoded to https://www.wgcpayments.com regardless of
+  // environment — every sandbox-provisioned account got an email pointing
+  // at production, where the token doesn't exist (sandbox and production
+  // use separate databases). Mirrors the NEXT_PUBLIC_APP_URL fallback
+  // pattern already used in billingEmails.ts.
+  const setPasswordLink = `${process.env.NEXT_PUBLIC_APP_URL || "https://www.wgcpayments.com"}/merchant/set-password/${rawToken}`;
 
   const result = await sendWgcEmail({
     to: app.contactEmail,

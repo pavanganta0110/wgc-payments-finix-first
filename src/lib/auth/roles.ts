@@ -119,7 +119,24 @@ export type PermissionKey =
   | "canUpdateBillingMethod"
   | "canCancelSubscription"
   | "canDownloadBillingReceipts"
-  | "canViewInvoiceBilling";
+  | "canViewInvoiceBilling"
+  // Printful/merchandise: connecting/disconnecting the store and running a
+  // product sync is gated by the existing canManageIntegrations (same as
+  // Aplos). These two are specific to the merchandise catalog/order
+  // surfaces layered on top — enabling/disabling products, changing WGC
+  // selling prices, managing MerchandiseSettings, and manually retrying or
+  // cancelling a merchandise order (canManageMerchandise); viewing the
+  // merchandise orders list/detail (canViewMerchandiseOrders), which is
+  // read-only and deliberately separate so a fundraiser/viewer override
+  // could grant order visibility without also granting pricing/catalog
+  // control.
+  | "canManageMerchandise"
+  | "canViewMerchandiseOrders"
+  // Reporting read access itself piggybacks on canViewDonors (report pages
+  // show nothing canViewDonors already wouldn't) — this one key is only
+  // for saving/renaming/deleting a Saved Report, since that's a write
+  // action with no existing equivalent gate.
+  | "canManageSavedReports";
 
 export type PermissionMatrix = Record<PermissionKey, boolean>;
 
@@ -172,6 +189,9 @@ const ALL_FALSE: PermissionMatrix = {
   canCancelSubscription: false,
   canDownloadBillingReceipts: false,
   canViewInvoiceBilling: false,
+  canManageMerchandise: false,
+  canViewMerchandiseOrders: false,
+  canManageSavedReports: false,
 };
 
 /** Base permission matrix per normalized role, per the approved Checkpoint 2 spec. */
@@ -227,6 +247,9 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     canCancelSubscription: true,
     canDownloadBillingReceipts: true,
     canViewInvoiceBilling: true,
+    canManageMerchandise: true,
+    canViewMerchandiseOrders: true,
+    canManageSavedReports: true,
   },
   admin: {
     ...ALL_FALSE,
@@ -267,6 +290,9 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     canViewBillingHistory: true,
     canViewInvoiceBilling: true,
     canDownloadBillingReceipts: true,
+    canManageMerchandise: true,
+    canViewMerchandiseOrders: true,
+    canManageSavedReports: true,
     // canManageTeam, canIssueRefunds, canManageBankAccount, canManageBilling,
     // canViewAsUser, canVoidExternalDonation, canViewExternalDonationProof:
     // false by default, override-able — voiding a donation record and
@@ -312,6 +338,10 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     canEditInvoices: true,
     canSendInvoices: true,
     canManageClients: true,
+    // Fundraisers can see merchandise orders tied to their own attributed
+    // activity (read-only) but never connect/disconnect Printful, sync
+    // products, or change prices by default — override-able.
+    canViewMerchandiseOrders: true,
     // No refunds, no voiding, no offline-payment recording, no invoice
     // settings, no export by default — override-able per the approved spec.
   },

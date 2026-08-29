@@ -71,6 +71,7 @@ export default function GivingLinkForm({
   maxAmountCents,
   suggestedAmountsCents,
   allowCustomAmount,
+  quantityItemLabel,
   recurringEnabled,
   allowedFrequencies,
   allowedPaymentMethods,
@@ -94,12 +95,13 @@ export default function GivingLinkForm({
   finixMerchantId: string;
   churchName: string;
   light: BrandingModeSettings;
-  amountType: "FIXED" | "VARIABLE";
+  amountType: "FIXED" | "VARIABLE" | "FIXED_QUANTITY";
   fixedAmountCents: number | null;
   minAmountCents: number | null;
   maxAmountCents: number | null;
   suggestedAmountsCents: number[];
   allowCustomAmount: boolean;
+  quantityItemLabel?: string | null;
   recurringEnabled: boolean;
   allowedFrequencies: FrequencyKey[];
   allowedPaymentMethods: PaymentMethodKey[];
@@ -127,6 +129,13 @@ export default function GivingLinkForm({
 }) {
   const [amountCents, setAmountCents] = useState<number>(fixedAmountCents ?? suggestedAmountsCents[0] ?? 2500);
   const [customAmount, setCustomAmount] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [extraAmount, setExtraAmount] = useState("");
+  // Live BIN-detected card brand — see mountFinixPaymentForm's onUpdate.
+  // Only ever affects the client-side fee PREVIEW below; the actual charge
+  // always uses the real brand Finix reports at tokenization time
+  // server-side, regardless of whether this detection fires.
+  const [detectedCardBrand, setDetectedCardBrand] = useState<string | null>(null);
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequency, setFrequency] = useState<FrequencyKey>(allowedFrequencies[0] ?? "MONTHLY");
   const [coverFees, setCoverFees] = useState(feeCoverDefaultOn);
@@ -154,6 +163,7 @@ export default function GivingLinkForm({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [note, setNote] = useState("");
+  const [companyName, setCompanyName] = useState("");
   // Mailing address — collapsed by default, never required. Values persist
   // across close/reopen (plain component state, not reset on toggle) per
   // spec ("preserve entered address information if the donor closes and
@@ -291,13 +301,22 @@ export default function GivingLinkForm({
   // uses the card rate regardless of which manual-entry tab (card/bank)
   // happens to be selected — kept separate from the card/bank form's own
   // paymentMethod-driven totalCents/feeCoveredCents declared further below.
-  const effectiveAmountCents = amountType === "FIXED" ? (fixedAmountCents ?? 0) : customAmount ? Math.round(parseFloat(customAmount) * 100) : amountCents;
+  const extraAmountCents = extraAmount ? Math.round(parseFloat(extraAmount) * 100) || 0 : 0;
+  const effectiveAmountCents =
+    amountType === "FIXED"
+      ? (fixedAmountCents ?? 0)
+      : amountType === "FIXED_QUANTITY"
+        ? (fixedAmountCents ?? 0) * quantity + extraAmountCents
+        : customAmount
+          ? Math.round(parseFloat(customAmount) * 100)
+          : amountCents;
   
   const walletFeeResult = calculateWgcFeeAmounts({
     donationAmountCents: effectiveAmountCents || 0,
     paymentMethod: "CARD",
     cardBrand: null,
     donorCoversFee: feeCoverEnabled ? coverFees : false,
+    isWallet: true,
   });
   const walletTotalCents = (feeCoverEnabled && coverFees) ? walletFeeResult.amountToChargeCents : (effectiveAmountCents || 0);
 
@@ -326,6 +345,7 @@ export default function GivingLinkForm({
           walletToken: walletResult.walletToken,
           walletBillingContact: walletResult.billingContact,
           donationAmountCents: effectiveAmountCents,
+          ...(amountType === "FIXED_QUANTITY" ? { quantity, extraAmountCents } : {}),
           coverFees: feeCoverEnabled ? coverFees : false,
           isRecurring: false,
           fraudSessionId,
@@ -344,6 +364,7 @@ export default function GivingLinkForm({
             email: email.trim() || walletResult.billingContact.email,
             phone: phone.trim() || undefined,
             note: note.trim() || undefined,
+            companyName: companyName.trim() || undefined,
             isAnonymous,
           },
           mailingAddress: mailingAddressPayload,
@@ -657,10 +678,22 @@ export default function GivingLinkForm({
     if (container) container.innerHTML = "";
     formInstanceRef.current = null;
     setFormReady(false);
+    setDetectedCardBrand(null);
 
     mountFinixPaymentForm("giving-link-finix-form", APPLICATION_ID, {
       paymentMethods: [paymentMethod],
       showAddress: false,
+      onUpdate: (_state, binInformation) => {
+        if (paymentMethod !== "card") return;
+        // Confirmed against Finix's own hosted-form bundle (js.finix.com/v/2/application/app.js):
+        // BIN_INFORMATION_UPDATED posts { cardBrand, bin } — cardBrand is a
+        // card-validator-style string (e.g. "american-express"), not
+        // "brand"/"card_brand"/"network" as originally guessed, which is why
+        // this never actually updated the preview despite being wired up.
+        const info = binInformation as { cardBrand?: string | null } | undefined;
+        const brand = info?.cardBrand || null;
+        setDetectedCardBrand((prev) => (brand ? brand : prev));
+      },
     })
       .then((instance) => {
         if (cancelled) return;
@@ -681,14 +714,14 @@ export default function GivingLinkForm({
   const feeResult = calculateWgcFeeAmounts({
     donationAmountCents: effectiveAmountCents || 0,
     paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
-    cardBrand: null,
+    cardBrand: paymentMethod === "card" ? detectedCardBrand : null,
     donorCoversFee: feeCoverEnabled ? coverFees : false,
   });
-  
+
   const donorCoveredFeeResult = calculateWgcFeeAmounts({
     donationAmountCents: effectiveAmountCents || 0,
     paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
-    cardBrand: null,
+    cardBrand: paymentMethod === "card" ? detectedCardBrand : null,
     donorCoversFee: true,
   });
   
@@ -774,6 +807,7 @@ export default function GivingLinkForm({
             body: JSON.stringify({
               token: response.data.id,
               donationAmountCents: effectiveAmountCents,
+              ...(amountType === "FIXED_QUANTITY" ? { quantity, extraAmountCents } : {}),
               coverFees: feeCoverEnabled ? coverFees : false,
               isRecurring: recurringEnabled ? isRecurring : false,
               billingInterval: isRecurring ? frequency : undefined,
@@ -788,6 +822,7 @@ export default function GivingLinkForm({
                 email: email.trim(),
                 phone: phone.trim() || undefined,
                 note: note.trim() || undefined,
+                companyName: companyName.trim() || undefined,
                 isAnonymous,
               },
               mailingAddress: mailingAddressPayload,
@@ -990,6 +1025,53 @@ export default function GivingLinkForm({
           <p className="text-2xl font-bold" style={{ color: light.headingColor }}>
             {formatCents(fixedAmountCents ?? 0)}
           </p>
+        ) : amountType === "FIXED_QUANTITY" ? (
+          <>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <span className="text-sm" style={{ color: light.bodyTextColor }}>
+                {formatCents(fixedAmountCents ?? 0)} {quantityItemLabel ? `/ ${quantityItemLabel}` : "each"}
+              </span>
+              <div className="flex items-center gap-3 rounded-lg border px-2 py-1" style={{ borderColor: light.borderColor }}>
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => Math.max(0, q - 1))}
+                  className="w-7 h-7 rounded-md text-lg font-bold"
+                  style={{ color: light.bodyTextColor }}
+                  aria-label="Decrease quantity"
+                >
+                  −
+                </button>
+                <span className="w-8 text-center font-semibold" style={{ color: light.headingColor }}>
+                  {quantity}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => q + 1)}
+                  className="w-7 h-7 rounded-md text-lg font-bold"
+                  style={{ color: light.bodyTextColor }}
+                  aria-label="Increase quantity"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            <label className="block text-xs mb-1" style={{ color: light.bodyTextColor }}>
+              Additional Donation Amount
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="$0.00"
+              value={extraAmount}
+              onChange={(e) => setExtraAmount(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border text-sm outline-none mb-2"
+              style={{ borderColor: light.borderColor }}
+            />
+            <p className="text-2xl font-bold" style={{ color: light.headingColor }}>
+              {formatCents(effectiveAmountCents)}
+            </p>
+          </>
         ) : (
           <>
             <div className="grid grid-cols-3 gap-2 mb-2">
@@ -1095,6 +1177,23 @@ export default function GivingLinkForm({
             />
           </div>
         </div>
+        {isFieldVisible("companyName") && (
+          <div className="mb-3">
+            <label htmlFor="donor-company-name" className="block text-xs font-medium mb-1" style={{ color: light.bodyTextColor }}>
+              Company/Organization Name {donorFieldSettings.companyName === "REQUIRED" && <span aria-hidden="true">*</span>}
+            </label>
+            <input
+              id="donor-company-name"
+              required={donorFieldSettings.companyName === "REQUIRED"}
+              aria-required={donorFieldSettings.companyName === "REQUIRED"}
+              placeholder="Company/Organization name (optional)"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
+              style={{ borderColor: light.borderColor }}
+            />
+          </div>
+        )}
         <div className="mb-3">
           <label htmlFor="donor-email" className="block text-xs font-medium mb-1" style={{ color: light.bodyTextColor }}>
             Email <span aria-hidden="true">*</span>

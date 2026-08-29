@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { getAdminSession } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { EXCLUDE_NON_DONATION_TRANSFERS } from "@/lib/auth/scopes";
+import { formatPersonName } from "@/lib/formatPersonName";
 
 function formatCurrency(cents: number | null | undefined, currency: string = "USD") {
   if (cents == null) return "-";
@@ -33,17 +35,53 @@ export default async function MerchantTransactionsPage({
     take: 100,
   });
 
-  const paymentIds = transfers.map(t => t.paymentId).filter(Boolean) as string[];
+  // FinixTransfer.paymentId is never written anywhere in the codebase — the
+  // real donor/payment-method join goes through the payment INSTRUMENT
+  // (finixPaymentInstrumentId), same as the merchant-facing Payments page
+  // (src/app/merchant/(dashboard)/transactions/payments/page.tsx). Joining
+  // via the dead paymentId column meant every row here showed "Anonymous"
+  // regardless of whether the donor actually gave their name.
   const transferIds = transfers.map(t => t.finixTransferId);
+  const instrumentIds = transfers.map(t => t.finixPaymentInstrumentId).filter(Boolean) as string[];
 
-  const payments = await prisma.payment.findMany({
-    where: { id: { in: paymentIds } },
-  });
+  const instruments = instrumentIds.length
+    ? await prisma.finixPaymentInstrumentSnapshot.findMany({
+        where: { finixPaymentInstrumentId: { in: instrumentIds } },
+      })
+    : [];
+  const instrumentMap = new Map(instruments.map(i => [i.finixPaymentInstrumentId, i]));
 
-  const donorIds = payments.map(p => p.donorId).filter(Boolean) as string[];
-  const donors = await prisma.donor.findMany({
-    where: { id: { in: donorIds } },
-  });
+  const donorIds = instruments.map(i => i.donorId).filter(Boolean) as string[];
+  const donors = donorIds.length
+    ? await prisma.donor.findMany({ where: { id: { in: donorIds } } })
+    : [];
+  const donorMap = new Map(donors.map(d => [d.id, d]));
+
+  const payments = transferIds.length
+    ? await prisma.payment.findMany({
+        where: { churchId, finixTransferId: { in: transferIds } },
+      })
+    : [];
+  const paymentByTransfer = new Map(payments.filter(p => p.finixTransferId).map(p => [p.finixTransferId as string, p]));
+
+  // FinixFee.linkedToId matches a transfer's finixTransferId — same fee
+  // data the merchant's own Settlements > Fee Breakdown view reads (see
+  // settlementDetail.ts). A transfer can have more than one fee row (e.g.
+  // a percentage-based line and a separate fixed-fee line), so these are
+  // grouped and summed per transfer rather than assumed to be one-to-one.
+  const fees = transferIds.length
+    ? await prisma.finixFee.findMany({
+        where: { linkedToId: { in: transferIds }, churchId },
+        orderBy: { createdAtFinix: "desc" },
+      })
+    : [];
+  const feesByTransfer = new Map<string, typeof fees>();
+  for (const f of fees) {
+    if (!f.linkedToId) continue;
+    const list = feesByTransfer.get(f.linkedToId) ?? [];
+    list.push(f);
+    feesByTransfer.set(f.linkedToId, list);
+  }
 
   const refunds = await prisma.finixRefundOrReversal.findMany({
     where: { finixOriginalTransferId: { in: transferIds } },
@@ -53,8 +91,6 @@ export default async function MerchantTransactionsPage({
     where: { finixTransferId: { in: transferIds } },
   });
 
-  const paymentMap = new Map(payments.map(p => [p.id, p]));
-  const donorMap = new Map(donors.map(d => [d.id, d]));
   const refundMap = new Map(refunds.map(r => [r.finixOriginalTransferId, r]));
   const disputeMap = new Map(disputes.map(d => [d.finixTransferId, d]));
 
@@ -62,8 +98,8 @@ export default async function MerchantTransactionsPage({
   if (search) {
     const s = search.toLowerCase();
     transfers = transfers.filter((t: any) => {
-      const p = t.paymentId ? paymentMap.get(t.paymentId) : null;
-      const d = p?.donorId ? donorMap.get(p.donorId) : null;
+      const instrument = t.finixPaymentInstrumentId ? instrumentMap.get(t.finixPaymentInstrumentId) : null;
+      const d = instrument?.donorId ? donorMap.get(instrument.donorId) : null;
       const matchesTransferId = t.finixTransferId.toLowerCase().includes(s);
       const matchesDonorName = d?.name?.toLowerCase().includes(s);
       const matchesDonorEmail = d?.email?.toLowerCase().includes(s);
@@ -107,6 +143,7 @@ export default async function MerchantTransactionsPage({
                   <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Donor</th>
                   <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Amount</th>
                   <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Method</th>
+                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Fee</th>
                   <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
                   <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Fund</th>
                   <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Attributed User</th>
@@ -115,10 +152,21 @@ export default async function MerchantTransactionsPage({
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {transfers.map((t: any) => {
-                  const p = t.paymentId ? paymentMap.get(t.paymentId) : null;
-                  const d = p?.donorId ? donorMap.get(p.donorId) : null;
+                  const instrument = t.finixPaymentInstrumentId ? instrumentMap.get(t.finixPaymentInstrumentId) : null;
+                  const d = instrument?.donorId ? donorMap.get(instrument.donorId) : null;
+                  const p = paymentByTransfer.get(t.finixTransferId);
                   const refund = refundMap.get(t.finixTransferId);
                   const dispute = disputeMap.get(t.finixTransferId);
+                  const donorDisplayName = formatPersonName(d?.name, instrument?.accountHolderName);
+                  // instrument.paymentMethodType is Finix's actual card-vs-bank
+                  // classification. t.subtype describes how the transfer was
+                  // CREATED (e.g. "API" for any direct API call, including every
+                  // donation through this platform's own donate endpoint) — never
+                  // meaningful as a donor-facing "payment method" and was being
+                  // shown here in place of the real classification.
+                  const methodLabel = instrument?.cardBrand || (instrument?.bankLast4 ? "Bank Account (ACH)" : instrument?.paymentMethodType || "-");
+                  const transferFees = feesByTransfer.get(t.finixTransferId) ?? [];
+                  const totalFeeCents = transferFees.reduce((sum, f) => sum + (f.amountCents ?? 0), 0);
 
                   return (
                     <tr key={t.id}>
@@ -126,18 +174,35 @@ export default async function MerchantTransactionsPage({
                         {t.createdAtFinix ? new Date(t.createdAtFinix).toLocaleDateString() : 'N/A'}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {d ? <>{d.name}<br /><span className="text-xs text-gray-400">{d.email}</span></> : 'Anonymous'}
+                        {donorDisplayName}<br /><span className="text-xs text-gray-400">{d?.email || "-"}</span>
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                         {formatCurrency(t.amountCents, t.currency || "USD")}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {t.subtype || p?.paymentMethodType || '-'}
+                        {methodLabel}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                        <Link
+                          href={`/admin/merchants/${churchId}/transactions/${t.finixTransferId}`}
+                          className="text-blue-600 hover:underline"
+                        >
+                          {transferFees.length > 0 ? (
+                            <>
+                              {formatCurrency(totalFeeCents, transferFees[0].currency || "USD")}
+                              {transferFees.length > 1 && (
+                                <span className="block text-xs text-gray-400">{transferFees.length} fee lines</span>
+                              )}
+                            </>
+                          ) : (
+                            "View breakdown"
+                          )}
+                        </Link>
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                         <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${
-                          t.state === 'SUCCEEDED' ? 'bg-green-50 text-green-700 ring-green-600/20' : 
-                          t.state === 'FAILED' ? 'bg-red-50 text-red-700 ring-red-600/10' : 
+                          t.state === 'SUCCEEDED' ? 'bg-green-50 text-green-700 ring-green-600/20' :
+                          t.state === 'FAILED' ? 'bg-red-50 text-red-700 ring-red-600/10' :
                           'bg-gray-50 text-gray-600 ring-gray-500/10'
                         }`}>
                           {t.state || p?.status || 'UNKNOWN'}

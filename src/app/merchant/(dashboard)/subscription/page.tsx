@@ -6,10 +6,12 @@ import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
 import StateBadge from "@/components/merchant/StateBadge";
 import ComingSoon from "@/components/merchant/ComingSoon";
-import { formatDateCDT, formatDateTimeCDT } from "@/lib/formatDateTimeCDT";
+import { formatDateCDT, formatDateTimeCDT, formatCalendarDateUTC } from "@/lib/formatDateTimeCDT";
 import RefreshPricingButton from "@/components/merchant/RefreshPricingButton";
 import { WGC_PRICING } from "@/lib/giving/feeCalculator";
 import CancelSubscriptionButton from "@/components/billing/CancelSubscriptionButton";
+import ActivationForm from "@/components/billing/ActivationForm";
+import { createBillingActivationToken } from "@/lib/billing/billingActivation";
 import { redirect } from "next/navigation";
 
 function titleCase(s: string | null | undefined) {
@@ -59,17 +61,42 @@ export default async function SubscriptionPage() {
   const isPromotional = Boolean(entitlement) && subscription?.status === "TRIALING";
 
   if (church?.billingSetupStatus === "APPROVED_BILLING_REQUIRED" && !subscription?.finixSubscriptionId) {
+    // Only the owner can actually complete activation (mirrors
+    // /api/billing/activate's own owner-only check) — a sub-user lands on
+    // an informational message instead of a form they'd fail to submit.
+    if (!canManage) {
+      return (
+        <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-8 max-w-lg">
+          <h2 className="text-lg font-bold text-slate-900 mb-2">Finish setting up your WGC Platform subscription</h2>
+          <p className="text-sm text-slate-500 mb-6">
+            Your account is approved — one step remains before you have full dashboard access. Only your organization owner can complete
+            billing setup.
+          </p>
+          <a href="/support" className="text-blue-600 font-semibold text-sm hover:underline">
+            Contact Support
+          </a>
+        </div>
+      );
+    }
+
+    // Previously required a separate emailed token link — the owner is
+    // already authenticated right here, so generate a fresh activation
+    // token on the fly and render the real form directly, instead of a
+    // "check your email" dead end. The emailed /activate-subscription/
+    // [token] link still works too (e.g. from a device where they aren't
+    // already logged in); this is just a second, in-app path to the same
+    // flow.
+    const activationToken = await createBillingActivationToken(churchId);
+
     return (
-      <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-8 max-w-lg">
-        <h2 className="text-lg font-bold text-slate-900 mb-2">Finish setting up your WGC Platform subscription</h2>
-        <p className="text-sm text-slate-500 mb-6">
-          Your account is approved — one step remains before you have full dashboard access. Check your email for an activation link, or
-          contact support if you need it resent.
-        </p>
-        <a href="mailto:support@wgcpayments.com" className="text-blue-600 font-semibold text-sm hover:underline">
-          Contact Support
-        </a>
-      </div>
+      <ActivationForm
+        token={activationToken}
+        organizationName={church.name}
+        isPromotional={Boolean(entitlement)}
+        durationMonths={entitlement?.durationMonths ?? null}
+        regularMonthlyAmountCents={entitlement?.normalMonthlyAmountCents ?? 1000}
+        embedded
+      />
     );
   }
 
@@ -123,7 +150,7 @@ export default async function SubscriptionPage() {
           <div className="grid grid-cols-2 gap-4 text-sm">
             <Row label="Plan" value={plan?.planName || "—"} />
             <Row label="Price" value={`${formatCents(subscription.amountCents)} / ${titleCase(subscription.billingInterval)}`} />
-            <Row label="Next Billing Date" value={formatDate(subscription.nextChargeAt)} />
+            <Row label="Next Billing Date" value={formatCalendarDateUTC(subscription.nextChargeAt)} />
             <Row label="Last Payment" value={formatDate(subscription.lastChargeAt)} />
             {subscription.canceledAt && <Row label="Canceled" value={formatDate(subscription.canceledAt)} />}
             {billingAccount?.billingMethodType && (

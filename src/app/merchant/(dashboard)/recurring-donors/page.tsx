@@ -6,13 +6,14 @@ import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { resolveViewScope } from "@/lib/auth/viewScope";
 import { resolveScopedUserId } from "@/lib/auth/scopes";
 import { isAuthError } from "@/lib/auth/errors";
-import { formatDateCDT } from "@/lib/formatDateTimeCDT";
+import { formatDateCDT, formatCalendarDateUTC } from "@/lib/formatDateTimeCDT";
 import StateBadge from "@/components/merchant/StateBadge";
 import ClickableTableRow from "@/components/merchant/ClickableTableRow";
 import RecurringDonorDrawer from "@/components/merchant/RecurringDonorDrawer";
 import RecurringDonorsFilterBar from "@/components/merchant/RecurringDonorsFilterBar";
 import Pagination from "@/components/merchant/Pagination";
 import { loadRecurringDonorsList, type RecurringDonorsSortKey } from "@/lib/subscriptions/recurringDonorsList";
+import { reconcileStaleActiveSubscriptions } from "@/lib/subscriptions/subscriptionReconciliation";
 import { loadRecurringDonorsAnalytics } from "@/lib/subscriptions/recurringDonorsAnalytics";
 import { frequencyLabel } from "@/lib/subscriptions/subscriptionStatus";
 
@@ -60,6 +61,13 @@ export default async function RecurringDonorsPage({
 
   const viewScope = await resolveViewScope(auth);
   const scopedUserId = resolveScopedUserId(auth, viewScope) ?? undefined;
+
+  // Self-healing fallback for a missed/delayed subscription.updated webhook
+  // — see subscriptionReconciliation.ts. Throttled to once per subscription
+  // per 5 minutes and bounded to 25 rows, so this stays cheap on repeat
+  // views; awaited before the query below so a merchant sees corrected data
+  // on this same page load, not the next one.
+  await reconcileStaleActiveSubscriptions(churchId);
 
   const [list, analytics] = await Promise.all([
     loadRecurringDonorsList(
@@ -249,7 +257,7 @@ export default async function RecurringDonorsPage({
                       <td className="px-6 py-3 text-slate-600">
                         {d.frequencies.length === 0 ? "—" : `${frequencyLabel(d.frequencies[0])}${d.frequencies.length > 1 ? ` +${d.frequencies.length - 1} more` : ""}`}
                       </td>
-                      <td className="px-6 py-3 text-slate-600 whitespace-nowrap">{d.nextBillingDate ? formatDateCDT(d.nextBillingDate) : "—"}</td>
+                      <td className="px-6 py-3 text-slate-600 whitespace-nowrap">{d.nextBillingDate ? formatCalendarDateUTC(d.nextBillingDate) : "—"}</td>
                       <td className="px-6 py-3 text-slate-600 whitespace-nowrap">
                         {d.lastSuccessfulPayment ? `${formatCents(d.lastSuccessfulPayment.amountCents)} · ${formatDateCDT(d.lastSuccessfulPayment.date)}` : "—"}
                       </td>

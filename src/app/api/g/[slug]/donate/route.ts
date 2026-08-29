@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
 import { FEE_CALCULATION_VERSION } from "@/lib/giving/feeCalculator";
@@ -17,6 +18,7 @@ import { resolveOrCreateDonor } from "@/lib/donors/resolveOrCreateDonor";
 import { cleanAddressInput, hasAnyAddressField, applyDonorAddressUpdate } from "@/lib/donors/donorAddress";
 import { resolveEmbedCorsOrigin, embedCorsHeaders, embedPreflightResponse } from "@/lib/giving/embedCors";
 import { assertNonprofitApproved } from "@/lib/onboarding/nonprofitVerificationGuard";
+import { checkDonationRateLimit } from "@/lib/giving/donationRateLimit";
 import crypto from "crypto";
 
 /**
@@ -62,6 +64,11 @@ async function handleDonate(req: Request, slug: string) {
   let claimedOneTimeLinkId: string | null = null;
 
   try {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+    if (!checkDonationRateLimit(`donate:${ip}:${slug}`)) {
+      return NextResponse.json({ success: false, code: "RATE_LIMITED", message: "Too many attempts. Please wait a moment and try again.", retryable: true }, { status: 429 });
+    }
+
     const body = await req.json();
     logEvent("1_DONATION_REQUEST_RECEIVED", {
       donationAmountCents: body.donationAmountCents,
@@ -98,8 +105,15 @@ async function handleDonate(req: Request, slug: string) {
     if (isWallet ? !walletToken : (!token && !paymentInstrumentId)) {
       return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Missing payment token", retryable: true }, { status: 400 });
     }
-    if (!fraudSessionId) {
-      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Missing fraud session", retryable: true }, { status: 400 });
+    // Bank/ACH transfers never carry a fraud_session_id (see the
+    // `paymentMethod !== "bank"` guard on the actual Finix transfer payload
+    // below) — Finix.Auth's callback never fires for bank on the client, so
+    // both GivingLinkForm.tsx and the inline embed widget deliberately send
+    // "" for bank rather than awaiting a callback that will never resolve.
+    // This check must exempt bank the same way, or every ACH donation is
+    // rejected here before ever reaching that correctly-conditioned logic.
+    if (paymentMethod !== "bank" && !fraudSessionId) {
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "We couldn't verify this session. Please refresh the page and try again.", retryable: true }, { status: 400 });
     }
 
     const link = await prisma.givingLink.findUnique({ where: { publicSlug: slug } });
@@ -154,6 +168,31 @@ async function handleDonate(req: Request, slug: string) {
     if (link.amountType === "FIXED") {
       if (link.fixedAmountCents != null && donationAmountCents !== link.fixedAmountCents) {
         return NextResponse.json({ error: "This giving link only accepts a fixed donation amount" }, { status: 400 });
+      }
+    } else if (link.amountType === "FIXED_QUANTITY") {
+      // Never trust the client's donationAmountCents directly here — it's
+      // recomputed server-side from quantity * per-item price + extra, and
+      // rejected outright on any mismatch (rather than silently overwriting
+      // it), same tamper-resistance the FIXED branch above already has.
+      if (link.fixedAmountCents == null) {
+        return NextResponse.json({ error: "This giving link is not configured correctly" }, { status: 400 });
+      }
+      // Quantity may be 0 — a donor can skip the item entirely and give
+      // only the additional donation amount below (e.g. $25 instead of a
+      // full $75 item). The overall $1.00 minimum is still enforced by the
+      // generic donationAmountCents check above, so 0 quantity + $0 extra
+      // is already rejected there.
+      const quantity = Number(body.quantity);
+      if (!Number.isInteger(quantity) || quantity < 0) {
+        return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Please select a valid quantity", retryable: true }, { status: 400 });
+      }
+      const extraAmountCents = body.extraAmountCents ? Number(body.extraAmountCents) : 0;
+      if (!Number.isInteger(extraAmountCents) || extraAmountCents < 0) {
+        return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Invalid additional donation amount", retryable: true }, { status: 400 });
+      }
+      const expectedAmountCents = link.fixedAmountCents * quantity + extraAmountCents;
+      if (donationAmountCents !== expectedAmountCents) {
+        return NextResponse.json({ error: "Donation amount does not match the selected quantity" }, { status: 400 });
       }
     } else {
       if (link.minAmountCents != null && donationAmountCents < link.minAmountCents) {
@@ -245,7 +284,15 @@ async function handleDonate(req: Request, slug: string) {
         return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Payment method not found on Finix", retryable: true }, { status: 404 });
       }
       identityId = instrument.identity;
-      cardBrand = instrument.card?.brand || null;
+      // Finix's GET/POST /payment_instruments response has `brand` as a flat
+      // top-level field, not nested under a `card` object — confirmed
+      // against a real API response in syncPaymentInstruments.ts, which
+      // reads `instrument.brand` for the exact same resource. Reading
+      // `instrument.card?.brand` here always evaluated to undefined, so
+      // cardBrand was always null at fee-calculation time regardless of the
+      // real card brand — meaning every Amex donor-covered donation was
+      // silently charged the non-Amex rate (3.00% instead of 3.50%).
+      cardBrand = instrument.brand || null;
 
       donorRecord = await resolveOrCreateDonor({
         churchId: church.id,
@@ -253,6 +300,7 @@ async function handleDonate(req: Request, slug: string) {
         name: fullName,
         email: donor.email,
         phone: donor.phone || null,
+        companyName: fieldSettings.companyName !== "HIDDEN" ? donor.companyName?.trim() || null : null,
       });
     } else {
       const [firstName, ...rest] = fullName.trim().split(" ");
@@ -361,7 +409,15 @@ async function handleDonate(req: Request, slug: string) {
         return toSafePaymentErrorResponse(new Error("Failed to create payment instrument"), "PAYMENT_FAILED", "Could not process payment instrument. No charge was made.", true, { action: "createPaymentInstrument" });
       }
 
-      cardBrand = instrument.card?.brand || null;
+      // Finix's GET/POST /payment_instruments response has `brand` as a flat
+      // top-level field, not nested under a `card` object — confirmed
+      // against a real API response in syncPaymentInstruments.ts, which
+      // reads `instrument.brand` for the exact same resource. Reading
+      // `instrument.card?.brand` here always evaluated to undefined, so
+      // cardBrand was always null at fee-calculation time regardless of the
+      // real card brand — meaning every Amex donor-covered donation was
+      // silently charged the non-Amex rate (3.00% instead of 3.50%).
+      cardBrand = instrument.brand || null;
 
       donorRecord = await resolveOrCreateDonor({
         churchId: church.id,
@@ -369,6 +425,7 @@ async function handleDonate(req: Request, slug: string) {
         name: fullName,
         email: donor.email,
         phone: donor.phone || null,
+        companyName: fieldSettings.companyName !== "HIDDEN" ? donor.companyName?.trim() || null : null,
       });
 
       try {
@@ -389,6 +446,7 @@ async function handleDonate(req: Request, slug: string) {
         paymentMethod: paymentMethod === "bank" ? "ACH" : "CARD",
         cardBrand,
         donorCoversFee: link.feeCoverEnabled && coverFees,
+        isWallet,
       });
       logEvent("6_FEE_PROFILE_VALIDATION_PASSED", {
         feeProfileCategory: feeStrategy.feePaidBy === "DONOR" ? "ZERO" : "ORGANIZATION_PAID",
@@ -445,7 +503,7 @@ async function handleDonate(req: Request, slug: string) {
       return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Payment amount has changed. Please confirm and try again.", retryable: true }, { status: 400 });
     }
 
-    // 5. Check Idempotency
+    // 5. Check Idempotency (Finix-side, defense in depth)
     const idempotencyId = clientAttemptId || crypto.randomUUID();
     const existingTransfer = await finixClient.findTransferByIdempotencyId(idempotencyId);
     if (existingTransfer) {
@@ -460,6 +518,69 @@ async function handleDonate(req: Request, slug: string) {
           duplicate: true,
         });
       }
+    }
+
+    // 5b. Claim a local PaymentAttempt row keyed on the donor's
+    // clientAttemptId BEFORE any charge is attempted — this is the actual
+    // WGC-side duplicate-submission guard (double-click, browser retry).
+    // clientAttemptId/idempotencyId are both @unique, so a second concurrent
+    // request for the same attempt fails here with P2002 instead of ever
+    // reaching createTransfer. Mirrors the same ordering already used by
+    // take-payment/route.ts.
+    //
+    // existingAttempt (fetched way above, before the slow Finix identity/
+    // instrument calls) is stale by the time we get here — re-read
+    // immediately before deciding create-vs-update so a request that's been
+    // in flight this whole time (not just a literally-simultaneous insert)
+    // is still caught: if a concurrent request already finished, return its
+    // result instead of charging again; if one is still PROCESSING, basing
+    // the decision on a fresh read narrows (though doesn't eliminate) the
+    // window where two requests could both take the "update" branch.
+    const currentAttempt = await prisma.paymentAttempt.findUnique({ where: { clientAttemptId } });
+    if (currentAttempt && (currentAttempt.status === "SUCCEEDED" || currentAttempt.status === "PENDING")) {
+      return NextResponse.json({
+        success: true,
+        transferId: currentAttempt.finixTransferId,
+        state: currentAttempt.status,
+        duplicate: true,
+      });
+    }
+
+    const attemptPaymentMethodType =
+      paymentMethod === "apple_pay" ? "APPLE_PAY" : paymentMethod === "google_pay" ? "GOOGLE_PAY" : paymentMethod === "card" ? "PAYMENT_CARD" : "BANK_ACCOUNT";
+    let attempt;
+    try {
+      attempt = currentAttempt
+        ? await prisma.paymentAttempt.update({
+            where: { id: currentAttempt.id },
+            data: { status: "PROCESSING", updatedAt: new Date(), feeCents: feeCoveredCents, totalCents },
+          })
+        : await prisma.paymentAttempt.create({
+            data: {
+              churchId: church.id,
+              donorId: donorRecord.id,
+              givingLinkId: link.id,
+              clientAttemptId,
+              idempotencyId,
+              amountCents: donationAmountCents,
+              feeCents: feeCoveredCents,
+              totalCents,
+              paymentMethodType: attemptPaymentMethodType,
+              fundId: resolvedFund.fundId,
+              fundName: resolvedFund.fundName,
+              isAnonymous: Boolean(donor?.isAnonymous),
+              fraudSessionId,
+              status: "PROCESSING",
+            },
+          });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const raced = await prisma.paymentAttempt.findUnique({ where: { clientAttemptId } });
+        if (raced && (raced.status === "SUCCEEDED" || raced.status === "PENDING")) {
+          return NextResponse.json({ success: true, transferId: raced.finixTransferId, state: raced.status, duplicate: true });
+        }
+      }
+      throw err;
     }
 
     // One-time link claim (after preview check passes, before charging)
@@ -530,6 +651,11 @@ async function handleDonate(req: Request, slug: string) {
           nextBillingDate: parseFinixDate(subscription.next_billing_date) ?? undefined,
           lastSyncedAt: new Date(),
         },
+      });
+
+      await prisma.paymentAttempt.update({
+        where: { id: attempt.id },
+        data: { status: "SUCCEEDED", donorId: donorRecord.id },
       });
 
       await sendReceiptEmail(donor.email, fullName, church.name, totalCents, true, interval);
@@ -605,11 +731,17 @@ async function handleDonate(req: Request, slug: string) {
       update: { state: transfer.state ?? undefined, lastSyncedAt: new Date() },
     });
 
+    await prisma.paymentAttempt.update({
+      where: { id: attempt.id },
+      data: { status: (transfer.state || "PENDING").toUpperCase(), finixTransferId: transfer.id, donorId: donorRecord.id },
+    });
+
     logEvent("9_PAYMENT_DATABASE_SAVE_COMPLETED", { transferId: transfer.id });
     const newPayment = await prisma.payment.create({
       data: {
         churchId: church.id,
         donorId: donorRecord.id,
+        paymentAttemptId: attempt.id,
         givingLinkId: link.id,
         // Team-access Checkpoint 3: snapshotted once here, at payment
         // creation — never re-derived from the giving link later (a

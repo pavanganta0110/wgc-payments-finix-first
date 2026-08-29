@@ -10,6 +10,7 @@ import GivingLinkDetailHeader from "@/components/merchant/GivingLinkDetailHeader
 import GivingLinkOverviewTab from "@/components/merchant/GivingLinkOverviewTab";
 import GivingLinkSharingHistoryTable from "@/components/merchant/GivingLinkSharingHistoryTable";
 import DonationAttemptsTable from "@/components/merchant/DonationAttemptsTable";
+import GivingLinkMerchandiseTab from "@/components/merchant/GivingLinkMerchandiseTab";
 
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
@@ -31,7 +32,7 @@ export default async function GivingLinkDetailPage({
   const churchId = session!.churchId!;
   const { id } = await params;
   const sp = await searchParams;
-  const tab = sp.tab === "attempts" || sp.tab === "sharing" ? sp.tab : "overview";
+  const tab = sp.tab === "attempts" || sp.tab === "sharing" || sp.tab === "merchandise" ? sp.tab : "overview";
 
   const link = await prisma.givingLink.findFirst({ where: { id, churchId } });
   if (!link) notFound();
@@ -57,7 +58,7 @@ export default async function GivingLinkDetailPage({
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6">
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4">
           <MetricCard label="Public Title" value={link.publicTitle} />
-          <MetricCard label="Amount Type" value={link.amountType === "VARIABLE" ? "Variable" : "Fixed"} />
+          <MetricCard label="Amount Type" value={link.amountType === "VARIABLE" ? "Variable" : link.amountType === "FIXED_QUANTITY" ? "Fixed + Quantity" : "Fixed"} />
           <MetricCard label="Link Type" value={link.linkType === "ONE_TIME" ? "One-Time" : "Multi-Use"} />
           <MetricCard label="Expires" value={link.expiresAt ? new Date(link.expiresAt).toLocaleDateString() : "No expiration"} />
           <MetricCard label="Total Attempts" value={String(link.totalAttempts)} />
@@ -71,6 +72,7 @@ export default async function GivingLinkDetailPage({
           { key: "overview", label: "Overview" },
           { key: "attempts", label: "Donation Attempts" },
           { key: "sharing", label: "Sharing History" },
+          { key: "merchandise", label: "Merchandise" },
         ] as const).map((t) => (
           <Link
             key={t.key}
@@ -91,6 +93,8 @@ export default async function GivingLinkDetailPage({
       )}
 
       {tab === "sharing" && <GivingLinkSharingHistoryTable givingLinkId={id} churchId={churchId} />}
+
+      {tab === "merchandise" && <GivingLinkMerchandiseTab givingLinkId={id} publicSlug={link.publicSlug} />}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { resolveViewScope } from "@/lib/auth/viewScope";
 import { resolveScopedUserId } from "@/lib/auth/scopes";
 import { isAuthError } from "@/lib/auth/errors";
-import { formatDateCDT } from "@/lib/formatDateTimeCDT";
+import { formatDateCDT, formatCalendarDateUTC } from "@/lib/formatDateTimeCDT";
 import StateBadge from "@/components/merchant/StateBadge";
 import ClickableTableRow from "@/components/merchant/ClickableTableRow";
 import SubscriptionDrawer from "@/components/merchant/SubscriptionDrawer";
@@ -16,6 +16,7 @@ import { getSubscriptionPermissions } from "@/lib/subscriptions/subscriptionPerm
 import { loadSubscriptionsList, type SubscriptionsSortKey } from "@/lib/subscriptions/subscriptionsList";
 import { loadSubscriptionsAnalytics } from "@/lib/subscriptions/subscriptionsAnalytics";
 import { frequencyLabel } from "@/lib/subscriptions/subscriptionStatus";
+import { reconcileStaleActiveSubscriptions } from "@/lib/subscriptions/subscriptionReconciliation";
 
 const PAGE_SIZE = 25;
 
@@ -62,6 +63,13 @@ export default async function SubscriptionsPage({
 
   const viewScope = await resolveViewScope(auth);
   const scopedUserId = resolveScopedUserId(auth, viewScope) ?? undefined;
+
+  // Self-healing fallback for a missed/delayed subscription.updated webhook
+  // — see subscriptionReconciliation.ts. Throttled to once per subscription
+  // per 5 minutes and bounded to 25 rows, so this stays cheap on repeat
+  // views; awaited before the query below so a merchant sees corrected data
+  // on this same page load, not the next one.
+  await reconcileStaleActiveSubscriptions(churchId);
 
   const [list, analytics] = await Promise.all([
     loadSubscriptionsList(
@@ -208,7 +216,7 @@ export default async function SubscriptionsPage({
                       <td className="px-6 py-3 text-slate-600">{frequencyLabel(s.billingInterval)}</td>
                       <td className="px-6 py-3 text-right text-slate-600">{formatCents(s.monthlyValueCents)}</td>
                       <td className="px-6 py-3"><StateBadge state={s.displayStatus} /></td>
-                      <td className="px-6 py-3 text-slate-600 whitespace-nowrap">{s.nextBillingDate ? formatDateCDT(s.nextBillingDate) : "—"}</td>
+                      <td className="px-6 py-3 text-slate-600 whitespace-nowrap">{s.nextBillingDate ? formatCalendarDateUTC(s.nextBillingDate) : "—"}</td>
                       <td className="px-6 py-3 text-slate-600">{s.paymentMethod ? `${s.paymentMethod.brand || "Bank"} ••••${s.paymentMethod.last4 || ""}` : "—"}</td>
                       <td className="px-6 py-3 text-right text-slate-600">{s.failedAttempts > 0 ? <span className="text-red-600 font-semibold">{s.failedAttempts}</span> : "0"}</td>
                       <td className="px-6 py-3 text-right font-semibold text-slate-900">{formatCents(s.lifetimeCollectedCents)}</td>

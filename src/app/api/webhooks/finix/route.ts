@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import crypto from "crypto";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveRecurringPaymentAttribution } from "@/lib/auth/attributionSnapshot";
 import { sendWgcEmail, sendWgcAdminEmail } from "@/lib/email";
 import { redactFinixPayload } from "@/lib/finix/redact";
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { mapFinixDisputeStateToWgcStatus } from "@/lib/finix/statusMapping";
-import { provisionChurchAccount } from "@/lib/auth/provisionChurchAccount";
+import { provisionChurchAndBillingGateOrAlert } from "@/lib/billing/provisionChurchAndBillingGate";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { syncFeesForTransfer } from "@/lib/finix/sync/syncFees";
 import { linkTransfersToSettlement, recomputeSettlementAggregates } from "@/lib/finix/sync/syncSettlements";
@@ -1410,18 +1411,30 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "Already processed" }, { status: 200 });
     }
 
-    const webhookEvent = await prisma.finixWebhookEvent.create({
-      data: {
-        finixEventId: eventId,
-        entity,
-        type: eventType,
-        occurredAt,
-        merchantId: merchantId || null,
-        identityId: identityId || null,
-        verificationId: verificationId || null,
-        rawPayloadJson: payload,
-      },
-    });
+    let webhookEvent;
+    try {
+      webhookEvent = await prisma.finixWebhookEvent.create({
+        data: {
+          finixEventId: eventId,
+          entity,
+          type: eventType,
+          occurredAt,
+          merchantId: merchantId || null,
+          identityId: identityId || null,
+          verificationId: verificationId || null,
+          rawPayloadJson: payload,
+        },
+      });
+    } catch (err) {
+      // A concurrent delivery of the same event ID won the race between our
+      // findUnique check above and this create (finixEventId is @unique) —
+      // return the same clean "already processed" response instead of a
+      // 500, so Finix doesn't redeliver and compound the burst.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        return NextResponse.json({ message: "Already processed" }, { status: 200 });
+      }
+      throw err;
+    }
 
     // WGC platform-subscription billing events — resolved by
     // finixSubscriptionId, never by trusting anything client-submitted.
@@ -1568,79 +1581,64 @@ export async function POST(req: Request) {
             adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications"
           });
 
-          // Provision the Church row + church_admin User account and send
-          // the separate "secure dashboard access" email referenced above.
-          // Wrapped so a failure here never blocks the approval flow itself.
-          try {
-            const provisioned = await provisionChurchAccount({
-              id: app.id,
-              organizationName: app.organizationName,
-              legalBusinessName: app.legalBusinessName,
-              contactEmail: app.contactEmail,
-              contactName: app.contactName,
-              finixMerchantId: app.finixMerchantId || data.id,
-              finixIdentityId: app.finixIdentityId,
-              finixApplicationId: app.finixApplicationId,
-            });
-
-            // WGC platform-billing gate: approved, but dashboard access
-            // stays restricted to subscription/billing setup until the
-            // owner completes activation — see requireMerchantSession's
-            // billing-gate check and /activate-subscription/[token].
-            // Wrapped independently so a failure here never blocks the
-            // approval/provisioning that already succeeded above.
-            try {
-              await prisma.church.update({
-                where: { id: provisioned.church.id },
-                data: { billingSetupStatus: "APPROVED_BILLING_REQUIRED" },
-              });
-
-              const { attachPromotionEntitlementIfLeadExists } = await import("@/lib/billing/promotionEntitlement");
-              const entitlement = await attachPromotionEntitlementIfLeadExists(app.id, provisioned.church.id);
-
-              const { createBillingActivationToken } = await import("@/lib/billing/billingActivation");
-              const rawActivationToken = await createBillingActivationToken(provisioned.church.id);
-
-              const { sendSubscriptionActivationEmail } = await import("@/lib/billing/billingEmails");
-              const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://wgcpayments.com";
-              await sendSubscriptionActivationEmail({
-                organizationId: provisioned.church.id,
-                organizationName: app.organizationName,
-                recipientEmail: app.contactEmail,
-                activationUrl: `${appUrl}/activate-subscription/${rawActivationToken}`,
-              });
-
-              const { logBillingAuditEvent } = await import("@/lib/billing/billingAudit");
-              await logBillingAuditEvent({
-                organizationId: provisioned.church.id,
-                action: "organization.finix_approved",
-                entityType: "Church",
-                entityId: provisioned.church.id,
-                newValue: { billingSetupStatus: "APPROVED_BILLING_REQUIRED" },
-                metadata: { onboardingApplicationId: app.id },
-              });
-              if (entitlement) {
-                await logBillingAuditEvent({
-                  organizationId: provisioned.church.id,
-                  action: "promotion.attached",
-                  entityType: "PromotionEntitlement",
-                  entityId: entitlement.entitlementId,
-                  metadata: { promotionId: entitlement.promotionId },
-                });
-              }
-              await logBillingAuditEvent({
-                organizationId: provisioned.church.id,
-                action: "billing.activation_link_created",
-                entityType: "Church",
-                entityId: provisioned.church.id,
-              });
-            } catch (billingGateError) {
-              console.error("Failed to set up billing-activation gate after approval:", billingGateError);
-            }
-          } catch (provisionError) {
-            console.error("Failed to provision church dashboard account:", provisionError);
-          }
+          // Provision the Church row + church_admin User account, and the
+          // WGC platform-billing gate (activation token + email) — see
+          // provisionChurchAndBillingGate.ts. Never throws (alerts WGC
+          // admins by email instead) so a failure here never blocks the
+          // approval response back to Finix, and — unlike the previous
+          // console.error-only behavior — is never silently lost: a
+          // provisioning failure used to mean the merchant was approved in
+          // Finix but simply never appeared in the Merchants Directory,
+          // with nobody notified (2026-08-15 admin bug report). The same
+          // function is also exposed as a manual retry action from
+          // /admin/merchant-applications for any application already
+          // caught in that state.
+          await provisionChurchAndBillingGateOrAlert({
+            id: app.id,
+            organizationName: app.organizationName,
+            legalBusinessName: app.legalBusinessName,
+            contactEmail: app.contactEmail,
+            contactName: app.contactName,
+            finixMerchantId: app.finixMerchantId || data.id,
+            finixIdentityId: app.finixIdentityId,
+            finixApplicationId: app.finixApplicationId,
+          });
         } else if (onboardingState === "UPDATE_REQUESTED") {
+          // Work out what Finix is actually asking for on EVERY delivery of
+          // this state, not just the first — previously this whole capture
+          // was nested inside the "first transition" guard below, so a
+          // second/later MERCHANT.UPDATED webhook (still onboarding_state
+          // UPDATE_REQUESTED, e.g. Finix refining or re-sending the
+          // requirement) was silently skipped entirely and the admin
+          // dashboard's "Required Info / Errors" column stayed blank even
+          // though Finix had told us something (2026-08-15 admin bug
+          // report). Finix's exact field name for this on the Merchant
+          // resource isn't confirmed from a captured real UPDATE_REQUESTED
+          // payload yet (`messages` is our best guess, matching Finix's
+          // Verification resource convention) — so `data.messages` /
+          // `data.verification?.messages` / `data.outstanding_requirements`
+          // are tried in that order, and if none is present, the FULL
+          // redacted merchant payload is stored instead of nothing, so the
+          // real requirement is always recoverable from the admin UI even
+          // when our summarization guess doesn't match Finix's actual shape.
+          let requestedItemsStr = "Additional documentation is required to verify your business and identity.";
+          const messagesSource = data?.messages ?? data?.verification?.messages ?? data?.outstanding_requirements ?? null;
+          if (messagesSource) {
+            updateData.updateRequestedCodes = messagesSource;
+            try {
+              const msgs = Array.isArray(messagesSource) ? messagesSource : [messagesSource];
+              const items = msgs.map((m: any) => (typeof m === "object" ? (m.message || m.code || m.description || JSON.stringify(m)) : String(m)));
+              if (items.length > 0) {
+                requestedItemsStr = items.map((i: string) => `• ${i}`).join("<br/>");
+                updateData.updateRequestedItems = requestedItemsStr;
+              }
+            } catch (e) {
+              console.error("Failed to parse requested items:", e);
+            }
+          } else {
+            updateData.updateRequestedCodes = redactFinixPayload(data ?? {});
+          }
+
           if (app.onboardingStatus !== "MORE_INFORMATION_REQUIRED" && app.onboardingStatus !== "APPROVED") {
             updateData.onboardingStatus = "MORE_INFORMATION_REQUIRED";
             updateData.onboardingState = "UPDATE_REQUESTED";
@@ -1655,21 +1653,6 @@ export async function POST(req: Request) {
 
             updateData.updateTokenHash = tokenHash;
             updateData.updateTokenExpiresAt = expiresAt;
-
-            let requestedItemsStr = "Additional documentation is required to verify your business and identity.";
-            if (data?.messages) {
-              updateData.updateRequestedCodes = data.messages;
-              try {
-                const msgs = Array.isArray(data.messages) ? data.messages : [data.messages];
-                const items = msgs.map((m: any) => typeof m === "object" ? (m.message || m.code || JSON.stringify(m)) : m);
-                if (items.length > 0) {
-                  requestedItemsStr = items.map((i: string) => `• ${i}`).join("<br/>");
-                  updateData.updateRequestedItems = requestedItemsStr;
-                }
-              } catch (e) {
-                console.error("Failed to parse requested items:", e);
-              }
-            }
 
             const secureLink = `https://www.wgcpayments.com/onboarding/update/${rawToken}`;
 

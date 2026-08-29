@@ -17,6 +17,7 @@ export interface MerchantAuthContext {
   isWgcAdmin: boolean;
   permissionsJson: unknown;
   authVersion: number;
+  authTime: number | null;
   /** The resolved WGC platform-billing access state — present even when
    * fullAccessAllowed is true, so callers that DO allow restricted access
    * (via allowRestrictedAccess=true) can still show an accurate banner.
@@ -141,6 +142,7 @@ export const requireMerchantSession = cache(async (allowRestrictedAccess: boolea
     isWgcAdmin: false,
     permissionsJson: user.permissionsJson,
     authVersion: user.authVersion,
+    authTime: payload.authTime ?? null,
     orgAccessState: access.state,
   };
 });

@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowUpRight } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
-import { formatDateCDT, formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
+import { formatDateCDT, formatDateTimeCDT as formatDateTime, formatCalendarDateUTC } from "@/lib/formatDateTimeCDT";
 import StateBadge from "@/components/merchant/StateBadge";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import Pagination from "@/components/merchant/Pagination";
@@ -15,6 +15,7 @@ import { loadSubscriptionActivity } from "@/lib/subscriptions/subscriptionActivi
 import { getSubscriptionPermissions } from "@/lib/subscriptions/subscriptionPermissions";
 import SubscriptionActions from "@/components/merchant/SubscriptionActions";
 import SubscriptionDonorMatcher from "@/components/merchant/SubscriptionDonorMatcher";
+import { needsReconciliation, reconcileSubscription } from "@/lib/subscriptions/subscriptionReconciliation";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -57,6 +58,19 @@ export default async function SubscriptionDetailPage({
   const { subscriptionId } = await params;
   const sp = await searchParams;
   const tab = (TABS.some((t) => t.key === sp.tab) ? sp.tab : "overview") as TabKey;
+
+  // Self-healing fallback for a missed/delayed subscription.updated webhook
+  // — see subscriptionReconciliation.ts. Only re-fetches from Finix when
+  // this one subscription actually looks stale (ACTIVE with a passed
+  // nextBillingDate, throttled to once per 5 minutes), so a merchant sees
+  // corrected data on this same page load rather than the next one.
+  const staleCheck = await prisma.finixSubscription.findFirst({
+    where: { id: subscriptionId, churchId },
+    select: { finixSubscriptionId: true, state: true, nextBillingDate: true, lastReconciledAt: true },
+  });
+  if (staleCheck && needsReconciliation(staleCheck)) {
+    await reconcileSubscription(staleCheck.finixSubscriptionId);
+  }
 
   const [s] = await loadSubscriptionCandidates(churchId, { id: subscriptionId });
   if (!s) notFound();
@@ -123,7 +137,7 @@ export default async function SubscriptionDetailPage({
           </div>
           <div>
             <p className="text-xs text-slate-500">Next Billing Date</p>
-            <p className="text-sm font-semibold text-slate-700">{s.nextBillingDate ? formatDateCDT(s.nextBillingDate) : "—"}</p>
+            <p className="text-sm font-semibold text-slate-700">{s.nextBillingDate ? formatCalendarDateUTC(s.nextBillingDate) : "—"}</p>
           </div>
           <div>
             <p className="text-xs text-slate-500">Payment Method</p>
@@ -184,7 +198,7 @@ function OverviewTab({ s }: { s: Sub }) {
             <div className="flex justify-between"><span className="text-slate-500">Monthly Normalized Value</span><span className="font-semibold text-slate-800">{formatCents(s.monthlyValueCents)}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Status</span><StateBadge state={s.displayStatus} /></div>
             <div className="flex justify-between"><span className="text-slate-500">Start Date</span><span className="font-semibold text-slate-800">{s.startDate ? formatDateCDT(s.startDate) : "—"}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Next Billing Date</span><span className="font-semibold text-slate-800">{s.nextBillingDate ? formatDateCDT(s.nextBillingDate) : "—"}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Next Billing Date</span><span className="font-semibold text-slate-800">{s.nextBillingDate ? formatCalendarDateUTC(s.nextBillingDate) : "—"}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">End Date</span><span className="font-semibold text-slate-800">{s.endDate ? formatDateCDT(s.endDate) : "—"}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Failed Attempts</span><span className="font-semibold text-slate-800">{s.failedAttempts}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Last Successful Payment</span><span className="font-semibold text-slate-800">{s.lastPayment ? `${formatCents(s.lastPayment.amountCents)} · ${formatDateCDT(s.lastPayment.date)}` : "—"}</span></div>
@@ -279,7 +293,7 @@ function ScheduleTab({ s }: { s: Sub }) {
         <div className="flex justify-between"><span className="text-slate-500">Frequency</span><span className="font-semibold text-slate-800">{frequencyLabel(s.billingInterval)}</span></div>
         <div className="flex justify-between"><span className="text-slate-500">Scheduled Amount</span><span className="font-semibold text-slate-800">{formatCents(s.amountCents)}</span></div>
         <div className="flex justify-between"><span className="text-slate-500">Start Date</span><span className="font-semibold text-slate-800">{s.startDate ? formatDateCDT(s.startDate) : "—"}</span></div>
-        <div className="flex justify-between"><span className="text-slate-500">Next Billing Date</span><span className="font-semibold text-slate-800">{s.nextBillingDate ? formatDateCDT(s.nextBillingDate) : "—"}</span></div>
+        <div className="flex justify-between"><span className="text-slate-500">Next Billing Date</span><span className="font-semibold text-slate-800">{s.nextBillingDate ? formatCalendarDateUTC(s.nextBillingDate) : "—"}</span></div>
         <div className="flex justify-between"><span className="text-slate-500">End Date</span><span className="font-semibold text-slate-800">{s.endDate ? formatDateCDT(s.endDate) : "Ongoing"}</span></div>
         <div className="flex justify-between"><span className="text-slate-500">Timezone</span><span className="font-semibold text-slate-800">Central Time</span></div>
       </div>

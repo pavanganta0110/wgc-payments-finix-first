@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { AlertTriangle, ArrowUpRight } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
-import { formatDateCDT, formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
+import { formatDateCDT, formatDateTimeCDT as formatDateTime, formatCalendarDateUTC } from "@/lib/formatDateTimeCDT";
 import StateBadge from "@/components/merchant/StateBadge";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import Pagination from "@/components/merchant/Pagination";
@@ -16,6 +16,7 @@ import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { resolveViewScope } from "@/lib/auth/viewScope";
 import { resolveScopedDonorIds, resolveScopedUserId } from "@/lib/auth/scopes";
 import { isAuthError } from "@/lib/auth/errors";
+import { reconcileStaleActiveSubscriptions } from "@/lib/subscriptions/subscriptionReconciliation";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -73,6 +74,13 @@ export default async function RecurringDonorDetailPage({
   const donor = await prisma.donor.findFirst({ where: { id: donorId, churchId } });
   if (!donor) notFound();
 
+  // Self-healing fallback for a missed/delayed subscription.updated webhook
+  // — see subscriptionReconciliation.ts. Throttled to once per subscription
+  // per 5 minutes and bounded to 25 rows, so this stays cheap on repeat
+  // views; awaited before the query below so this donor's data is corrected
+  // on this same page load, not the next one.
+  await reconcileStaleActiveSubscriptions(churchId);
+
   const subscriptions = await loadSubscriptionCandidates(churchId, { donorId, attributedUserId: scopedUserId });
   if (subscriptions.length === 0) notFound();
 
@@ -119,7 +127,7 @@ export default async function RecurringDonorDetailPage({
           </div>
           <div>
             <p className="text-xs text-slate-500">Next Billing Date</p>
-            <p className="text-lg font-bold text-slate-900">{nextBillingDate ? formatDateCDT(nextBillingDate) : "—"}</p>
+            <p className="text-lg font-bold text-slate-900">{nextBillingDate ? formatCalendarDateUTC(nextBillingDate) : "—"}</p>
           </div>
           <div>
             <p className="text-xs text-slate-500">Last Payment</p>
@@ -191,7 +199,7 @@ function OverviewTab({ subscriptions, donor }: { subscriptions: Awaited<ReturnTy
                 <Link key={s.id} href={`/merchant/subscriptions/${s.id}`} className="flex items-center justify-between text-sm hover:bg-slate-50 -mx-2 px-2 py-1.5 rounded-lg">
                   <div>
                     <p className="text-slate-700">{frequencyLabel(s.billingInterval)}</p>
-                    <p className="text-xs text-slate-400">Next: {s.nextBillingDate ? formatDateCDT(s.nextBillingDate) : "—"}</p>
+                    <p className="text-xs text-slate-400">Next: {s.nextBillingDate ? formatCalendarDateUTC(s.nextBillingDate) : "—"}</p>
                   </div>
                   <p className="font-semibold text-slate-900">{formatCents(s.amountCents)}</p>
                 </Link>
@@ -293,7 +301,7 @@ function SubscriptionsTab({ subscriptions }: { subscriptions: Awaited<ReturnType
                   <td className="py-2 pr-4 text-slate-600">{frequencyLabel(s.billingInterval)}</td>
                   <td className="py-2 pr-4 text-right text-slate-600">{formatCents(s.monthlyValueCents)}</td>
                   <td className="py-2 pr-4"><StateBadge state={s.displayStatus} /></td>
-                  <td className="py-2 pr-4 text-slate-600 whitespace-nowrap">{s.nextBillingDate ? formatDateCDT(s.nextBillingDate) : "—"}</td>
+                  <td className="py-2 pr-4 text-slate-600 whitespace-nowrap">{s.nextBillingDate ? formatCalendarDateUTC(s.nextBillingDate) : "—"}</td>
                   <td className="py-2 pr-4 text-right text-slate-600">{s.failedAttempts}</td>
                   <td className="py-2 pr-4 text-right font-semibold text-slate-900">{formatCents(s.lifetimeCollectedCents)}</td>
                   <td className="py-2 text-slate-600 whitespace-nowrap">{formatDateTime(s.updatedAt)}</td>
