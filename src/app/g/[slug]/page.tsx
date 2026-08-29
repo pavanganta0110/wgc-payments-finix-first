@@ -4,8 +4,15 @@ import MerchandiseGivingExperience from "@/components/giving/MerchandiseGivingEx
 import OrganizationLogo from "@/components/merchant/OrganizationLogo";
 import { loadPublicGivingPageData } from "@/lib/givingLinks/loadPublicGivingPageData";
 
-export default async function GivingLinkPublicPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function GivingLinkPublicPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ pledgeId?: string }>;
+}) {
   const { slug } = await params;
+  const { pledgeId } = await searchParams;
 
   const data = await loadPublicGivingPageData(slug);
 
@@ -96,6 +103,7 @@ export default async function GivingLinkPublicPage({ params }: { params: Promise
             serverAvailability={serverAvailability}
             fundSelectionEnabled={fundSelectionEnabled}
             assignedFunds={assignedFunds}
+            pledgeId={pledgeId}
           />
         )}
 
