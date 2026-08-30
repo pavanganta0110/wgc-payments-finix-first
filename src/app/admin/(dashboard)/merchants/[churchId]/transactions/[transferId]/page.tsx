@@ -53,6 +53,9 @@ export default async function AdminTransactionDetailPage({
   ]);
 
   const donor = instrument?.donorId ? await prisma.donor.findUnique({ where: { id: instrument.donorId } }) : null;
+  const settlement = transfer.finixSettlementId
+    ? await prisma.finixSettlement.findUnique({ where: { finixSettlementId: transfer.finixSettlementId } })
+    : null;
 
   return (
     <div>
@@ -195,6 +198,15 @@ export default async function AdminTransactionDetailPage({
                 {payment?.feeCalculationVersion === "historical_backfilled" && (
                   <p className="text-[11px] text-amber-600 italic mt-2">
                     * Reconciled from historical Finix Transfer metadata.
+                  </p>
+                )}
+
+                {settlement && settlement.netAmountCents != null && (
+                  <p className="text-[11px] text-slate-500 pt-2 mt-1 border-t border-slate-100">
+                    This net is an estimate based on this transaction&apos;s own processing fee. The settlement it
+                    belongs to (<CopyableIdBadge id={settlement.finixSettlementId} />) may include additional
+                    settlement-level fees (e.g. a funding/payout fee) not reflected here. Settlement&apos;s actual
+                    net: <span className="font-semibold text-slate-700">{formatCents(settlement.netAmountCents)}</span>
                   </p>
                 )}
               </div>
