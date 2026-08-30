@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { alertCronMisconfiguration } from "@/lib/cron/alertCronMisconfiguration";
-import { syncSettlementById } from "@/lib/finix/sync/syncSettlements";
+import { syncSettlementById, syncSettlements } from "@/lib/finix/sync/syncSettlements";
 import { syncFinixDataFromWebhookEvent } from "@/app/api/webhooks/finix/route";
 import { finixClient } from "@/lib/finix/client";
 import { sendWgcAdminEmail } from "@/lib/email";
@@ -19,6 +19,13 @@ import { sendWgcAdminEmail } from "@/lib/email";
  *    src/app/api/webhooks/finix/route.ts) land in FinixRawEventArchive
  *    with processingStatus: FAILED — replay them here instead of leaving
  *    them stuck forever.
+ * 3. A settlement WGC has never heard of at all (confirmed against live
+ *    data: Finix doesn't fire a settlement.* webhook the moment a batch
+ *    opens and starts ACCRUING — only once it reaches AWAITING_APPROVAL
+ *    or later). Without this, an accruing settlement is invisible in WGC
+ *    until Finix decides to tell us about it. syncSettlements() (list +
+ *    upsert, already used by the manual admin "sync everything" button)
+ *    run per active merchant here is what actually discovers those.
  */
 export async function GET(req: Request) {
   const authHeader = req.headers.get("authorization");
@@ -53,6 +60,32 @@ export async function GET(req: Request) {
     } catch (err) {
       console.error(`Reconcile: failed to re-sync settlement ${settlement.finixSettlementId}:`, err);
       settlementErrors++;
+    }
+  }
+
+  // Discover settlements WGC has no row for yet at all (see point 3 above)
+  // — separate from the openSettlements resync loop above, which only
+  // re-checks settlements we already know about. Same
+  // finixMerchantId-not-null filter as the manual "sync everything"
+  // button (src/app/api/admin/finix-sync/all/route.ts), run sequentially
+  // to avoid hammering Finix.
+  const activeMerchants = await prisma.church.findMany({
+    where: { finixMerchantId: { not: null } },
+    select: { id: true, finixMerchantId: true },
+  });
+
+  let settlementsDiscovered = 0;
+  let settlementsUpdated = 0;
+  let merchantDiscoveryErrors = 0;
+  for (const merchant of activeMerchants) {
+    if (!merchant.finixMerchantId) continue;
+    try {
+      const result = await syncSettlements(merchant.finixMerchantId, merchant.id);
+      settlementsDiscovered += result.created;
+      settlementsUpdated += result.updated;
+    } catch (err) {
+      console.error(`Reconcile: settlement discovery failed for church ${merchant.id}:`, err);
+      merchantDiscoveryErrors++;
     }
   }
 
@@ -152,6 +185,10 @@ export async function GET(req: Request) {
     settlementsChecked: openSettlements.length,
     settlementsResynced,
     settlementErrors,
+    merchantsCheckedForNewSettlements: activeMerchants.length,
+    settlementsDiscovered,
+    settlementsUpdated,
+    merchantDiscoveryErrors,
     failedEventsFound: failedEvents.length,
     eventsRetried,
     eventsStillFailing,
