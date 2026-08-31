@@ -670,8 +670,12 @@ export default function MerchandiseGivingExperience({
 
         {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
-        <button onClick={submit} disabled={submitting || walletProcessing !== null} className="w-full px-6 py-3 rounded-xl font-bold text-slate-900 metallic-gold shadow-lg disabled:opacity-50 flex items-center justify-center gap-2">
-          {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : `Give to ${churchName}`}
+        <button
+          onClick={submit}
+          disabled={submitting || walletProcessing !== null || !formReady || !finixForm}
+          className="w-full px-6 py-3 rounded-xl font-bold text-slate-900 metallic-gold shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : !formReady || !finixForm ? "Loading…" : `Give to ${churchName}`}
         </button>
       </div>
     </div>
