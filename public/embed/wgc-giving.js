@@ -18,6 +18,16 @@
  * host page — that is in fact its documented, supported usage, and is
  * exactly what this file does for data-wgc-mode="inline" below.
  *
+ * One caveat confirmed live on a real merchant site: some site builders
+ * (Wix's "Custom HTML" embed, at least) always wrap whatever you embed in
+ * their OWN iframe before this script ever runs — invisibly, from the
+ * merchant's point of view, since they only pasted a plain <script>/<div>
+ * snippet. From this script's own vantage point that's still "a div on the
+ * host page" (no iframe of ours anywhere), but Finix still detects that
+ * its own frame sits two levels deep (window.top !== window.self) and
+ * silently declines to render — see isNestedFrame()/renderPaymentFallback()
+ * below for the fallback this triggers.
+ *
  * Include via:
  *   <script src="https://www.wgcpayments.com/embed/wgc-giving.js" data-wgc-slug="..." data-wgc-mode="button" ...></script>
  * or:
