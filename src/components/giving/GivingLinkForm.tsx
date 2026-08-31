@@ -132,7 +132,7 @@ export default function GivingLinkForm({
 }) {
   const [amountCents, setAmountCents] = useState<number>(fixedAmountCents ?? suggestedAmountsCents[0] ?? 2500);
   const [customAmount, setCustomAmount] = useState("");
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(0);
   const [extraAmount, setExtraAmount] = useState("");
   // Live BIN-detected card brand — see mountFinixPaymentForm's onUpdate.
   // Only ever affects the client-side fee PREVIEW below; the actual charge
@@ -1061,7 +1061,7 @@ export default function GivingLinkForm({
               </div>
             </div>
             <label className="block text-xs mb-1" style={{ color: light.bodyTextColor }}>
-              Additional Donation Amount
+              Custom Amount
             </label>
             <input
               type="number"
