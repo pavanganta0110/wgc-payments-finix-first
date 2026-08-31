@@ -188,6 +188,23 @@
     return WGC_ORIGIN + "/embed/" + encodeURIComponent(slug);
   }
 
+  function isNestedFrame() {
+    // Some site builders (Wix's "Custom HTML" embed, for one) always wrap
+    // whatever markup/script you give them in their own iframe before this
+    // script ever runs — so the inline widget ends up two iframes deep
+    // (builder's iframe, then Finix's card-capture iframe inside it) rather
+    // than one. Finix's PaymentForm silently declines to render any card
+    // fields in that double-nested context (an anti-clickjacking measure on
+    // their end, not something we can or should bypass) — the mount call
+    // returns normally but no UI ever appears, leaving a donor stuck with a
+    // clickable button that can never actually submit.
+    try {
+      return window.self !== window.top;
+    } catch (e) {
+      return true;
+    }
+  }
+
   function applyButtonStyle(el, opts) {
     var size = BUTTON_SIZES[opts.size] || BUTTON_SIZES.medium;
     var color = BUTTON_COLORS[opts.color] || BUTTON_COLORS.gold;
@@ -653,6 +670,12 @@
       showValidation(state, "This giving form is not fully configured yet. Please contact the organization directly.");
       return;
     }
+
+    if (isNestedFrame()) {
+      renderPaymentFallback(state, mountEl);
+      return;
+    }
+
     mountEl.innerHTML = "";
     state.finixForm = null;
     setSubmitDisabledWhileFormLoads(state, true);
@@ -678,6 +701,20 @@
       .catch(function () {
         showValidation(state, "The secure payment form failed to load. Please refresh the page and try again.");
       });
+  }
+
+  function renderPaymentFallback(state, mountEl) {
+    // Card/ACH can't mount inline here (see isNestedFrame) — hide the native
+    // submit button (its state.finixForm check can never pass) and offer the
+    // same "open the secure hosted page" fallback already used for wallets.
+    mountEl.innerHTML = '<button type="button" class="wgc-inline-wallet-fallback" data-role="payment-fallback">Continue securely to donate</button>';
+    var fallbackBtn = mountEl.querySelector('[data-role="payment-fallback"]');
+    fallbackBtn.addEventListener("click", function (e) {
+      e.preventDefault();
+      openWgcPopup(state.config.hostedGivingUrl, "wgc_giving_" + state.slug);
+    });
+    var submitBtn = q(state, '[data-role="submit"]');
+    if (submitBtn) submitBtn.hidden = true;
   }
 
   function showValidation(state, message) {
