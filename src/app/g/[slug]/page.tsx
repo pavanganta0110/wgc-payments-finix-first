@@ -104,6 +104,7 @@ export default async function GivingLinkPublicPage({
             collectMailingAddress={link.collectMailingAddress}
             pricing={pricing}
             thankYouMessage={branding.thankYouMessage}
+            thankYouVideoUrl={branding.thankYouVideoUrl}
             googlePayGatewayMerchantId={googlePayGatewayMerchantId}
             googlePayMerchantId={googlePayMerchantId}
             googlePayEnvironment={googlePayEnvironment}
