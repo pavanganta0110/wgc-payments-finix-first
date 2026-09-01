@@ -26,6 +26,15 @@ export interface NormalizedQuickBooksError {
   /** Intuit's own fault `code`, when known — kept for internal diagnosis
    * only, never shown to the merchant as the primary message. */
   intuitFaultCode?: string;
+  /** Intuit's own request-tracing header (`intuit_tid`) from the response
+   * that produced this error — Intuit support asks for this on every
+   * ticket, so it's captured on every failed request (see resourceClient.ts
+   * and authProvider.ts) even though it's never shown to the merchant. */
+  intuitTid?: string;
+  /** The raw Fault.Error[].Detail/Message text from Intuit's own response,
+   * or the OAuth error_description — internal-diagnosis only, same rule
+   * as intuitFaultCode: never surfaced as the merchant-facing message. */
+  rawDetail?: string;
 }
 
 export class QuickBooksConfigError extends Error {
@@ -100,16 +109,18 @@ export function classifyHttpStatus(status: number): NormalizedQuickBooksError {
  * merchant to reconnect; it is never worth blindly retrying.
  */
 export function classifyTokenEndpointError(status: number, body: unknown): NormalizedQuickBooksError {
-  const error = body && typeof body === "object" ? (body as { error?: unknown }).error : undefined;
-  if (error === "invalid_grant") {
+  const errorBody = body && typeof body === "object" ? (body as { error?: unknown; error_description?: unknown }) : undefined;
+  const rawDetail = typeof errorBody?.error_description === "string" ? errorBody.error_description : undefined;
+  if (errorBody?.error === "invalid_grant") {
     return {
       category: "INVALID_GRANT",
       retryable: false,
       intuitFaultCode: "invalid_grant",
       safeMessage: intuitCategorySafeMessage("INVALID_GRANT"),
+      rawDetail,
     };
   }
-  return classifyHttpStatus(status);
+  return { ...classifyHttpStatus(status), rawDetail };
 }
 
 export function classifyNetworkOrTimeoutError(): NormalizedQuickBooksError {

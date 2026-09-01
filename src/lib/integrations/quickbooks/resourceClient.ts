@@ -10,13 +10,11 @@ import { classifyHttpStatus, classifyNetworkOrTimeoutError, classifyIntuitFaultC
  * lives in errors.ts, actual scheduling (if ever added) belongs one layer
  * up in the connection/sync service, same division as Aplos.
  *
- * REQUIRES-LIVE-VERIFICATION: field/endpoint shapes below are built
- * directly from Intuit's published Accounting API reference
- * (developer.intuit.com/app/developer/qbo/docs/api/accounting) but have
- * not been exercised against a real sandbox company yet (no Intuit
- * Developer credentials existed at the time this was written) — verify
- * against a real QuickBooks Sandbox company before treating any of this as
- * production-ready.
+ * Field/endpoint shapes below are built directly from Intuit's published
+ * Accounting API reference
+ * (developer.intuit.com/app/developer/qbo/docs/api/accounting) and have
+ * been exercised against a real QuickBooks Sandbox company — a real
+ * donation synced a Customer + Payment successfully end to end.
  */
 
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -135,12 +133,19 @@ export class QuickBooksResourceClient {
     }
 
     if (!response.ok) {
+      // Intuit support asks for this on every ticket — captured on every
+      // failed request regardless of which error branch below fires.
+      const intuitTid = response.headers.get("intuit_tid") ?? undefined;
       const fault = parsed as IntuitFaultResponse | null;
       const firstError = fault?.Fault?.Error?.[0];
       if (firstError?.code) {
-        throw new QuickBooksNormalizedApiError(classifyIntuitFaultCode(firstError.code));
+        throw new QuickBooksNormalizedApiError({
+          ...classifyIntuitFaultCode(firstError.code),
+          intuitTid,
+          rawDetail: firstError.Detail || firstError.Message,
+        });
       }
-      throw new QuickBooksNormalizedApiError(classifyHttpStatus(response.status));
+      throw new QuickBooksNormalizedApiError({ ...classifyHttpStatus(response.status), intuitTid });
     }
 
     return (parsed ?? {}) as T;

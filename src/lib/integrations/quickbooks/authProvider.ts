@@ -91,13 +91,20 @@ async function postToTokenEndpoint(body: URLSearchParams): Promise<QuickBooksTok
     parsed = null;
   }
 
+  // Intuit support asks for this on every ticket — captured on every
+  // failed token-endpoint request regardless of which branch below fires.
+  const intuitTid = response.headers.get("intuit_tid") ?? undefined;
+
   if (!response.ok || !parsed || typeof parsed !== "object") {
-    throw new QuickBooksAuthError(classifyTokenEndpointError(response.status, parsed));
+    throw new QuickBooksAuthError({ ...classifyTokenEndpointError(response.status, parsed), intuitTid });
   }
 
   const data = parsed as IntuitTokenResponse;
   if (!data.access_token || !data.refresh_token) {
-    throw new QuickBooksAuthError(classifyTokenEndpointError(response.status, parsed), "QuickBooks token response was missing an access or refresh token.");
+    throw new QuickBooksAuthError(
+      { ...classifyTokenEndpointError(response.status, parsed), intuitTid },
+      "QuickBooks token response was missing an access or refresh token."
+    );
   }
 
   const now = Date.now();

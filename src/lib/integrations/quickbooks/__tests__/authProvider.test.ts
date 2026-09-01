@@ -22,7 +22,7 @@ async function load() {
 }
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
-  return { ok, status, json: async () => body } as Response;
+  return { ok, status, json: async () => body, headers: new Headers() } as Response;
 }
 
 describe("refreshAccessToken", () => {

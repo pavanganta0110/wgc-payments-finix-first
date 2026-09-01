@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import toast from "react-hot-toast";
 import { Loader2, CheckCircle2, XCircle, AlertTriangle, Landmark } from "lucide-react";
 
@@ -138,6 +139,10 @@ export default function QuickBooksConnectionCard() {
             </>
           )}
         </div>
+
+        <p className="text-xs text-slate-400 mt-4">
+          Having trouble connecting or syncing? <Link href="/merchant/support/tickets/new" className="text-blue-600 hover:underline">Contact Support</Link>.
+        </p>
       </div>
     </div>
   );

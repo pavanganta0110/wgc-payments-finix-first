@@ -1,6 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import { getResourceClientForChurch } from "./service";
 import { isQuickBooksIntegrationEnabled, isQuickBooksIntegrationConfigured } from "./config";
+import type { NormalizedQuickBooksError } from "./errors";
+
+/** Both QuickBooksNormalizedApiError (resourceClient.ts) and
+ * QuickBooksAuthError (authProvider.ts) carry a `.normalized` field with
+ * the real diagnostic detail (intuit_tid, raw Intuit fault text, fault
+ * code) — logged here for troubleshooting, never stored in the DB's
+ * merchant-facing errorMessage/lastSyncError fields, which stay limited
+ * to the safe, generic message. */
+function extractDiagnostics(err: unknown): NormalizedQuickBooksError | undefined {
+  if (err && typeof err === "object" && "normalized" in err) {
+    return (err as { normalized: NormalizedQuickBooksError }).normalized;
+  }
+  return undefined;
+}
 
 /**
  * Best-effort, fire-after-success sync of one completed donation into
@@ -92,12 +106,19 @@ export async function syncPaymentToQuickBooks(paymentId: string): Promise<void> 
         where: { id: connection.id },
         data: { lastSyncAt: new Date(), lastSyncStatus: "FAILED", lastSyncError: message },
       });
-      console.error("QuickBooks sync failed for payment", paymentId, err);
+      console.error("QuickBooks sync failed for payment", paymentId, {
+        message,
+        diagnostics: extractDiagnostics(err),
+        raw: err,
+      });
     }
   } catch (err) {
     // Outer guard: a failure resolving the connection/payment itself
     // (not the QuickBooks API call) must still never propagate to the
     // donor-facing request.
-    console.error("QuickBooks sync setup failed for payment", paymentId, err);
+    console.error("QuickBooks sync setup failed for payment", paymentId, {
+      diagnostics: extractDiagnostics(err),
+      raw: err,
+    });
   }
 }

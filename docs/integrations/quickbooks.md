@@ -2,13 +2,14 @@
 
 ## Status
 
-Built ahead of real Intuit Developer credentials. The OAuth2 authorization-code
-exchange, refresh-token flow, and Accounting API client are all real
-implementations — no mock mode exists (Intuit only supports OAuth2, unlike
-Aplos/Printful) — but none of it has been exercised against a real Intuit
-sandbox company yet. Everything is driven by environment variables, so no
-code change should be needed once real credentials are supplied; only
-end-to-end verification against a live sandbox company remains.
+Live and verified end-to-end against a real Intuit sandbox company: connect →
+donate → automatic Customer + Payment sync, confirmed via a real donation.
+The OAuth2 authorization-code exchange, refresh-token flow, and Accounting
+API client are all real implementations — no mock mode exists (Intuit only
+supports OAuth2, unlike Aplos/Printful). OAuth endpoints are resolved from
+Intuit's own discovery document at runtime, not hardcoded. Everything is
+driven by environment variables, so switching to real Production credentials
+(QUICKBOOKS_ENVIRONMENT=production) needs no code change.
 
 ## What's needed from Intuit before this can be tested end-to-end
 
