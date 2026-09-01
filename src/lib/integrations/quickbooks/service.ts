@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { logDashboardAction } from "@/lib/dashboardAudit";
 import {
-  QUICKBOOKS_AUTHORIZE_URL,
+  getQuickBooksEndpoints,
   getQuickBooksOAuthConfig,
   isQuickBooksIntegrationConfigured,
   isQuickBooksIntegrationEnabled,
@@ -70,8 +70,9 @@ export async function getConnectionStatus(churchId: string) {
  * callback (see the connect/route.ts GET handler) — this function is pure
  * URL-building, it does not persist or validate state itself.
  */
-export function buildAuthorizeUrl(state: string): string {
+export async function buildAuthorizeUrl(state: string): Promise<string> {
   const { clientId, redirectUri, scopes } = getQuickBooksOAuthConfig();
+  const { authorizeUrl } = await getQuickBooksEndpoints();
   const params = new URLSearchParams({
     client_id: clientId,
     response_type: "code",
@@ -80,7 +81,7 @@ export function buildAuthorizeUrl(state: string): string {
     state,
     access_type: "offline",
   });
-  return `${QUICKBOOKS_AUTHORIZE_URL}?${params.toString()}`;
+  return `${authorizeUrl}?${params.toString()}`;
 }
 
 /** Generates a signed-enough one-time CSRF token for the OAuth `state`

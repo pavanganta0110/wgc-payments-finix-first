@@ -68,13 +68,85 @@ export function getQuickBooksOAuthConfig(): QuickBooksOAuthConfig {
   };
 }
 
-// Fixed Intuit endpoints — never overridden per-environment; sandbox vs.
-// production is selected via the API base URL and the app's own
-// credentials/company, not a different OAuth host.
-export const QUICKBOOKS_AUTHORIZE_URL = "https://appcenter.intuit.com/connect/oauth2";
-export const QUICKBOOKS_TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
-export const QUICKBOOKS_REVOKE_URL = "https://developer.api.intuit.com/v2/oauth2/tokens/revoke";
-export const QUICKBOOKS_USERINFO_URL = "https://accounts.platform.intuit.com/v1/openid_connect/userinfo";
+// Hardcoded fallback only — used if the discovery document fetch below
+// fails (network hiccup, Intuit outage). Not overridden per-environment;
+// sandbox vs. production is selected via the API base URL and the app's
+// own credentials/company, not a different OAuth host.
+const FALLBACK_QUICKBOOKS_AUTHORIZE_URL = "https://appcenter.intuit.com/connect/oauth2";
+const FALLBACK_QUICKBOOKS_TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
+const FALLBACK_QUICKBOOKS_REVOKE_URL = "https://developer.api.intuit.com/v2/oauth2/tokens/revoke";
+const FALLBACK_QUICKBOOKS_USERINFO_URL = "https://accounts.platform.intuit.com/v1/openid_connect/userinfo";
+
+const QUICKBOOKS_DISCOVERY_URL = "https://developer.api.intuit.com/.well-known/openid_configuration";
+const DISCOVERY_TIMEOUT_MS = 5_000;
+// Same one document serves both sandbox and production — Intuit doesn't
+// version this per-environment — so an in-process cache never needs
+// invalidating on an environment switch; it's just avoiding a network
+// round trip on every OAuth step within a process's lifetime.
+const DISCOVERY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+export interface QuickBooksEndpoints {
+  authorizeUrl: string;
+  tokenUrl: string;
+  revokeUrl: string;
+  userinfoUrl: string;
+}
+
+interface IntuitDiscoveryDocument {
+  authorization_endpoint?: string;
+  token_endpoint?: string;
+  revocation_endpoint?: string;
+  userinfo_endpoint?: string;
+}
+
+let discoveryCache: { endpoints: QuickBooksEndpoints; fetchedAt: number } | null = null;
+
+const FALLBACK_ENDPOINTS: QuickBooksEndpoints = {
+  authorizeUrl: FALLBACK_QUICKBOOKS_AUTHORIZE_URL,
+  tokenUrl: FALLBACK_QUICKBOOKS_TOKEN_URL,
+  revokeUrl: FALLBACK_QUICKBOOKS_REVOKE_URL,
+  userinfoUrl: FALLBACK_QUICKBOOKS_USERINFO_URL,
+};
+
+/**
+ * Resolves the real OAuth2/OpenID endpoints from Intuit's own discovery
+ * document (per the App Assessment questionnaire's "did you use the
+ * discovery document" question) rather than trusting hardcoded URLs to
+ * stay correct forever. Cached in-process for DISCOVERY_CACHE_TTL_MS;
+ * falls back to the last-known-good hardcoded constants (never throws)
+ * if the fetch fails, is malformed, or times out — an OAuth flow must
+ * never break because Intuit's discovery endpoint had a bad moment.
+ */
+export async function getQuickBooksEndpoints(): Promise<QuickBooksEndpoints> {
+  if (discoveryCache && Date.now() - discoveryCache.fetchedAt < DISCOVERY_CACHE_TTL_MS) {
+    return discoveryCache.endpoints;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DISCOVERY_TIMEOUT_MS);
+  try {
+    const response = await fetch(QUICKBOOKS_DISCOVERY_URL, { signal: controller.signal });
+    if (!response.ok) throw new Error(`Discovery document request failed: ${response.status}`);
+    const doc = (await response.json()) as IntuitDiscoveryDocument;
+    if (!doc.authorization_endpoint || !doc.token_endpoint) {
+      throw new Error("Discovery document was missing required endpoints.");
+    }
+    const endpoints: QuickBooksEndpoints = {
+      authorizeUrl: doc.authorization_endpoint,
+      tokenUrl: doc.token_endpoint,
+      revokeUrl: doc.revocation_endpoint || FALLBACK_QUICKBOOKS_REVOKE_URL,
+      userinfoUrl: doc.userinfo_endpoint || FALLBACK_QUICKBOOKS_USERINFO_URL,
+    };
+    discoveryCache = { endpoints, fetchedAt: Date.now() };
+    return endpoints;
+  } catch {
+    // Serve the fallback but don't cache it — a transient failure should
+    // be retried on the next call rather than sticking for a full TTL.
+    return FALLBACK_ENDPOINTS;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export function getQuickBooksApiBaseUrl(): string {
   return getQuickBooksEnvironment() === "production"

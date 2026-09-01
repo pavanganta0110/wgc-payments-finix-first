@@ -39,7 +39,7 @@ export async function GET() {
   }
 
   const state = generateOAuthState();
-  const authorizeUrl = buildAuthorizeUrl(state);
+  const authorizeUrl = await buildAuthorizeUrl(state);
 
   const cookieStore = await cookies();
   const cookieOptions = {

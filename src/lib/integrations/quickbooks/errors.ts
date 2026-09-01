@@ -15,6 +15,7 @@ export type QuickBooksErrorCategory =
   | "RATE_LIMITED"
   | "TEMPORARY_INTUIT_ERROR"
   | "STALE_OBJECT"
+  | "INVALID_GRANT"
   | "UNKNOWN_ERROR";
 
 export interface NormalizedQuickBooksError {
@@ -90,6 +91,27 @@ export function classifyHttpStatus(status: number): NormalizedQuickBooksError {
   return { category: "UNKNOWN_ERROR", retryable: false, safeMessage: intuitCategorySafeMessage("UNKNOWN_ERROR") };
 }
 
+/**
+ * The OAuth token endpoint (postToTokenEndpoint) returns errors in the
+ * standard OAuth2 shape ({ error, error_description }), not Intuit's
+ * Accounting-API fault-code format above — `invalid_grant` specifically
+ * means the refresh token itself is dead (expired, revoked, or already
+ * used — Intuit rotates it on every refresh), which always requires the
+ * merchant to reconnect; it is never worth blindly retrying.
+ */
+export function classifyTokenEndpointError(status: number, body: unknown): NormalizedQuickBooksError {
+  const error = body && typeof body === "object" ? (body as { error?: unknown }).error : undefined;
+  if (error === "invalid_grant") {
+    return {
+      category: "INVALID_GRANT",
+      retryable: false,
+      intuitFaultCode: "invalid_grant",
+      safeMessage: intuitCategorySafeMessage("INVALID_GRANT"),
+    };
+  }
+  return classifyHttpStatus(status);
+}
+
 export function classifyNetworkOrTimeoutError(): NormalizedQuickBooksError {
   return { category: "TEMPORARY_INTUIT_ERROR", retryable: true, safeMessage: "Could not reach QuickBooks. Please try again in a moment." };
 }
@@ -110,6 +132,8 @@ function intuitCategorySafeMessage(category: QuickBooksErrorCategory): string {
       return "QuickBooks is temporarily unavailable. Please try again shortly.";
     case "STALE_OBJECT":
       return "This record was changed in QuickBooks since it was last synced. Please retry.";
+    case "INVALID_GRANT":
+      return "This organization's QuickBooks connection is no longer valid. Please reconnect QuickBooks.";
     default:
       return "QuickBooks returned an unexpected error.";
   }

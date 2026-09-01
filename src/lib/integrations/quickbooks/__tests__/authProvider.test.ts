@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../config", () => ({
-  QUICKBOOKS_TOKEN_URL: "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
+  getQuickBooksEndpoints: vi.fn(async () => ({
+    authorizeUrl: "https://appcenter.intuit.com/connect/oauth2",
+    tokenUrl: "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
+    revokeUrl: "https://developer.api.intuit.com/v2/oauth2/tokens/revoke",
+    userinfoUrl: "https://accounts.platform.intuit.com/v1/openid_connect/userinfo",
+  })),
   getQuickBooksOAuthConfig: vi.fn(() => ({
     clientId: "client-id",
     clientSecret: "client-secret",

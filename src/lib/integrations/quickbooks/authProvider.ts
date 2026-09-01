@@ -1,16 +1,19 @@
-import { QUICKBOOKS_TOKEN_URL, getQuickBooksOAuthConfig } from "./config";
-import { classifyHttpStatus, classifyNetworkOrTimeoutError, QuickBooksConnectionError, type NormalizedQuickBooksError } from "./errors";
+import { getQuickBooksEndpoints, getQuickBooksOAuthConfig } from "./config";
+import { classifyNetworkOrTimeoutError, classifyTokenEndpointError, QuickBooksConnectionError, type NormalizedQuickBooksError } from "./errors";
 
 /**
  * OAuth2 authorization-code + refresh-token flow implemented per Intuit's
  * documented "OAuth 2.0 Playground" / developer.intuit.com flow:
  *
- *   1. Authorize: redirect the merchant to QUICKBOOKS_AUTHORIZE_URL with
+ *   1. Authorize: redirect the merchant to the authorize endpoint (resolved
+ *      from Intuit's own OpenID discovery document — see
+ *      getQuickBooksEndpoints() in config.ts, not a hardcoded URL) with
  *      client_id, scope, redirect_uri, response_type=code, and a per-request
  *      `state` value (CSRF token) — see route.ts's connect/authorize route.
  *   2. Intuit redirects back to redirect_uri with ?code=...&realmId=...&state=...
- *   3. Exchange the code for tokens: POST QUICKBOOKS_TOKEN_URL with
- *      grant_type=authorization_code, HTTP Basic auth (clientId:clientSecret).
+ *   3. Exchange the code for tokens: POST the discovery-resolved token
+ *      endpoint with grant_type=authorization_code, HTTP Basic auth
+ *      (clientId:clientSecret).
  *   4. Access tokens expire in ~1 hour; refresh tokens rotate on every use
  *      and expire after ~100 days of inactivity — a fresh refresh_token
  *      must be persisted every time it's used, or the connection is lost.
@@ -60,11 +63,12 @@ function basicAuthHeader(clientId: string, clientSecret: string): string {
 
 async function postToTokenEndpoint(body: URLSearchParams): Promise<QuickBooksTokenSet> {
   const { clientId, clientSecret } = getQuickBooksOAuthConfig();
+  const { tokenUrl } = await getQuickBooksEndpoints();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(QUICKBOOKS_TOKEN_URL, {
+    response = await fetch(tokenUrl, {
       method: "POST",
       headers: {
         Authorization: basicAuthHeader(clientId, clientSecret),
@@ -88,12 +92,12 @@ async function postToTokenEndpoint(body: URLSearchParams): Promise<QuickBooksTok
   }
 
   if (!response.ok || !parsed || typeof parsed !== "object") {
-    throw new QuickBooksAuthError(classifyHttpStatus(response.status));
+    throw new QuickBooksAuthError(classifyTokenEndpointError(response.status, parsed));
   }
 
   const data = parsed as IntuitTokenResponse;
   if (!data.access_token || !data.refresh_token) {
-    throw new QuickBooksAuthError(classifyHttpStatus(response.status), "QuickBooks token response was missing an access or refresh token.");
+    throw new QuickBooksAuthError(classifyTokenEndpointError(response.status, parsed), "QuickBooks token response was missing an access or refresh token.");
   }
 
   const now = Date.now();
