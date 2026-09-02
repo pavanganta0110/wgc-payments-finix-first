@@ -18,9 +18,13 @@ interface WalletConfig {
   googlePayEnvironment: "TEST" | "PRODUCTION";
 }
 
-function estimatedFirstChargeDate(durationMonths: number | null): Date {
+function estimatedFirstChargeDate(durationMonths: number | null, durationDays: number | null): Date {
   const d = new Date();
-  d.setMonth(d.getMonth() + (durationMonths ?? 0));
+  if (durationDays != null) {
+    d.setDate(d.getDate() + durationDays);
+  } else {
+    d.setMonth(d.getMonth() + (durationMonths ?? 0));
+  }
   return d;
 }
 
@@ -29,6 +33,7 @@ export default function ActivationForm({
   organizationName,
   isPromotional,
   durationMonths,
+  durationDays,
   regularMonthlyAmountCents,
   // When rendered inside the merchant dashboard (e.g. /merchant/subscription's
   // in-app activation path), the dashboard layout already provides its own
@@ -42,6 +47,7 @@ export default function ActivationForm({
   organizationName: string;
   isPromotional: boolean;
   durationMonths: number | null;
+  durationDays: number | null;
   regularMonthlyAmountCents: number;
   embedded?: boolean;
 }) {
@@ -283,7 +289,8 @@ export default function ActivationForm({
     });
   };
 
-  const estimatedFirstCharge = estimatedFirstChargeDate(isPromotional ? durationMonths : 0);
+  const estimatedFirstCharge = estimatedFirstChargeDate(isPromotional ? durationMonths : 0, isPromotional ? durationDays : null);
+  const durationLabel = durationDays != null ? `${durationDays} days` : `${durationMonths} months`;
   const showWallets = appleAvailable || googleAvailable;
 
   const card = (
@@ -295,7 +302,7 @@ export default function ActivationForm({
           {isPromotional ? (
             <>
               <p>
-                <span className="font-semibold">Promotional price:</span> $0/month for the first {durationMonths} months
+                <span className="font-semibold">Promotional price:</span> $0/month for the first {durationLabel}
               </p>
               <p>
                 <span className="font-semibold">Regular price afterward:</span> {formatCents(regularMonthlyAmountCents)}/month
@@ -323,7 +330,7 @@ export default function ActivationForm({
           <span>
             I authorize WGC Payments to use my selected billing method for the WGC Platform subscription.
             {isPromotional
-              ? ` My platform fee will be $0 for the first ${durationMonths} months. After the promotional period, `
+              ? ` My platform fee will be $0 for the first ${durationLabel}. After the promotional period, `
               : " "}
             I authorize WGC Payments to charge {formatCents(regularMonthlyAmountCents)} per month until I cancel.
           </span>

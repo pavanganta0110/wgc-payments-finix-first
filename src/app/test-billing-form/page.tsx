@@ -7,7 +7,8 @@ export default function TestBillingFormPage() {
         token="mock-token-123"
         organizationName="Waypoint Gateway Collective (Preview)"
         isPromotional={true}
-        durationMonths={6}
+        durationMonths={3}
+        durationDays={90}
         regularMonthlyAmountCents={4900}
       />
     </div>
