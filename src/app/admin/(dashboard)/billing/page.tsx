@@ -1104,7 +1104,7 @@ interface PromoShortfallRow {
 
 /**
  * "Offer valid for organizations processing at least $100/month" —
- * see src/app/six-months-free/page.tsx. Nothing here charges anything
+ * see src/app/90-days-free/page.tsx. Nothing here charges anything
  * automatically; the monthly cron only FLAGS a row, an admin must
  * explicitly confirm each charge or waive.
  */

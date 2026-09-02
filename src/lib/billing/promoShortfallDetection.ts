@@ -4,7 +4,7 @@ import { aggregateTransfers } from "@/lib/reports/dashboardAggregates";
 /**
  * Monthly compliance check for the six-months-free promo's minimum-
  * processing condition ("offer valid for organizations processing at
- * least $100/month" — see src/app/six-months-free/page.tsx). Runs from
+ * least $100/month" — see src/app/90-days-free/page.tsx). Runs from
  * /api/cron/promo-shortfall-check on the 1st of each month, checking the
  * calendar month that just completed.
  *
