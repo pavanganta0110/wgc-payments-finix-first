@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { getMetaPixelId } from "@/lib/analytics/metaPixel";
 import { getStoredConsent, setStoredConsent } from "@/lib/analytics/consent";
 
 /** Same scoping as MetaPixel.tsx — never show this on authenticated
@@ -25,8 +24,10 @@ export default function CookieConsentBanner() {
     setVisible(getStoredConsent() === null);
   }, []);
 
-  // Nothing to ask consent for if the pixel isn't even configured.
-  if (!getMetaPixelId() || isExcludedPath(pathname) || !visible) {
+  // SimplifiPixel has no "is configured" gate (its tag id is fixed, not
+  // env-driven, unlike Meta's) — so this banner is always relevant now,
+  // even in an environment with no Meta Pixel ID set.
+  if (isExcludedPath(pathname) || !visible) {
     return null;
   }
 

@@ -5,6 +5,7 @@ import "./globals.css";
 import { Toaster } from "react-hot-toast";
 import { Analytics } from "@vercel/analytics/next";
 import MetaPixel from "@/components/common/MetaPixel";
+import SimplifiPixel from "@/components/common/SimplifiPixel";
 import CookieConsentBanner from "@/components/common/CookieConsentBanner";
 
 const inter = Inter({
@@ -91,6 +92,7 @@ export default function RootLayout({
           }}
         />
         <MetaPixel />
+        <SimplifiPixel />
         <CookieConsentBanner />
         <Analytics />
       </body>
