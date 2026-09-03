@@ -24,7 +24,24 @@ export type PaymentSafetyEvent =
   // on a cadence.
   | "REFUND_RECONCILED"
   | "REFUND_RECONCILIATION_FAILED"
-  | "REFUND_STUCK";
+  | "REFUND_STUCK"
+  // Stage 2 — durable background job / outbox lifecycle.
+  | "BACKGROUND_JOB_CREATED"
+  | "BACKGROUND_JOB_CLAIMED"
+  | "BACKGROUND_JOB_RETRY"
+  | "BACKGROUND_JOB_COMPLETED"
+  | "BACKGROUND_JOB_FAILED"
+  // Stage 2 — webhook fast-ack lifecycle.
+  | "WEBHOOK_RECEIVED"
+  | "WEBHOOK_PROCESSING"
+  | "WEBHOOK_COMPLETED"
+  | "WEBHOOK_FAILED"
+  // Stage 2 — periodic reconciliation workers.
+  | "REFUND_RECONCILIATION_STARTED"
+  | "REFUND_RECONCILIATION_RECOVERED"
+  | "REFUND_RECONCILIATION_UNRESOLVED"
+  | "PAYMENT_RECONCILIATION_RECOVERED"
+  | "INVOICE_RECONCILIATION_RECOVERED";
 
 export interface PaymentSafetyEventFields {
   churchId?: string | null;
