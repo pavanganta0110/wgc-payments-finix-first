@@ -222,13 +222,96 @@ model FinixWebhookEvent {
   verificationState String?
   rawPayloadJson    Json
   processedAt       DateTime?
+  // Stage 2 fast-ack lifecycle: RECEIVED -> PROCESSING -> PROCESSED | FAILED.
+  // "PENDING" (the pre-Stage-2 default) is treated as an alias of RECEIVED
+  // by the processor -- no backfill migration needed for existing rows.
+  // "Webhook exists in database" != "webhook business logic completed":
+  // processingStatus is RECEIVED the instant the row is durably committed
+  // (before the fast HTTP 200 ack), and only reaches PROCESSED after the
+  // synchronous state-machine work (see webhooks/finix/route.ts) actually
+  // ran to completion.
   processingStatus  String    @default("PENDING")
   errorMessage      String?
+  // Stale-PROCESSING recovery + attempt/latency observability (Task 5/17
+  // scenario 4: a worker marks PROCESSING then dies -- another worker must
+  // be able to reclaim this row, the same lease pattern BackgroundJob uses
+  // below).
+  attempts          Int       @default(0)
+  lockedAt          DateTime?
+  leaseUntil        DateTime?
+  workerId          String?
+  lastErrorAt       DateTime?
   createdAt         DateTime  @default(now())
 
   @@index([merchantId])
   @@index([processingStatus])
   @@index([createdAt])
+  // Stale-lease recovery scan: "find PROCESSING rows whose lease expired" --
+  // must be indexed the same way BackgroundJob's claim query is, since both
+  // run this exact shape of query from the worker route on every tick.
+  @@index([processingStatus, leaseUntil])
+}
+
+// The Stage 2 durable job/outbox table. Every unit of post-payment work
+// (receipt email, QuickBooks sync, Aplos sync, Printful fulfillment,
+// analytics, etc.) is a row here, never only an in-memory task -- see
+// STAGE2_ARCHITECTURE.md for the full claiming/leasing/retry design this
+// schema backs.
+model BackgroundJob {
+  id      String @id @default(cuid())
+  jobType String
+
+  // PENDING -> PROCESSING -> COMPLETED
+  //         -> PROCESSING -> RETRY -> PENDING (loops until maxAttempts)
+  //         -> PROCESSING -> FAILED (permanent error, or maxAttempts exhausted)
+  status String @default("PENDING")
+
+  // What real-world thing this job is about -- "Payment", "RefundRequest",
+  // "MerchandiseOrder", etc. -- for admin visibility and for reconciliation
+  // workers to look the entity back up. Never the sole safety mechanism;
+  // dedupeKey is.
+  entityType String
+  entityId   String
+
+  // ONE logical job per dedupeKey, enforced by the @@unique below -- this
+  // is what makes the ENQUEUE path itself idempotent (not just execution),
+  // per Stage 2 addendum #3. Conventionally "{jobType}:{scope}:{id}", e.g.
+  // "SEND_RECEIPT:payment:pay_123:version:1", "QUICKBOOKS_PAYMENT:payment:pay_123".
+  dedupeKey String @unique
+
+  payloadJson Json
+
+  attempts    Int @default(0)
+  maxAttempts Int @default(8)
+
+  // Claiming: a job is claimable when status IN (PENDING, RETRY) AND
+  // nextRunAt <= now() AND (leaseUntil IS NULL OR leaseUntil < now()).
+  // See STAGE2_ARCHITECTURE.md for the exact atomic claim query.
+  nextRunAt  DateTime  @default(now())
+  lockedAt   DateTime?
+  leaseUntil DateTime?
+  workerId   String?
+
+  lastError   String?
+  lastErrorAt DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+  failedAt    DateTime?
+
+  // Claim query shape: WHERE status IN (...) AND nextRunAt <= now() ORDER BY
+  // nextRunAt ASC FOR UPDATE SKIP LOCKED LIMIT :batchSize -- this composite
+  // index is what makes that scan indexed rather than a full table scan,
+  // at both 10 and 100,000 unresolved rows (Task 15).
+  @@index([status, nextRunAt])
+  // Stale-lease recovery scan (Task 3/17 scenario 1): "PROCESSING rows
+  // whose lease expired."
+  @@index([status, leaseUntil])
+  // Admin health view / per-entity lookup (Task 19, and reconciliation
+  // workers checking "does a job already exist for this Payment").
+  @@index([entityType, entityId])
+  @@index([jobType, status])
 }
 
 model MerchantDocument {
