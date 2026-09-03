@@ -9,6 +9,7 @@ import { isValidEmail, normalizePhone } from "@/lib/donors/donorContact";
 import { sendWgcEmail } from "@/lib/email";
 import { formatCents } from "@/lib/format";
 import { frequencyLabel } from "@/lib/subscriptions/subscriptionStatus";
+import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
 
 const TERMS_VERSION = "2026-01-recurring-donor-v1";
 
@@ -53,6 +54,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const link = await prisma.subscriptionSetupLink.findUnique({ where: { tokenHash } });
   if (!link) return NextResponse.json({ error: "This setup link is invalid." }, { status: 404 });
 
+  // Once Finix confirms the subscription, the catch below must never
+  // release this claim back to SENT — that would let the donor retry and
+  // create a second real subscription for the same intent.
+  let finixConfirmed = false;
   try {
     const church = await prisma.church.findUnique({ where: { id: link.churchId } });
     if (!church?.finixMerchantId) throw new Error("Organization is not fully onboarded");
@@ -85,6 +90,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       console.error("Failed to snapshot payment instrument for setup-link completion:", err);
     }
 
+    // Stable across any retry of THIS SAME link — the link's own atomic
+    // COMPLETING claim above is what stops a concurrent double-submit from
+    // reaching this call twice, but this key is Finix-side defense in
+    // depth for the same intent (mirrors donate/route.ts's idempotencyId).
+    const idempotencyId = `setup-link:${link.id}`;
     const finixSubscription = await finixClient.createSubscription({
       amount: link.amountCents,
       currency: "USD",
@@ -92,9 +102,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       linked_to: church.finixMerchantId,
       linked_type: "MERCHANT",
       buyer_details: { identity_id: identityId, instrument_id: instrumentId },
+      idempotency_id: idempotencyId,
       tags: { source: "wgc_setup_link", churchId: link.churchId, setupLinkId: link.id },
     });
     if (!finixSubscription?.id) throw new Error("Failed to create subscription");
+    // From here, Finix has a real subscription — the outer catch below
+    // must never again release this link's claim back to SENT.
+    finixConfirmed = true;
 
     const instrumentSnapshot = await prisma.finixPaymentInstrumentSnapshot.findUnique({ where: { finixPaymentInstrumentId: instrumentId } });
 
@@ -113,8 +127,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       }
     }
 
-    await prisma.finixSubscription.create({
-      data: {
+    // upsert (keyed on finixSubscriptionId @unique), not a bare create —
+    // Postgres compiles this to an atomic INSERT ... ON CONFLICT, so a
+    // concurrent writer for this same Finix subscription (a raced retry,
+    // or a subscription.* webhook arriving before this write completes)
+    // can never throw an unhandled P2002 here; it converges safely.
+    await prisma.finixSubscription.upsert({
+      where: { finixSubscriptionId: finixSubscription.id },
+      create: {
         finixSubscriptionId: finixSubscription.id,
         churchId: link.churchId,
         donorId: donorRecord.id,
@@ -141,6 +161,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         attributedUserId: oldSubscriptionForUpdate?.attributedUserId ?? null,
         lastSyncedAt: new Date(),
       },
+      update: { state: finixSubscription.state ?? undefined, lastSyncedAt: new Date() },
     });
 
     if (oldSubscriptionForUpdate) {
@@ -182,24 +203,36 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       data: { status: "COMPLETED", completedAt: new Date(), donorId: donorRecord.id, finixSubscriptionId: finixSubscription.id },
     });
 
-    await sendWgcEmail({
-      to: email,
-      subject: `Your recurring donation to ${church.name} is set up`,
-      title: "Recurring Donation Confirmed",
-      badgeText: "Confirmed",
-      badgeColor: "#10B981",
-      bodyHtml: `<p>Thank you! Your recurring donation of <strong>${formatCents(link.amountCents)}</strong> (${frequencyLabel(link.billingInterval)}) to ${church.name} has been set up.</p>`,
-    });
+    // The subscription is already durably COMPLETED above — an email
+    // failure here must never roll that back or be reported as a setup
+    // failure to the donor (matches the same rule everywhere else in this
+    // codebase: Resend/QuickBooks/Aplos failures never undo a real charge).
+    try {
+      await sendWgcEmail({
+        to: email,
+        subject: `Your recurring donation to ${church.name} is set up`,
+        title: "Recurring Donation Confirmed",
+        badgeText: "Confirmed",
+        badgeColor: "#10B981",
+        bodyHtml: `<p>Thank you! Your recurring donation of <strong>${formatCents(link.amountCents)}</strong> (${frequencyLabel(link.billingInterval)}) to ${church.name} has been set up.</p>`,
+      });
+    } catch (err) {
+      console.error("Failed to send donor recurring-setup confirmation email:", err);
+    }
 
     if (church.primaryContactEmail) {
-      await sendWgcEmail({
-        to: church.primaryContactEmail,
-        subject: `New recurring donation set up — ${formatCents(link.amountCents)}/${frequencyLabel(link.billingInterval)}`,
-        title: "New Recurring Donation",
-        badgeText: "New",
-        badgeColor: "#10B981",
-        bodyHtml: `<p>${firstName} ${lastName} (${email}) set up a recurring donation of ${formatCents(link.amountCents)}, ${frequencyLabel(link.billingInterval)}.</p>`,
-      });
+      try {
+        await sendWgcEmail({
+          to: church.primaryContactEmail,
+          subject: `New recurring donation set up — ${formatCents(link.amountCents)}/${frequencyLabel(link.billingInterval)}`,
+          title: "New Recurring Donation",
+          badgeText: "New",
+          badgeColor: "#10B981",
+          bodyHtml: `<p>${firstName} ${lastName} (${email}) set up a recurring donation of ${formatCents(link.amountCents)}, ${frequencyLabel(link.billingInterval)}.</p>`,
+        });
+      } catch (err) {
+        console.error("Failed to send org recurring-setup notification email:", err);
+      }
     }
 
     return NextResponse.json({
@@ -211,6 +244,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       paymentMethodLastFour: instrumentSnapshot?.cardLast4 || instrumentSnapshot?.bankLast4 || null,
     });
   } catch (err: any) {
+    if (finixConfirmed) {
+      // Finix already created a real subscription — never release the
+      // claim (that would invite a donor retry to create a second one) and
+      // never say "please try again." This is the exact PAYMENT_STATUS_UNCERTAIN
+      // rule applied to a subscription: an admin/human needs to reconcile
+      // subscriptionSetupLink status COMPLETING against the real Finix
+      // subscription (tags.setupLinkId on the subscription identifies it).
+      logPaymentSafetyEvent("PAYMENT_STATUS_UNCERTAIN", {
+        churchId: link.churchId,
+        source: "checkout",
+        route: "/api/setup/[token]/complete",
+        detail: `Finix confirmed subscription but a later write failed — subscriptionSetupLink ${link.id} left COMPLETING for manual/reconciliation review`,
+      });
+      return NextResponse.json(
+        { success: false, code: "PAYMENT_STATUS_UNCERTAIN", error: "We’re confirming your recurring donation setup. Please do not submit this form again — contact the organization if you don’t receive a confirmation shortly." },
+        { status: 503 }
+      );
+    }
     // Release the claim so the donor can retry with the same link rather
     // than being permanently locked out by a transient Finix API failure.
     await prisma.subscriptionSetupLink.update({

@@ -8,8 +8,29 @@ beforeEach(() => {
 });
 
 function makePrismaMock(overrides: Record<string, any> = {}) {
+  // Stateful across BOTH the critical immediate update (prisma.wgcSubscription.update)
+  // and the enrichment transaction's update (tx.wgcSubscription.update) —
+  // mirrors real Prisma, where the second update merges onto the row the
+  // first one already saved (e.g. status), not a fresh row each time.
+  let subscriptionRow: any = {
+    id: "sub-row-1",
+    organizationId: "church-A",
+    finixSubscriptionId: null,
+    status: "INCOMPLETE",
+    trialStartsAt: null,
+    trialEndsAt: null,
+    firstChargeAt: null,
+    nextChargeAt: null,
+    amountCents: 1000,
+    currency: "USD",
+  };
   const txMock = {
-    wgcSubscription: { update: vi.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: "sub-row-1", amountCents: 1000, currency: "USD", ...data })) },
+    wgcSubscription: {
+      update: vi.fn().mockImplementation(({ data }: any) => {
+        subscriptionRow = { ...subscriptionRow, ...data };
+        return Promise.resolve(subscriptionRow);
+      }),
+    },
     wgcBillingAccount: { update: vi.fn().mockResolvedValue({}) },
     church: { update: vi.fn().mockResolvedValue({}) },
     promotionEntitlement: { update: vi.fn().mockResolvedValue({}) },
@@ -20,17 +41,14 @@ function makePrismaMock(overrides: Record<string, any> = {}) {
       create: vi.fn(),
     },
     wgcSubscription: {
-      upsert: vi.fn().mockResolvedValue({
-        id: "sub-row-1",
-        organizationId: "church-A",
-        finixSubscriptionId: null,
-        status: "INCOMPLETE",
-        trialStartsAt: null,
-        trialEndsAt: null,
-        firstChargeAt: null,
-        nextChargeAt: null,
-        amountCents: 1000,
-        currency: "USD",
+      upsert: vi.fn().mockImplementation(() => Promise.resolve(subscriptionRow)),
+      // The critical, immediate finixSubscriptionId-saving write — separate
+      // from the `upsert` claim above and from the enrichment $transaction
+      // below (see wgcSubscriptionService.ts's own comment on why this is
+      // its own write).
+      update: vi.fn().mockImplementation(({ data }: any) => {
+        subscriptionRow = { ...subscriptionRow, ...data };
+        return Promise.resolve(subscriptionRow);
       }),
     },
     promotionEntitlement: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -129,6 +147,39 @@ describe("activateWgcSubscription — trial configuration for a promotional orga
     await mod.activateWgcSubscription({ organizationId: "church-A", billingIdentityId: "ID_1", billingPaymentInstrumentId: "PI_1" });
 
     expect(createTransfer).not.toHaveBeenCalled();
+  });
+});
+
+describe("activateWgcSubscription — crash-window safety (WGC's own money)", () => {
+  it("sends a stable idempotency_id to Finix, derived from the claimed row — not a random value", async () => {
+    const prismaMock = makePrismaMock();
+    const createSubscription = vi.fn().mockResolvedValue({ id: "fx_sub_1", state: "ACTIVE" });
+    const mod = await loadModule(prismaMock, undefined, createSubscription);
+
+    await mod.activateWgcSubscription({ organizationId: "church-A", billingIdentityId: "ID_1", billingPaymentInstrumentId: "PI_1" });
+
+    const callArgs = createSubscription.mock.calls[0][0];
+    expect(typeof callArgs.idempotency_id).toBe("string");
+    expect(callArgs.idempotency_id.length).toBeGreaterThan(0);
+  });
+
+  it("saves finixSubscriptionId immediately after Finix confirms — even if the caller never lets the enrichment transaction run — so a retry never reaches Finix again", async () => {
+    const prismaMock = makePrismaMock();
+    const createSubscription = vi.fn().mockResolvedValue({ id: "fx_sub_2", state: "ACTIVE" });
+    // Simulate the enrichment transaction itself failing (a DB hiccup right
+    // after the critical write above already succeeded).
+    prismaMock.$transaction = vi.fn().mockRejectedValue(new Error("connection lost"));
+    const mod = await loadModule(prismaMock, undefined, createSubscription);
+
+    await expect(
+      mod.activateWgcSubscription({ organizationId: "church-A", billingIdentityId: "ID_1", billingPaymentInstrumentId: "PI_1" })
+    ).rejects.toThrow();
+
+    // The critical write (prisma.wgcSubscription.update, NOT tx.*) must
+    // still have been called with the real Finix subscription id before
+    // the enrichment transaction ever ran.
+    expect(prismaMock.wgcSubscription.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ finixSubscriptionId: "fx_sub_2" }) }));
+    expect(createSubscription).toHaveBeenCalledTimes(1);
   });
 });
 
