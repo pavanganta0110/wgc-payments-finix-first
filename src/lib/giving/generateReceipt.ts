@@ -163,6 +163,46 @@ export async function sendDonationReceipt(paymentId: string, churchId: string, a
   // version for this payment before creating the new one.
   const latest = await prisma.donationReceipt.findFirst({ where: { paymentId }, orderBy: { version: "desc" } });
   const nextVersion = latest ? latest.version + 1 : 1;
+
+  // ATOMIC CLAIM — this is the actual safety mechanism, not the read above.
+  // Two concurrent calls for the same Payment (e.g. both sides of a
+  // Payment.finixTransferId P2002 race in checkoutService.ts, where the
+  // P2002 loser recovers the winner's row and then also calls this
+  // function) can both read the same `latest`/`nextVersion` before either
+  // commits. Only one can win this insert — DonationReceipt's
+  // @@unique([paymentId, version]) constraint (see schema.prisma) rejects
+  // the second with P2002 BEFORE any email has been sent. This is
+  // deliberately a DB write claimed before the send, not a flag checked
+  // after — an in-memory or post-hoc check can't close a real race.
+  let claim;
+  try {
+    claim = await prisma.donationReceipt.create({
+      data: {
+        paymentId,
+        churchId,
+        version: nextVersion,
+        receiptNumber,
+        paymentAmountCentsSnapshot: paymentAmountCents,
+        goodsServicesProvidedSnapshot: goodsServicesProvided,
+        goodsServicesDescriptionSnapshot: goodsServicesDescription,
+        goodsServicesFairMarketValueCentsSnapshot: goodsServicesFairMarketValueCents,
+        recordedContributionAmountCentsSnapshot: recordedContributionAmountCents,
+        acknowledgmentTextSnapshot: acknowledgmentText,
+        recipientEmail: donorEmail,
+        sentAt: null,
+        createdByUserId: actorUserId,
+      },
+    });
+  } catch (err) {
+    if (err instanceof Object && "code" in err && (err as { code?: string }).code === "P2002") {
+      // Lost the race — another concurrent call already claimed this exact
+      // (paymentId, version). That call is the one sending the email; this
+      // one must not send a second one for the same logical trigger.
+      return { receiptNumber, recipientEmail: donorEmail, version: nextVersion, duplicate: true as const };
+    }
+    throw err;
+  }
+
   if (latest && !latest.supersededAt) {
     await prisma.donationReceipt.update({ where: { id: latest.id }, data: { supersededAt: new Date() } });
   }
@@ -187,22 +227,11 @@ export async function sendDonationReceipt(paymentId: string, churchId: string, a
     },
   });
 
-  await prisma.donationReceipt.create({
+  await prisma.donationReceipt.update({
+    where: { id: claim.id },
     data: {
-      paymentId,
-      churchId,
-      version: nextVersion,
-      receiptNumber,
-      paymentAmountCentsSnapshot: paymentAmountCents,
-      goodsServicesProvidedSnapshot: goodsServicesProvided,
-      goodsServicesDescriptionSnapshot: goodsServicesDescription,
-      goodsServicesFairMarketValueCentsSnapshot: goodsServicesFairMarketValueCents,
-      recordedContributionAmountCentsSnapshot: recordedContributionAmountCents,
-      acknowledgmentTextSnapshot: acknowledgmentText,
-      recipientEmail: donorEmail,
       sentAt: result.success ? new Date() : null,
       failureReason: result.success ? null : String((result as any).error ?? "Email send failed"),
-      createdByUserId: actorUserId,
     },
   });
 
@@ -226,5 +255,5 @@ export async function sendDonationReceipt(paymentId: string, churchId: string, a
   });
 
   if (!result.success) throw new Error("Failed to send donation receipt");
-  return { receiptNumber, recipientEmail: donorEmail, version: nextVersion };
+  return { receiptNumber, recipientEmail: donorEmail, version: nextVersion, duplicate: false as const };
 }
