@@ -7,8 +7,6 @@ import { resolveWgcTransferFeeStrategy } from "@/lib/giving/serverFeeStrategy";
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { sendReceiptEmail } from "@/lib/giving/sendReceiptEmail";
-import { sendDonationReceipt } from "@/lib/giving/generateReceipt";
-import { syncPaymentToQuickBooks } from "@/lib/integrations/quickbooks/sync";
 import { normalizeUSPhone, isValidEmail } from "@/lib/validation";
 import { isGivingLinkUsable } from "@/lib/givingLinks/status";
 import { parseDonorFieldSettings, parseAllowedPaymentMethods, parseAllowedFrequencies } from "@/lib/givingLinks/types";
@@ -20,8 +18,8 @@ import { cleanAddressInput, hasAnyAddressField, applyDonorAddressUpdate } from "
 import { resolveEmbedCorsOrigin, embedCorsHeaders, embedPreflightResponse } from "@/lib/giving/embedCors";
 import { assertNonprofitApproved } from "@/lib/onboarding/nonprofitVerificationGuard";
 import { checkDonationRateLimit } from "@/lib/giving/donationRateLimit";
-import { computePledgeFulfillment } from "@/lib/pledges/pledgeFulfillment";
 import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
+import { enqueueBackgroundJobInTransaction } from "@/lib/jobs/backgroundJobs";
 import crypto from "crypto";
 
 /**
@@ -840,7 +838,7 @@ async function handleDonate(req: Request, slug: string) {
     // church/link/attempt/feeStrategy/transfer only after each has already
     // been assigned and null-checked above — TypeScript can't narrow a
     // closure defined before its captured `let` variables are assigned.
-    async function createPaymentRecord() {
+    async function createPaymentRecord(tx: Prisma.TransactionClient) {
       // Non-null assertions: church/link were already validated non-null
       // far above (the `if (!church...) return` / `if (!link) return`
       // guards near the top of this handler) — this function is only ever
@@ -848,7 +846,7 @@ async function handleDonate(req: Request, slug: string) {
       // narrowing into a closure over a `let`/`const` from an outer scope.
       const safeChurch = church!;
       const safeLink = link!;
-      return prisma.payment.create({
+      return tx.payment.create({
         data: {
           churchId: safeChurch.id,
           donorId: donorRecord.id,
@@ -892,43 +890,103 @@ async function handleDonate(req: Request, slug: string) {
       });
     }
 
-    let newPayment;
-    try {
-      await prisma.finixTransfer.upsert({
-        where: { finixTransferId: transfer.id },
-        create: {
-          finixTransferId: transfer.id,
-          churchId: church.id,
-          finixMerchantId: church.finixMerchantId,
-          finixPaymentInstrumentId: instrumentId,
-          type: transfer.type ?? "DEBIT",
-          state: transfer.state ?? "PENDING",
-          amountCents: totalCents,
-          currency: "USD",
-          source: "wgc_giving_link",
-          tagsJson: transferPayload.tags,
-          createdAtFinix: new Date(),
-          lastSyncedAt: new Date(),
-        },
-        update: { state: transfer.state ?? undefined, lastSyncedAt: new Date() },
-      });
+    const succeededNow = (transfer.state || "").toUpperCase() === "SUCCEEDED";
 
-      await prisma.paymentAttempt.update({
-        where: { id: attempt.id },
-        data: { status: (transfer.state || "PENDING").toUpperCase(), finixTransferId: transfer.id, donorId: donorRecord.id },
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.finixTransfer.upsert({
+          where: { finixTransferId: transfer.id },
+          create: {
+            finixTransferId: transfer.id,
+            churchId: church!.id,
+            finixMerchantId: church!.finixMerchantId,
+            finixPaymentInstrumentId: instrumentId,
+            type: transfer.type ?? "DEBIT",
+            state: transfer.state ?? "PENDING",
+            amountCents: totalCents,
+            currency: "USD",
+            source: "wgc_giving_link",
+            tagsJson: transferPayload.tags,
+            createdAtFinix: new Date(),
+            lastSyncedAt: new Date(),
+          },
+          update: { state: transfer.state ?? undefined, lastSyncedAt: new Date() },
+        });
+
+        await tx.paymentAttempt.update({
+          where: { id: attempt.id },
+          data: { status: (transfer.state || "PENDING").toUpperCase(), finixTransferId: transfer.id, donorId: donorRecord.id },
+        });
+
+        const payment = await createPaymentRecord(tx);
+
+        // TRANSACTIONAL OUTBOX (Stage 2 Task 2): the required post-payment
+        // jobs commit in the SAME transaction as the Payment row itself —
+        // if this transaction commits, these jobs durably exist; if it
+        // rolls back (see the P2002 branch below), so do they. No crash
+        // window between "Payment exists" and "its required jobs exist."
+        // The Finix call already happened above, before this transaction
+        // ever opened — nothing external is called from inside it.
+        if (succeededNow) {
+          const receiptSettings = link!.receiptSettingsJson as { sendAutomatically?: boolean } | null;
+          if (receiptSettings?.sendAutomatically ?? true) {
+            await enqueueBackgroundJobInTransaction(tx, {
+              jobType: "SEND_RECEIPT",
+              entityType: "Payment",
+              entityId: payment.id,
+              dedupeKey: `SEND_RECEIPT:payment:${payment.id}:version:1`,
+              payload: { paymentId: payment.id, churchId: church!.id },
+            });
+          }
+          await enqueueBackgroundJobInTransaction(tx, {
+            jobType: "QUICKBOOKS_PAYMENT",
+            entityType: "Payment",
+            entityId: payment.id,
+            dedupeKey: `QUICKBOOKS_PAYMENT:payment:${payment.id}`,
+            payload: { paymentId: payment.id },
+          });
+          if (resolvedPledgeId) {
+            await enqueueBackgroundJobInTransaction(tx, {
+              jobType: "PLEDGE_RECOMPUTE",
+              entityType: "Pledge",
+              entityId: resolvedPledgeId,
+              // Deliberately keyed by pledge only, not pledge+payment —
+              // computePledgeFulfillment recomputes the pledge's TOTAL
+              // from all its source rows every time, so one pending
+              // recompute job per pledge is always sufficient regardless
+              // of how many payments raced to enqueue it; a second
+              // payment against the same still-pending pledge job doesn't
+              // need a second job, it needs the existing one to run once
+              // more against the now-larger set of source rows, which it
+              // already recomputes fully every time it executes.
+              dedupeKey: `PLEDGE_RECOMPUTE:pledge:${resolvedPledgeId}`,
+              payload: { pledgeId: resolvedPledgeId },
+            });
+          }
+        }
+
+        return payment;
       });
 
       logEvent("9_PAYMENT_DATABASE_SAVE_COMPLETED", { transferId: transfer.id });
-      newPayment = await createPaymentRecord();
     } catch (writeError: unknown) {
       if (writeError instanceof Prisma.PrismaClientKnownRequestError && writeError.code === "P2002") {
         // Payment.finixTransferId is unique — this means a concurrent
         // process (a race against this same request, or the webhook
         // handler's own orphan recovery) already created the Payment row
         // for this exact transfer. That's the expected "one wins" outcome,
-        // not an error: fetch it and continue as a normal success.
+        // not an error: fetch it and continue as a normal success. The
+        // whole transaction above rolled back on this P2002 (including
+        // this attempt's own finixTransfer.upsert/paymentAttempt.update),
+        // which is fine — the WINNING writer's transaction already
+        // applied the real ones; re-applying paymentAttempt's own update
+        // here just keeps this attempt's own audit row consistent with
+        // pre-Stage-2 behavior.
         const existing = await prisma.payment.findUnique({ where: { finixTransferId: transfer.id } });
         if (existing) {
+          await prisma.paymentAttempt
+            .update({ where: { id: attempt.id }, data: { status: (transfer.state || "PENDING").toUpperCase(), finixTransferId: transfer.id, donorId: donorRecord.id } })
+            .catch(() => {});
           logPaymentSafetyEvent("PAYMENT_DUPLICATE_PREVENTED", {
             churchId: church.id,
             paymentAttemptId: attempt.id,
@@ -937,7 +995,6 @@ async function handleDonate(req: Request, slug: string) {
             route: "/api/g/[slug]/donate",
             detail: "P2002 on Payment.finixTransferId — a concurrent writer (webhook orphan recovery or a raced retry) already created this Payment",
           });
-          newPayment = existing;
         } else {
           return buildPaymentUncertainResponse(transfer.id, clientAttemptId);
         }
@@ -949,13 +1006,11 @@ async function handleDonate(req: Request, slug: string) {
 
 
 
-    const succeeded = (transfer.state || "").toUpperCase() === "SUCCEEDED";
-
     const linkUpdateData: Record<string, unknown> = {
       totalAttempts: { increment: 1 },
       lastUsedAt: new Date(),
     };
-    if (succeeded) {
+    if (succeededNow) {
       linkUpdateData.successfulDonations = { increment: 1 };
       linkUpdateData.totalCollectedCents = { increment: totalCents };
     } else if (claimedOneTimeLinkId) {
@@ -964,37 +1019,23 @@ async function handleDonate(req: Request, slug: string) {
     // Payment already durably exists at this point (created above, or
     // fetched via the P2002 race branch) — a failure here is a reporting
     // gap on GivingLink's own counters, never a reason to tell the donor
-    // their already-recorded payment is uncertain or failed.
+    // their already-recorded payment is uncertain or failed. Not part of
+    // the transactional outbox — this is link-level bookkeeping, not a
+    // per-Payment side effect a donor/church depends on individually, and
+    // a missed increment here is self-evidently visible/correctable
+    // (the link's own totals just undercounts by one), unlike a silently
+    // dropped receipt or accounting entry.
     try {
       await prisma.givingLink.update({ where: { id: link.id }, data: linkUpdateData });
     } catch (err) {
       console.error("Failed to update giving link counters after payment was recorded:", err);
     }
 
-    if (succeeded && resolvedPledgeId) {
-      try {
-        await computePledgeFulfillment(resolvedPledgeId);
-      } catch (err) {
-        console.error("Failed to update pledge fulfillment:", err);
-      }
-    }
-
-    const receiptSettings = link.receiptSettingsJson as { sendAutomatically?: boolean } | null;
-    if (succeeded && (receiptSettings?.sendAutomatically ?? true)) {
-      try {
-        await sendDonationReceipt(newPayment.id, church.id);
-      } catch (err) {
-        console.error("Failed to send donation receipt:", err);
-      }
-    }
-
-    if (succeeded) {
-      try {
-        await syncPaymentToQuickBooks(newPayment.id);
-      } catch (err) {
-        console.error("Failed to sync payment to QuickBooks:", err);
-      }
-    }
+    // Receipt email, QuickBooks sync, and pledge-fulfillment recompute all
+    // now run as durable BackgroundJob rows, enqueued in the same
+    // transaction that created/recovered `newPayment` above (Stage 2 Task
+    // 2) — never as synchronous work here. See jobHandlers.ts for the
+    // handlers a worker invocation actually executes them with.
 
     return NextResponse.json({
       success: true,
