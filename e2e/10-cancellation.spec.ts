@@ -25,18 +25,12 @@ test.describe("Subscription cancellation", () => {
     await page.goto("/merchant/subscription");
     await page.waitForLoadState("networkidle");
 
-    // NOTE: while authoring this spec, clicking this button in THIS
-    // sandbox's Playwright/Chromium never opened the modal, and the
-    // browser console showed "eval() is not supported in this
-    // environment" on every page load — Next.js dev-mode client bundles
-    // use eval()-based source maps, and this particular sandboxed browser
-    // blocks eval() entirely, which breaks React hydration/onClick
-    // handlers for every client component on every route (confirmed via
-    // spec 09's equivalent finding). That is a constraint of THIS
-    // environment's browser automation, not a bug in the app or this
-    // test — see the completion report. Retrying doesn't help (hydration
-    // never completes), so this is a plain click/assert; it is expected
-    // to pass in a normal (non-eval-restricted) browser.
+    // Client-side interactivity (this button's onClick, the modal it
+    // opens) requires next.config.ts's allowedDevOrigins to include
+    // Playwright's 127.0.0.1 baseURL — without it, Next's dev server 403s
+    // every client JS chunk and no client-side code runs at all. See
+    // next.config.ts's own comment on that setting for the full story
+    // (previously misdiagnosed as an eval()-blocking sandbox limitation).
     await page.getByRole("button", { name: "Cancel Subscription" }).click();
     await expect(page.getByText("Cancel your WGC Platform subscription?")).toBeVisible();
     await page.getByRole("button", { name: "Confirm Cancellation" }).click();
