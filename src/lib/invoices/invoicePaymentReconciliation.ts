@@ -1,7 +1,9 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
 import { calculateInvoiceBalance } from "./invoiceMoney";
 import { computeDerivedInvoiceStatus, type InvoiceStatus } from "./invoiceStatus";
+import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
 
 /**
  * Applies a Finix transfer's current state onto its matching InvoicePayment
@@ -14,12 +16,28 @@ import { computeDerivedInvoiceStatus, type InvoiceStatus } from "./invoiceStatus
  * moment as a return-page verification can never double-apply a payment or
  * create a duplicate InvoiceActivity/receipt email.
  */
-export async function applyInvoicePaymentTransferState(finixTransferId: string, rawState: string | null | undefined): Promise<{ status: string; applied: boolean }> {
+export async function applyInvoicePaymentTransferState(
+  finixTransferId: string,
+  rawState: string | null | undefined,
+  // Orphan-recovery inputs — all optional so every existing caller
+  // (payer-return reconciliation, which only ever re-checks a transfer WGC
+  // already has an InvoicePaymentAttempt/InvoicePayment for) keeps working
+  // unchanged. Only the webhook handler passes these, and only churchId is
+  // trusted for tenant assignment — it must already be merchant-mapping-
+  // verified (Church.finixMerchantId === the transfer's own merchant) by
+  // the caller, never taken from the transfer's tags directly.
+  orphanContext?: { churchId: string; amountCents: number | null; idempotencyId: string | null; finixMethod: string }
+): Promise<{ status: string; applied: boolean }> {
   const priorInvoicePayment = await prisma.invoicePayment.findFirst({ where: { finixTransferId } });
   const newState = (rawState || "PENDING").toUpperCase();
   const newStatus = newState === "SUCCEEDED" ? "SUCCEEDED" : newState === "FAILED" || newState === "CANCELED" ? "FAILED" : "PENDING";
 
-  if (!priorInvoicePayment) return { status: newStatus, applied: false };
+  if (!priorInvoicePayment) {
+    if (orphanContext && (newStatus === "SUCCEEDED" || newStatus === "PENDING")) {
+      await recoverOrphanedInvoicePayment(finixTransferId, newStatus, orphanContext);
+    }
+    return { status: newStatus, applied: false };
+  }
   if (priorInvoicePayment.status === newStatus) return { status: newStatus, applied: false };
 
   // Out-of-order protection: a terminal state already recorded must never
@@ -96,6 +114,106 @@ export async function applyInvoicePaymentTransferState(finixTransferId: string, 
   }
 
   return { status: newStatus, applied: true };
+}
+
+/**
+ * The InvoicePayment equivalent of paymentReconciliation.ts's
+ * recoverOrphanedOneTimePayment — same gap, same fix: the synchronous
+ * /api/invoice/[token]/pay path can crash after Finix confirms a transfer
+ * but before InvoicePayment is durably written (see that route's own
+ * PAYMENT_STATUS_UNCERTAIN handling). This reconstructs it from trusted
+ * WGC data once the webhook arrives, matched by idempotencyKey (Finix's
+ * own idempotency_id, echoed back on the transfer) against
+ * InvoicePaymentAttempt — never by amount or timing. churchId is the
+ * caller's already merchant-mapping-verified value; a matched attempt is
+ * cross-checked against it before a single field is trusted, same
+ * invariant as the one-time-donation orphan recovery.
+ */
+async function recoverOrphanedInvoicePayment(
+  finixTransferId: string,
+  status: "SUCCEEDED" | "PENDING",
+  ctx: { churchId: string; amountCents: number | null; idempotencyId: string | null; finixMethod: string }
+): Promise<void> {
+  let attempt = ctx.idempotencyId ? await prisma.invoicePaymentAttempt.findUnique({ where: { idempotencyKey: ctx.idempotencyId } }) : null;
+  if (attempt && attempt.churchId !== ctx.churchId) {
+    // Mismatch = either a bug or a tampered key — never trust a
+    // cross-tenant attempt record.
+    attempt = null;
+  }
+  if (!attempt) {
+    // No trusted WGC record to reconstruct from — nothing more this
+    // function can safely do without guessing at invoiceId/tenant, which
+    // is exactly what it must never do. Left for human reconciliation
+    // (the same "ORPHANED_CHARGE" alert pattern the main reconcile cron
+    // uses for Payment).
+    console.error(`Orphan InvoicePayment recovery: no matching InvoicePaymentAttempt for transfer ${finixTransferId} (idempotencyId=${ctx.idempotencyId ?? "none"}) — needs manual review.`);
+    return;
+  }
+
+  const grossAmountCents = ctx.amountCents ?? attempt.amountCents;
+  let invoicePayment;
+  try {
+    invoicePayment = await prisma.invoicePayment.create({
+      data: {
+        invoiceId: attempt.invoiceId,
+        churchId: ctx.churchId,
+        source: "FINIX",
+        method: attempt.method || ctx.finixMethod,
+        grossAmountCents,
+        netAmountCents: grossAmountCents,
+        totalChargedCents: ctx.amountCents ?? attempt.amountCents,
+        status,
+        finixTransferId,
+        invoicePaymentAttemptId: attempt.id,
+      },
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const existing = await prisma.invoicePayment.findUnique({ where: { finixTransferId } });
+      if (existing) {
+        logPaymentSafetyEvent("PAYMENT_DUPLICATE_PREVENTED", { churchId: ctx.churchId, finixTransferId, source: "orphan_recovery", detail: "P2002 on InvoicePayment.finixTransferId — already recovered elsewhere" });
+        return;
+      }
+    }
+    console.error(`Orphan InvoicePayment recovery failed for transfer ${finixTransferId}:`, err);
+    return;
+  }
+
+  logPaymentSafetyEvent("ORPHAN_PAYMENT_RECOVERED", {
+    churchId: ctx.churchId,
+    finixTransferId,
+    source: "webhook",
+    detail: `InvoicePayment ${invoicePayment.id} reconstructed for invoice ${attempt.invoiceId}, status=${status}`,
+  });
+
+  await prisma.invoicePaymentAttempt.update({ where: { id: attempt.id }, data: { status, finixTransferId } }).catch((err) => console.error("Failed to update InvoicePaymentAttempt after orphan recovery:", err));
+
+  if (status !== "SUCCEEDED") return;
+
+  // Same balance/status recompute the normal path already applies below —
+  // duplicated narrowly here rather than recursing back into
+  // applyInvoicePaymentTransferState (which would re-run the `!priorInvoicePayment`
+  // branch again now that one exists, adding an unnecessary extra query
+  // round-trip but no correctness risk either way — kept separate for
+  // clarity about exactly what orphan recovery itself is responsible for).
+  const invoice = await prisma.invoice.findUnique({ where: { id: attempt.invoiceId } });
+  if (!invoice) return;
+  const payments = await prisma.invoicePayment.findMany({ where: { invoiceId: invoice.id, status: { in: ["SUCCEEDED", "PARTIALLY_REFUNDED", "REFUNDED"] } } });
+  const balance = calculateInvoiceBalance({ totalCents: invoice.totalCents, payments });
+  const derivedStatus = computeDerivedInvoiceStatus({
+    currentStatus: invoice.status as InvoiceStatus,
+    balanceCents: balance.balanceCents,
+    totalCents: invoice.totalCents,
+    hasBeenViewed: Boolean(invoice.firstViewedAt),
+    dueDate: invoice.dueDate,
+  });
+  await prisma.invoice.update({
+    where: { id: invoice.id },
+    data: { amountPaidCents: balance.amountPaidCents, balanceCents: balance.balanceCents, status: derivedStatus, paidAt: derivedStatus === "PAID" && !invoice.paidAt ? new Date() : invoice.paidAt },
+  });
+  await prisma.invoiceActivity.create({
+    data: { invoiceId: invoice.id, churchId: invoice.churchId, activityType: "invoice.payment_settled", metadata: { finixTransferId, recoveredFromOrphan: true } },
+  });
 }
 
 /**

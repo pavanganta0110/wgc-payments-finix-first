@@ -103,9 +103,107 @@ export default function MerchandiseGivingExperience({
   const [submitting, setSubmitting] = useState(false);
   const [walletProcessing, setWalletProcessing] = useState<"apple_pay" | "google_pay" | null>(null);
   const [result, setResult] = useState<{ donationAmount: number; merchandiseAmount: number; shippingAmount: number; taxAmount: number; grandTotal: number } | null>(null);
+  const [uncertain, setUncertain] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formReady, setFormReady] = useState(false);
   const [finixForm, setFinixForm] = useState<FinixPaymentFormInstance | null>(null);
+
+  // ONE merchandise checkout intent keeps the SAME clientAttemptId through a
+  // double click, a network/browser retry, and an uncertain-outcome retry —
+  // rotated only on a definitive FAILED result (a genuinely new attempt) or
+  // when the donor intentionally starts a second order after a SUCCEEDED
+  // one (see startNewOrder below). sessionStorage is one layer of this, not
+  // the guarantee itself — the real protection is server-side
+  // (WgcCheckout.clientAttemptId is @unique; see checkoutService.ts).
+  // Mirrors GivingLinkForm.tsx's identical attemptId pattern exactly.
+  const [attemptId, setAttemptId] = useState("");
+  const attemptStorageKey = `wgc_merch_attempt_id:${slug}`;
+
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(attemptStorageKey);
+      if (stored) {
+        setAttemptId(stored);
+        return;
+      }
+    } catch {
+      // sessionStorage unavailable (private browsing, etc.) — fall through
+      // to an in-memory-only id; server-side protection still holds for
+      // double-clicks within this page load, only cross-refresh recovery
+      // is lost.
+    }
+    const fresh = crypto.randomUUID();
+    setAttemptId(fresh);
+    try {
+      sessionStorage.setItem(attemptStorageKey, fresh);
+    } catch {
+      // Same fallback as above.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function rotateAttemptId() {
+    const fresh = crypto.randomUUID();
+    setAttemptId(fresh);
+    try {
+      sessionStorage.setItem(attemptStorageKey, fresh);
+    } catch {
+      // Non-fatal — see the mount effect's comment above.
+    }
+  }
+
+  // Resolves an "uncertain" outcome by polling the read-only status
+  // endpoint — never initiates a new checkout itself. Same backoff as
+  // GivingLinkForm.tsx's equivalent poll.
+  useEffect(() => {
+    if (!uncertain || !attemptId) return;
+    let cancelled = false;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout>;
+
+    async function poll() {
+      attempts += 1;
+      try {
+        const res = await fetch(`/api/merchandise/checkout-attempt/${attemptId}?slug=${encodeURIComponent(slug)}`);
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (data?.status === "SUCCEEDED") {
+          setUncertain(false);
+          setResult({ donationAmount: 0, merchandiseAmount: 0, shippingAmount: 0, taxAmount: 0, grandTotal: 0 });
+          return;
+        }
+        if (data?.status === "FAILED") {
+          setUncertain(false);
+          setError("This order was not completed. Please try again.");
+          rotateAttemptId();
+          return;
+        }
+      } catch {
+        // Network hiccup while polling — treated as "still processing."
+      }
+      if (cancelled) return;
+      if (attempts >= 20) return; // ~2 minutes — stop looping, stay uncertain
+      const delayMs = Math.min(2000 + attempts * 2000, 10000);
+      timer = setTimeout(poll, delayMs);
+    }
+
+    timer = setTimeout(poll, 2000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uncertain, attemptId, slug]);
+
+  function startNewOrder() {
+    rotateAttemptId();
+    setResult(null);
+    setUncertain(false);
+    setError(null);
+    setCart([]);
+    setDonationAmount(SUGGESTED_AMOUNTS[1]);
+    setCustomAmount("");
+  }
 
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [googleAvailable, setGoogleAvailable] = useState(false);
@@ -279,6 +377,7 @@ export default function MerchandiseGivingExperience({
   /** Shared pre-payment validation for all three payment paths (card, Apple
    * Pay, Google Pay) — returns an error string, or null if everything's OK. */
   const validateBeforePay = (): string | null => {
+    if (!attemptId) return "Still preparing your checkout — please wait a moment and try again.";
     if (donationCents === 0 && cart.length === 0) return "Please enter a donation amount or add an item to your order.";
     if (!donorInfoValid) return "Please enter your name and email.";
     if (cart.length > 0 && (!address.addressLine1 || !address.city || !address.state || !address.postalCode)) return "Please enter a complete shipping address.";
@@ -295,7 +394,7 @@ export default function MerchandiseGivingExperience({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           slug,
-          clientAttemptId: crypto.randomUUID(),
+          clientAttemptId: attemptId,
           donationAmountCents: donationCents,
           cartItems: cart.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
           shippingOptionId,
@@ -306,7 +405,23 @@ export default function MerchandiseGivingExperience({
         }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || "Checkout failed.");
+
+      if (data?.code === "PAYMENT_STATUS_UNCERTAIN") {
+        // Finix may have already charged the card — never say "try again"
+        // or rotate the attempt id here. Keep the SAME attemptId and let
+        // the polling effect above find out what actually happened.
+        setUncertain(true);
+        return false;
+      }
+
+      if (!res.ok || !data.success) {
+        // A genuine, definite failure — safe to let the donor try again,
+        // but only with a NEW attempt id (this one's WgcCheckout row is
+        // permanently FAILED server-side and will never succeed on retry).
+        rotateAttemptId();
+        throw new Error(data.error || "Checkout failed.");
+      }
+
       setResult(data);
       return true;
     } catch (err: any) {
@@ -424,6 +539,18 @@ export default function MerchandiseGivingExperience({
     }
   };
 
+  if (uncertain) {
+    return (
+      <div className="text-center py-10">
+        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-slate-400" />
+        <h2 className="text-lg font-bold text-slate-900 mb-2">Confirming your payment…</h2>
+        <p className="text-sm text-slate-500 max-w-sm mx-auto">
+          Please do not submit this order again. This page will update automatically once we hear back from the payment processor.
+        </p>
+      </div>
+    );
+  }
+
   if (result) {
     return (
       <div className="text-center py-6">
@@ -453,6 +580,13 @@ export default function MerchandiseGivingExperience({
           </div>
         </div>
         {result.merchandiseAmount > 0 && <p className="text-xs text-slate-400 mt-4">Only the donation portion above is a charitable contribution.</p>}
+        <button
+          type="button"
+          onClick={startNewOrder}
+          className="mt-6 px-4 py-2 rounded-xl text-sm font-bold border border-slate-200 text-slate-700 hover:bg-slate-50"
+        >
+          Make Another Purchase
+        </button>
       </div>
     );
   }
@@ -672,7 +806,7 @@ export default function MerchandiseGivingExperience({
 
         <button
           onClick={submit}
-          disabled={submitting || walletProcessing !== null || !formReady || !finixForm}
+          disabled={submitting || walletProcessing !== null || !formReady || !finixForm || !attemptId}
           className="w-full px-6 py-3 rounded-xl font-bold text-slate-900 metallic-gold shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : !formReady || !finixForm ? "Loading…" : `Give to ${churchName}`}

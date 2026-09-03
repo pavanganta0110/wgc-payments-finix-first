@@ -784,6 +784,12 @@ model Donor {
   updatedAt              DateTime  @updatedAt
 
   @@index([churchId])
+  // Composite indexes matching resolveOrCreateDonor.ts's actual query shape
+  // ({ churchId, archivedAt: null, normalizedEmail/normalizedPhone }) — this
+  // runs on every single donation, so it's on the checkout hot path. The
+  // single-column indexes below stay for any other lookup pattern.
+  @@index([churchId, normalizedEmail])
+  @@index([churchId, normalizedPhone])
   @@index([normalizedEmail])
   @@index([normalizedPhone])
   @@index([createdAt])
@@ -992,12 +998,13 @@ model Payment {
 
   receipts DonationReceipt[]
 
+  @@unique([finixTransferId])
   @@index([churchId, attributedUserId])
   @@index([donorId])
-  @@index([finixTransferId])
   @@index([churchId, status])
   @@index([churchId, createdAt])
   @@index([churchId, pledgeId])
+  @@index([finixSubscriptionId])
 }
 
 // One immutable snapshot per receipt version sent (or prepared) for a
@@ -1031,6 +1038,14 @@ model DonationReceipt {
 
   payment Payment @relation(fields: [paymentId], references: [id])
 
+  // ONE PAYMENT + ONE RECEIPT VERSION -> ONE LOGICAL RECEIPT. Backs the
+  // atomic claim in sendDonationReceipt() (generateReceipt.ts) that stops
+  // two concurrent calls for the same Payment (e.g. two requests racing on
+  // Payment.finixTransferId's own P2002 recovery) from both sending a real
+  // donor-facing email before either had written a row — the DB write is
+  // the claim, not the email send, so this must be a real unique
+  // constraint, not an in-memory check.
+  @@unique([paymentId, version])
   @@index([paymentId])
   @@index([churchId])
 }
@@ -1696,6 +1711,7 @@ model FinixTransfer {
 
   @@index([churchId, finixSubscriptionId])
   @@index([churchId, createdAtFinix])
+  @@index([churchId, state])
 }
 
 model FinixRefundOrReversal {
@@ -2304,17 +2320,46 @@ model ReportSnapshot {
   createdAt              DateTime @default(now())
 }
 
-// Minimal additive tables — not yet wired into existing refund/pricing business logic
+// The persistent WGC-side refund intent — created and durably committed
+// BEFORE any call to Finix, so a retried/double-clicked/raced refund
+// action resolves to the SAME row instead of firing a second reversal.
+// See src/app/api/merchant/transactions/payments/[transferId]/refund/route.ts.
+//
+// finixReversalId is set once Finix confirms the reversal; FinixRefundOrReversal
+// is the separate, webhook/API-synced mirror of the Finix object itself
+// (already had a refundRequestId field pointing back here, unused until now).
 model RefundRequest {
-  id                String   @id @default(cuid())
-  churchId          String?
+  id                String    @id @default(cuid())
+  churchId          String
   originalPaymentId String?
+  finixTransferId   String
+  // Generated once per intentional refund action by the caller (e.g. once
+  // per open of the refund confirmation dialog) — the actual idempotency
+  // key. The route falls back to a server-generated UUID only when the
+  // caller omits one, which weakens (but doesn't remove) the double-click
+  // guarantee for that one request — the frontend should always send a
+  // real one so a retried click reuses it.
+  clientRefundId    String
+  requestedByUserId String?
   requestedByEmail  String?
   amountCents       Int?
   reason            String?
-  status            String   @default("PENDING")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  // PENDING: claimed, Finix call not yet confirmed either way — also the
+  // durable "uncertain" state left behind by a timeout, so a retry with
+  // the same clientRefundId is refused rather than silently re-firing
+  // Finix. SUCCEEDED / FAILED are terminal.
+  status            String    @default("PENDING")
+  finixReversalId   String?
+  failureMessage    String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // The actual concurrency guarantee: a second request for the same
+  // transfer + same clientRefundId always resolves to this same row.
+  @@unique([finixTransferId, clientRefundId])
+  @@index([churchId])
+  @@index([originalPaymentId])
+  @@index([finixTransferId, status])
 }
 
 model ChurchPricing {
@@ -3734,9 +3779,12 @@ model InvoicePayment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Same invariant as Payment.finixTransferId (see that model's comment) —
+  // ONE FINIX TRANSFER -> AT MOST ONE InvoicePayment. Confirmed zero
+  // duplicates in both production and sandbox before this was added.
+  @@unique([finixTransferId])
   @@index([invoiceId])
   @@index([churchId])
-  @@index([finixTransferId])
 }
 
 /// One delivery attempt (email or SMS) of an invoice or a reminder.

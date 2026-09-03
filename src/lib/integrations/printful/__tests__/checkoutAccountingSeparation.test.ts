@@ -12,7 +12,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     church: { findUnique: vi.fn() },
     givingLink: { findUnique: vi.fn(), update: vi.fn() },
-    wgcCheckout: { findUnique: vi.fn(), create: vi.fn() },
+    wgcCheckout: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
     payment: { create: vi.fn() },
     finixTransfer: { upsert: vi.fn() },
   },
@@ -73,7 +73,18 @@ describe("processCombinedCheckout — critical accounting separation (spec item 
     vi.mocked(prisma.givingLink.findUnique).mockResolvedValue({ id: "link-1", churchId: "church-a", merchandiseEnabled: true, statementDescriptor: null } as never);
     vi.mocked(prisma.wgcCheckout.findUnique).mockResolvedValue(null as never);
     vi.mocked(prisma.payment.create).mockResolvedValue({ id: "payment-1" } as never);
-    vi.mocked(prisma.wgcCheckout.create).mockImplementation((async ({ data }: any) => ({ id: "checkout-1", ...data })) as never);
+    // Stateful — mirrors real Prisma update() merging onto the existing
+    // row, since the code now claims a row via create() before the Finix
+    // call and updates that SAME row with the final result.
+    let checkoutRow: any = null;
+    vi.mocked(prisma.wgcCheckout.create).mockImplementation((async ({ data }: any) => {
+      checkoutRow = { id: "checkout-1", ...data };
+      return checkoutRow;
+    }) as never);
+    vi.mocked(prisma.wgcCheckout.update).mockImplementation((async ({ data }: any) => {
+      checkoutRow = { ...checkoutRow, ...data };
+      return checkoutRow;
+    }) as never);
 
     vi.mocked(finixClient.getPaymentInstrument).mockResolvedValue({ id: "PI123", identity: "ID123" } as never);
     vi.mocked(finixClient.createBuyerIdentity).mockResolvedValue({ id: "ID123" } as never);
