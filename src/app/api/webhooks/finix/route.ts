@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveRecurringPaymentAttribution } from "@/lib/auth/attributionSnapshot";
 import { sendWgcEmail, sendWgcAdminEmail } from "@/lib/email";
 import { redactFinixPayload } from "@/lib/finix/redact";
+import { finixClient } from "@/lib/finix/client";
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { mapFinixDisputeStateToWgcStatus } from "@/lib/finix/statusMapping";
 import { provisionChurchAndBillingGateOrAlert } from "@/lib/billing/provisionChurchAndBillingGate";
@@ -1645,32 +1646,78 @@ export async function POST(req: Request) {
           // requirement) was silently skipped entirely and the admin
           // dashboard's "Required Info / Errors" column stayed blank even
           // though Finix had told us something (2026-08-15 admin bug
-          // report). Finix's exact field name for this on the Merchant
-          // resource isn't confirmed from a captured real UPDATE_REQUESTED
-          // payload yet (`messages` is our best guess, matching Finix's
-          // Verification resource convention) — so `data.messages` /
-          // `data.verification?.messages` / `data.outstanding_requirements`
-          // are tried in that order, and if none is present, the FULL
-          // redacted merchant payload is stored instead of nothing, so the
-          // real requirement is always recoverable from the admin UI even
-          // when our summarization guess doesn't match Finix's actual shape.
+          // report).
+          //
+          // Confirmed against a real production UPDATE_REQUESTED delivery
+          // (Lighthouse Baptist Church, 2026-09-04): the Merchant webhook
+          // payload itself never carries the reason — `data.messages`,
+          // `data.verification?.messages`, and `data.outstanding_requirements`
+          // are all absent; `data.verification` is a bare ID string
+          // pointing at a *separate* Finix Verification resource. Per
+          // Finix's docs (docs.finix.com/guides/platform-payments/
+          // onboarding-sellers/seller-onboarding-update-requests), that
+          // Verification is the actual source of truth: it carries an
+          // `outcomes` array, each entry an `outcome_code` (e.g.
+          // "BANK_STATEMENT_ONE_MONTH_REQUESTED") plus `remediation_details`
+          // describing what to update. So fetch it and parse that first;
+          // the old merchant-payload guesses stay as a fallback in case a
+          // future delivery ever does carry something inline, or the fetch
+          // fails/returns no outcomes.
           let requestedItemsStr = "Additional documentation is required to verify your business and identity.";
-          const messagesSource = data?.messages ?? data?.verification?.messages ?? data?.outstanding_requirements ?? null;
-          if (messagesSource) {
-            updateData.updateRequestedCodes = messagesSource;
+          let requestedItemsResolved = false;
+          let verificationPayload: unknown = null;
+
+          const verificationId = typeof data?.verification === "string" ? data.verification : null;
+          if (verificationId) {
             try {
-              const msgs = Array.isArray(messagesSource) ? messagesSource : [messagesSource];
-              const items = msgs.map((m: any) => (typeof m === "object" ? (m.message || m.code || m.description || JSON.stringify(m)) : String(m)));
+              verificationPayload = await finixClient.getVerification(verificationId);
+              const outcomesRaw = (verificationPayload as { outcomes?: unknown })?.outcomes;
+              const outcomes: unknown[] = Array.isArray(outcomesRaw) ? outcomesRaw : [];
+              const items = outcomes
+                .map((o) => {
+                  const outcome = o as { outcome_code?: unknown; remediation_details?: { field_name?: unknown } };
+                  const code = typeof outcome?.outcome_code === "string" ? outcome.outcome_code : null;
+                  if (!code) return null;
+                  const readable = code.toLowerCase().replace(/_/g, " ").replace(/^./, (c: string) => c.toUpperCase());
+                  const fieldName = outcome?.remediation_details?.field_name;
+                  return typeof fieldName === "string" ? `${readable} (${fieldName})` : readable;
+                })
+                .filter((s): s is string => !!s);
               if (items.length > 0) {
                 requestedItemsStr = items.map((i: string) => `• ${i}`).join("<br/>");
-                updateData.updateRequestedItems = requestedItemsStr;
+                requestedItemsResolved = true;
               }
-            } catch (e) {
-              console.error("Failed to parse requested items:", e);
+            } catch (err) {
+              // Never let a Finix Verification fetch failure block the
+              // webhook's own 200 response — falls through to the
+              // merchant-payload guesses, then the generic message.
+              console.error(`Failed to fetch Finix verification ${verificationId} for UPDATE_REQUESTED requirement details:`, err);
             }
-          } else {
-            updateData.updateRequestedCodes = redactFinixPayload(data ?? {});
           }
+
+          if (!requestedItemsResolved) {
+            const messagesSource = data?.messages ?? data?.verification?.messages ?? data?.outstanding_requirements ?? null;
+            if (messagesSource) {
+              try {
+                const msgs = Array.isArray(messagesSource) ? messagesSource : [messagesSource];
+                const items = msgs.map((m: any) => (typeof m === "object" ? (m.message || m.code || m.description || JSON.stringify(m)) : String(m)));
+                if (items.length > 0) {
+                  requestedItemsStr = items.map((i: string) => `• ${i}`).join("<br/>");
+                  requestedItemsResolved = true;
+                }
+              } catch (e) {
+                console.error("Failed to parse requested items:", e);
+              }
+            }
+          }
+
+          if (requestedItemsResolved) updateData.updateRequestedItems = requestedItemsStr;
+          // Always store the raw (redacted) source of truth — the fetched
+          // Verification when we got one, otherwise the Merchant payload —
+          // so the real requirement is recoverable from the admin UI even
+          // when the outcome_code parsing above doesn't match Finix's
+          // actual shape for a given failure type.
+          updateData.updateRequestedCodes = redactFinixPayload((verificationPayload ?? data ?? {}) as object);
 
           if (app.onboardingStatus !== "MORE_INFORMATION_REQUIRED" && app.onboardingStatus !== "APPROVED") {
             updateData.onboardingStatus = "MORE_INFORMATION_REQUIRED";
