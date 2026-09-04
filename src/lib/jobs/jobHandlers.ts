@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { sendDonationReceipt } from "@/lib/giving/generateReceipt";
 import { syncPaymentToQuickBooks } from "@/lib/integrations/quickbooks/sync";
 import { computePledgeFulfillment } from "@/lib/pledges/pledgeFulfillment";
+import { sendReceiptEmail } from "@/lib/giving/sendReceiptEmail";
 import type { JobType } from "./backgroundJobs";
 
 /**
@@ -66,13 +67,38 @@ async function handlePledgeRecompute(job: BackgroundJob): Promise<void> {
   await computePledgeFulfillment(pledgeId);
 }
 
+/**
+ * sendReceiptEmail() (a plain confirmation email, not the PDF tax
+ * receipt) has no dedup mechanism of its own — see the REGENERABLE/
+ * optional classification and the accepted-residual-risk note at this
+ * job's enqueue site (donate/route.ts's recurring-creation branch): a
+ * lease that expires after the email actually sent but before this job
+ * is marked COMPLETED could resend once on reclaim. Acceptable for a
+ * non-financial confirmation email; this handler does not attempt to
+ * prevent it, unlike SEND_RECEIPT's DB-backed claim.
+ */
+async function handleSendPlainEmail(job: BackgroundJob): Promise<void> {
+  const payload = job.payloadJson as {
+    to: string;
+    name: string;
+    organizationName: string;
+    amountCents: number;
+    isRecurring: boolean;
+    interval?: string;
+    churchId?: string;
+    donorId?: string;
+  };
+  await sendReceiptEmail(payload.to, payload.name, payload.organizationName, payload.amountCents, payload.isRecurring, payload.interval, payload.churchId, payload.donorId);
+}
+
 export const JOB_HANDLERS: Partial<Record<JobType, JobHandler>> = {
   SEND_RECEIPT: handleSendReceipt,
   QUICKBOOKS_PAYMENT: handleQuickBooksPayment,
   PLEDGE_RECOMPUTE: handlePledgeRecompute,
-  // APLOS_PAYMENT, PRINTFUL_ORDER, SEND_PLAIN_EMAIL, ANALYTICS_RECORD: not
-  // yet implemented — PRINTFUL_ORDER deliberately waits for the Task 9
-  // payment/fulfillment-status separation.
+  SEND_PLAIN_EMAIL: handleSendPlainEmail,
+  // APLOS_PAYMENT, PRINTFUL_ORDER, ANALYTICS_RECORD: not yet implemented —
+  // PRINTFUL_ORDER deliberately waits for the Task 9 payment/fulfillment-
+  // status separation.
 };
 
 export class NoHandlerRegisteredError extends Error {

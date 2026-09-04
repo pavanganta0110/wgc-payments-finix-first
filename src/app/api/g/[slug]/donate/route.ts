@@ -6,7 +6,6 @@ import { FEE_CALCULATION_VERSION } from "@/lib/giving/feeCalculator";
 import { resolveWgcTransferFeeStrategy } from "@/lib/giving/serverFeeStrategy";
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
-import { sendReceiptEmail } from "@/lib/giving/sendReceiptEmail";
 import { normalizeUSPhone, isValidEmail } from "@/lib/validation";
 import { isGivingLinkUsable } from "@/lib/givingLinks/status";
 import { parseDonorFieldSettings, parseAllowedPaymentMethods, parseAllowedFrequencies } from "@/lib/givingLinks/types";
@@ -684,63 +683,87 @@ async function handleDonate(req: Request, slug: string) {
       // uncertain-outcome rule as the one-time flow applies (see the
       // comment above the transfer flow's post-charge write block).
       try {
-        await prisma.finixSubscription.upsert({
-          where: { finixSubscriptionId: subscription.id },
-          create: {
-            finixSubscriptionId: subscription.id,
-            churchId: church.id,
-            // The donor record was already resolved (created or matched by
-            // Finix identity) earlier in this request — this is the same
-            // donorRecord used for the one-time-transfer path below, never
-            // re-derived from the processor's subscription response.
-            donorId: donorRecord.id,
-            givingLinkId: link.id,
-            // Team-access Checkpoint 3: snapshotted once at subscription
-            // creation from the giving link's owner — see the comment on the
-            // one-time Payment.attributedUserId above for the full rationale.
-            // Every recurring charge generated from this subscription later
-            // (webhooks/finix/route.ts) inherits this value directly.
-            attributedUserId: resolvePaymentAttributionFromGivingLink(link, church.id),
-            finixMerchantId: church.finixMerchantId,
-            finixBuyerIdentityId: identityId,
-            finixPaymentInstrumentId: instrumentId,
-            fundId: resolvedFund.fundId,
-            fundName: resolvedFund.fundName,
-            state: subscription.state ?? "ACTIVE",
-            amountCents: totalCents,
-            currency: "USD",
-            billingInterval: interval,
-            collectionMethod: "BILL_AUTOMATICALLY",
-            nextBillingDate: parseFinixDate(subscription.next_billing_date),
-            startedAt: new Date(),
-            donationAmountCents,
-            donorCoversFee: link.feeCoverEnabled && coverFees,
-            feeCalculationVersion: FEE_CALCULATION_VERSION,
-            lastSyncedAt: new Date(),
-          },
-          update: {
-            state: subscription.state ?? undefined,
-            nextBillingDate: parseFinixDate(subscription.next_billing_date) ?? undefined,
-            lastSyncedAt: new Date(),
-          },
-        });
+        await prisma.$transaction(async (tx) => {
+          await tx.finixSubscription.upsert({
+            where: { finixSubscriptionId: subscription.id },
+            create: {
+              finixSubscriptionId: subscription.id,
+              churchId: church.id,
+              // The donor record was already resolved (created or matched by
+              // Finix identity) earlier in this request — this is the same
+              // donorRecord used for the one-time-transfer path below, never
+              // re-derived from the processor's subscription response.
+              donorId: donorRecord.id,
+              givingLinkId: link.id,
+              // Team-access Checkpoint 3: snapshotted once at subscription
+              // creation from the giving link's owner — see the comment on the
+              // one-time Payment.attributedUserId above for the full rationale.
+              // Every recurring charge generated from this subscription later
+              // (webhooks/finix/route.ts) inherits this value directly.
+              attributedUserId: resolvePaymentAttributionFromGivingLink(link, church.id),
+              finixMerchantId: church.finixMerchantId,
+              finixBuyerIdentityId: identityId,
+              finixPaymentInstrumentId: instrumentId,
+              fundId: resolvedFund.fundId,
+              fundName: resolvedFund.fundName,
+              state: subscription.state ?? "ACTIVE",
+              amountCents: totalCents,
+              currency: "USD",
+              billingInterval: interval,
+              collectionMethod: "BILL_AUTOMATICALLY",
+              nextBillingDate: parseFinixDate(subscription.next_billing_date),
+              startedAt: new Date(),
+              donationAmountCents,
+              donorCoversFee: link.feeCoverEnabled && coverFees,
+              feeCalculationVersion: FEE_CALCULATION_VERSION,
+              lastSyncedAt: new Date(),
+            },
+            update: {
+              state: subscription.state ?? undefined,
+              nextBillingDate: parseFinixDate(subscription.next_billing_date) ?? undefined,
+              lastSyncedAt: new Date(),
+            },
+          });
 
-        await prisma.paymentAttempt.update({
-          where: { id: attempt.id },
-          data: { status: "SUCCEEDED", donorId: donorRecord.id, finixTransferId: subscription.id },
+          await tx.paymentAttempt.update({
+            where: { id: attempt.id },
+            data: { status: "SUCCEEDED", donorId: donorRecord.id, finixTransferId: subscription.id },
+          });
+
+          // REGENERABLE/optional (Stage 2 Task 2 classification): this is a
+          // plain confirmation email, not a tax receipt — the subscription
+          // itself is already durable regardless of whether this sends.
+          // Still enqueued in the same transaction (free to include, and
+          // removes even the "lost on crash" window a fully-optional side
+          // effect doesn't strictly need). Unlike SEND_RECEIPT, this job has
+          // no dedup mechanism of its own inside sendReceiptEmail — a lease
+          // that expires AFTER the email actually sent but BEFORE the job
+          // is marked COMPLETED could resend once on reclaim. Accepted
+          // residual risk for a non-financial confirmation email; not
+          // accepted for the PDF tax receipt (SEND_RECEIPT), which is why
+          // that one carries its own DB-unique-constraint-backed claim.
+          await enqueueBackgroundJobInTransaction(tx, {
+            jobType: "SEND_PLAIN_EMAIL",
+            entityType: "FinixSubscription",
+            entityId: subscription.id,
+            dedupeKey: `SEND_PLAIN_EMAIL:subscription_created:${subscription.id}`,
+            payload: {
+              to: donor.email,
+              name: fullName,
+              organizationName: church.name,
+              amountCents: totalCents,
+              isRecurring: true,
+              interval,
+              churchId: church.id,
+              donorId: donorRecord.id,
+            },
+          });
         });
       } catch (writeError) {
         console.error("Post-confirmation database write failed after Finix confirmed the subscription:", writeError);
         return buildPaymentUncertainResponse(subscription.id, clientAttemptId);
       }
 
-      // FinixSubscription now durably exists — a failure in either of
-      // these must never be reported back as a failed/uncertain donation.
-      try {
-        await sendReceiptEmail(donor.email, fullName, church.name, totalCents, true, interval, church.id, donorRecord.id);
-      } catch (err) {
-        console.error("Failed to send recurring-donation receipt email:", err);
-      }
       try {
         await prisma.givingLink.update({
           where: { id: link.id },

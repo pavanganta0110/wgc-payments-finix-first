@@ -4,11 +4,13 @@ import type { BackgroundJob } from "@prisma/client";
 const mockSendDonationReceipt = vi.fn();
 const mockSyncPaymentToQuickBooks = vi.fn();
 const mockComputePledgeFulfillment = vi.fn();
+const mockSendReceiptEmail = vi.fn();
 const mockFindFirst = vi.fn();
 
 vi.mock("@/lib/giving/generateReceipt", () => ({ sendDonationReceipt: (...a: unknown[]) => mockSendDonationReceipt(...a) }));
 vi.mock("@/lib/integrations/quickbooks/sync", () => ({ syncPaymentToQuickBooks: (...a: unknown[]) => mockSyncPaymentToQuickBooks(...a) }));
 vi.mock("@/lib/pledges/pledgeFulfillment", () => ({ computePledgeFulfillment: (...a: unknown[]) => mockComputePledgeFulfillment(...a) }));
+vi.mock("@/lib/giving/sendReceiptEmail", () => ({ sendReceiptEmail: (...a: unknown[]) => mockSendReceiptEmail(...a) }));
 vi.mock("@/lib/prisma", () => ({ prisma: { quickBooksSyncRecord: { findFirst: (...a: unknown[]) => mockFindFirst(...a) } } }));
 
 function makeJob(overrides: Partial<BackgroundJob> = {}): BackgroundJob {
@@ -84,6 +86,19 @@ describe("dispatchJob", () => {
     const job = makeJob({ jobType: "PLEDGE_RECOMPUTE", entityType: "Pledge", entityId: "pledge-1", payloadJson: { pledgeId: "pledge-1" } });
     await dispatchJob(job);
     expect(mockComputePledgeFulfillment).toHaveBeenCalledWith("pledge-1");
+  });
+
+  it("SEND_PLAIN_EMAIL: calls sendReceiptEmail with the job's payload fields in order", async () => {
+    const { dispatchJob } = await import("../jobHandlers");
+    mockSendReceiptEmail.mockResolvedValue(undefined);
+    const job = makeJob({
+      jobType: "SEND_PLAIN_EMAIL",
+      entityType: "FinixSubscription",
+      entityId: "sub-1",
+      payloadJson: { to: "donor@example.com", name: "Jane Doe", organizationName: "Grace Church", amountCents: 1000, isRecurring: true, interval: "MONTHLY", churchId: "church-1", donorId: "donor-1" },
+    });
+    await dispatchJob(job);
+    expect(mockSendReceiptEmail).toHaveBeenCalledWith("donor@example.com", "Jane Doe", "Grace Church", 1000, true, "MONTHLY", "church-1", "donor-1");
   });
 
   it("unregistered job type throws NoHandlerRegisteredError, never silently succeeds", async () => {
