@@ -6,7 +6,6 @@ import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
 import { FEE_CALCULATION_VERSION } from "@/lib/giving/feeCalculator";
 import { resolveWgcTransferFeeStrategy } from "@/lib/giving/serverFeeStrategy";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
-import { sendDonationReceipt } from "@/lib/giving/generateReceipt";
 import { normalizeUSPhone, isValidEmail } from "@/lib/validation";
 import { toSafeErrorResponse, toSafePaymentErrorResponse } from "@/lib/utils/errorNormalizer";
 import { validateGoodsServicesInput, computeRecordedContributionAmountCents } from "@/lib/giving/goodsServices";
@@ -15,6 +14,7 @@ import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { isAuthError } from "@/lib/auth/errors";
 import { resolveOrCreateDonor } from "@/lib/donors/resolveOrCreateDonor";
 import { assertNonprofitApproved } from "@/lib/onboarding/nonprofitVerificationGuard";
+import { enqueueBackgroundJobInTransaction } from "@/lib/jobs/backgroundJobs";
 import crypto from "crypto";
 
 export async function POST(req: Request) {
@@ -256,84 +256,109 @@ export async function POST(req: Request) {
       ? computeRecordedContributionAmountCents(donationAmountCents, goodsServicesFairMarketValueCentsValue ?? 0)
       : donationAmountCents;
 
+    const succeededNow = (transfer.state || "").toUpperCase() === "SUCCEEDED";
+
     let newPayment;
     try {
-      await prisma.paymentAttempt.update({
-        where: { id: attempt.id },
-        data: {
-          status: (transfer.state || "PENDING").toUpperCase(),
-          finixTransferId: transfer.id,
-          donorId: donorRecord.id,
-        },
-      });
+      newPayment = await prisma.$transaction(async (tx) => {
+        await tx.paymentAttempt.update({
+          where: { id: attempt.id },
+          data: {
+            status: (transfer.state || "PENDING").toUpperCase(),
+            finixTransferId: transfer.id,
+            donorId: donorRecord.id,
+          },
+        });
 
-      await prisma.finixTransfer.upsert({
-        where: { finixTransferId: transfer.id },
-        create: {
-          finixTransferId: transfer.id,
-          churchId: church.id,
-          finixMerchantId: church.finixMerchantId,
-          finixPaymentInstrumentId: instrumentId,
-          type: transfer.type ?? "DEBIT",
-          state: transfer.state ?? "PENDING",
-          amountCents: totalCents,
-          currency: "USD",
-          source: "wgc_admin_payment",
-          tagsJson: transferPayload.tags,
-          createdAtFinix: new Date(),
-          lastSyncedAt: new Date(),
-        },
-        update: {
-          state: transfer.state ?? undefined,
-          lastSyncedAt: new Date(),
-        },
-      });
+        await tx.finixTransfer.upsert({
+          where: { finixTransferId: transfer.id },
+          create: {
+            finixTransferId: transfer.id,
+            churchId: church.id,
+            finixMerchantId: church.finixMerchantId,
+            finixPaymentInstrumentId: instrumentId,
+            type: transfer.type ?? "DEBIT",
+            state: transfer.state ?? "PENDING",
+            amountCents: totalCents,
+            currency: "USD",
+            source: "wgc_admin_payment",
+            tagsJson: transferPayload.tags,
+            createdAtFinix: new Date(),
+            lastSyncedAt: new Date(),
+          },
+          update: {
+            state: transfer.state ?? undefined,
+            lastSyncedAt: new Date(),
+          },
+        });
 
-      newPayment = await prisma.payment.create({
-        data: {
-          churchId: church.id,
-          donorId: donorRecord.id,
-          // Team-access Checkpoint 3: no "assign to another user" parameter
-          // exists in this flow today (createdByAdminUserId below has always
-          // been unconditionally the acting session user, never
-          // client-selectable) — so this defaults to the acting merchant user
-          // for every role, which also happens to satisfy "FUNDRAISER is
-          // always forced to themselves" for free, without extra branching.
-          // Building an explicit OWNER/ADMIN "assign to someone else" control
-          // would be new UI + API surface, out of scope for this checkpoint.
-          attributedUserId: auth.userId,
-          finixTransferId: transfer.id,
-          finixBuyerIdentityId: identityId,
-          finixPaymentInstrumentId: instrumentId,
-          amountCents: totalCents,
-          donationAmountCents,
-          feeCoveredCents,
-          paymentMethodType: method === "card" ? "PAYMENT_CARD" : "BANK_ACCOUNT",
-          status: transfer.state ?? "PENDING",
-          idempotencyId,
-          fraudSessionId,
-          fundName: fundName || null,
-          note: note || null,
-          isAnonymous: isAnonymous ?? false,
-          createdByAdminUserId: auth.userId,
-          paymentAttemptId: attempt.id,
-          goodsServicesProvided: goodsServicesProvidedValue,
-          goodsServicesDescription: goodsServicesProvidedValue ? goodsServicesDescription : null,
-          goodsServicesFairMarketValueCents: goodsServicesFairMarketValueCentsValue,
-          goodsServicesInternalNote: goodsServicesProvidedValue ? goodsServicesInternalNote : null,
-          recordedContributionAmountCents,
-          donorCoversFee: coverFees,
-          cardBrand: feeStrategy.normalizedCardBrand,
-          percentageBps: feeStrategy.percentageBasisPoints,
-          fixedFeeCents: feeStrategy.fixedFeeCents,
-          feeCalculationVersion: FEE_CALCULATION_VERSION,
-          merchantExpectedNetCents: totalCents - feeStrategy.expectedFeeCents,
-        },
+        const payment = await tx.payment.create({
+          data: {
+            churchId: church.id,
+            donorId: donorRecord.id,
+            // Team-access Checkpoint 3: no "assign to another user" parameter
+            // exists in this flow today (createdByAdminUserId below has always
+            // been unconditionally the acting session user, never
+            // client-selectable) — so this defaults to the acting merchant user
+            // for every role, which also happens to satisfy "FUNDRAISER is
+            // always forced to themselves" for free, without extra branching.
+            // Building an explicit OWNER/ADMIN "assign to someone else" control
+            // would be new UI + API surface, out of scope for this checkpoint.
+            attributedUserId: auth.userId,
+            finixTransferId: transfer.id,
+            finixBuyerIdentityId: identityId,
+            finixPaymentInstrumentId: instrumentId,
+            amountCents: totalCents,
+            donationAmountCents,
+            feeCoveredCents,
+            paymentMethodType: method === "card" ? "PAYMENT_CARD" : "BANK_ACCOUNT",
+            status: transfer.state ?? "PENDING",
+            idempotencyId,
+            fraudSessionId,
+            fundName: fundName || null,
+            note: note || null,
+            isAnonymous: isAnonymous ?? false,
+            createdByAdminUserId: auth.userId,
+            paymentAttemptId: attempt.id,
+            goodsServicesProvided: goodsServicesProvidedValue,
+            goodsServicesDescription: goodsServicesProvidedValue ? goodsServicesDescription : null,
+            goodsServicesFairMarketValueCents: goodsServicesFairMarketValueCentsValue,
+            goodsServicesInternalNote: goodsServicesProvidedValue ? goodsServicesInternalNote : null,
+            recordedContributionAmountCents,
+            donorCoversFee: coverFees,
+            cardBrand: feeStrategy.normalizedCardBrand,
+            percentageBps: feeStrategy.percentageBasisPoints,
+            fixedFeeCents: feeStrategy.fixedFeeCents,
+            feeCalculationVersion: FEE_CALCULATION_VERSION,
+            merchantExpectedNetCents: totalCents - feeStrategy.expectedFeeCents,
+          },
+        });
+
+        // TRANSACTIONAL OUTBOX (Stage 2 Task 2) — see donate/route.ts for
+        // the full pattern this mirrors. This flow has no QuickBooks sync
+        // today (confirmed absent by the Task 1 audit) — not adding it
+        // here either; that would be a business-behavior expansion, not a
+        // neutral refactor, and needs an explicit decision, not a silent
+        // side effect of this change.
+        if (succeededNow) {
+          await enqueueBackgroundJobInTransaction(tx, {
+            jobType: "SEND_RECEIPT",
+            entityType: "Payment",
+            entityId: payment.id,
+            dedupeKey: `SEND_RECEIPT:payment:${payment.id}:version:1`,
+            payload: { paymentId: payment.id, churchId: church.id },
+          });
+        }
+
+        return payment;
       });
     } catch (writeError: unknown) {
       if (writeError instanceof Prisma.PrismaClientKnownRequestError && writeError.code === "P2002") {
         const existingPayment = await prisma.payment.findUnique({ where: { finixTransferId: transfer.id } });
         if (existingPayment) {
+          await prisma.paymentAttempt
+            .update({ where: { id: attempt.id }, data: { status: (transfer.state || "PENDING").toUpperCase(), finixTransferId: transfer.id, donorId: donorRecord.id } })
+            .catch(() => {});
           logPaymentSafetyEvent("PAYMENT_DUPLICATE_PREVENTED", {
             churchId: church.id,
             paymentAttemptId: attempt.id,
@@ -376,14 +401,8 @@ export async function POST(req: Request) {
       },
     });
 
-    const succeeded = (transfer.state || "").toUpperCase() === "SUCCEEDED";
-    if (succeeded) {
-      try {
-        await sendDonationReceipt(newPayment.id, church.id);
-      } catch (err) {
-        console.error("Failed to send donation receipt:", err);
-      }
-    }
+    // Receipt email now runs as a durable BackgroundJob, enqueued inside
+    // the same transaction that created/recovered newPayment above.
 
     return NextResponse.json({ success: true, transferId: transfer.id, state: transfer.state });
   } catch (error: any) {
