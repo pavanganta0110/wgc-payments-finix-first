@@ -27,6 +27,7 @@ const mockPrisma = {
   invoicePaymentAttempt: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
   invoiceActivity: { create: vi.fn() },
   finixTransfer: { upsert: vi.fn() },
+  backgroundJob: { create: vi.fn(), findUnique: vi.fn() },
   $transaction: vi.fn(),
 };
 vi.mock("@/lib/prisma", () => ({ prisma: mockPrisma }));
@@ -88,6 +89,7 @@ beforeEach(() => {
   mockPrisma.invoicePayment.create.mockResolvedValue({ id: "invpay-1" });
   mockPrisma.invoicePaymentAttempt.findUnique.mockResolvedValue(null);
   mockPrisma.invoicePaymentAttempt.create.mockResolvedValue({ id: "attempt-row-1" });
+  mockPrisma.backgroundJob.create.mockResolvedValue({ id: "job-1" });
   mockPrisma.$transaction.mockImplementation(async (fn: unknown) => {
     if (typeof fn === "function") return (fn as (tx: typeof mockPrisma) => unknown)(mockPrisma);
     return Promise.all(fn as Promise<unknown>[]);
@@ -219,6 +221,22 @@ describe("POST /api/invoice/[token]/pay — happy path", () => {
     expect(mockPrisma.invoicePayment.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ source: "FINIX", grossAmountCents: 10000, status: "SUCCEEDED" }) })
     );
+  });
+
+  it("enqueues an INVOICE_RECEIPT background job inside the transaction instead of sending the receipt email synchronously", async () => {
+    const { sendInvoicePaymentReceiptEmail } = await import("@/lib/invoices/invoiceEmails");
+    const { POST } = await load();
+    await POST(postReq(validBody()), params());
+    expect(mockPrisma.backgroundJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          jobType: "INVOICE_RECEIPT",
+          entityType: "InvoicePayment",
+          dedupeKey: expect.stringContaining("INVOICE_RECEIPT:invoicePayment:"),
+        }),
+      })
+    );
+    expect(sendInvoicePaymentReceiptEmail).not.toHaveBeenCalled();
   });
 
   it("never creates a Donor record for the payer", async () => {

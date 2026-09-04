@@ -5,12 +5,14 @@ const mockSendDonationReceipt = vi.fn();
 const mockSyncPaymentToQuickBooks = vi.fn();
 const mockComputePledgeFulfillment = vi.fn();
 const mockSendReceiptEmail = vi.fn();
+const mockSendInvoicePaymentReceiptEmail = vi.fn();
 const mockFindFirst = vi.fn();
 
 vi.mock("@/lib/giving/generateReceipt", () => ({ sendDonationReceipt: (...a: unknown[]) => mockSendDonationReceipt(...a) }));
 vi.mock("@/lib/integrations/quickbooks/sync", () => ({ syncPaymentToQuickBooks: (...a: unknown[]) => mockSyncPaymentToQuickBooks(...a) }));
 vi.mock("@/lib/pledges/pledgeFulfillment", () => ({ computePledgeFulfillment: (...a: unknown[]) => mockComputePledgeFulfillment(...a) }));
 vi.mock("@/lib/giving/sendReceiptEmail", () => ({ sendReceiptEmail: (...a: unknown[]) => mockSendReceiptEmail(...a) }));
+vi.mock("@/lib/invoices/invoiceEmails", () => ({ sendInvoicePaymentReceiptEmail: (...a: unknown[]) => mockSendInvoicePaymentReceiptEmail(...a) }));
 vi.mock("@/lib/prisma", () => ({ prisma: { quickBooksSyncRecord: { findFirst: (...a: unknown[]) => mockFindFirst(...a) } } }));
 
 function makeJob(overrides: Partial<BackgroundJob> = {}): BackgroundJob {
@@ -99,6 +101,21 @@ describe("dispatchJob", () => {
     });
     await dispatchJob(job);
     expect(mockSendReceiptEmail).toHaveBeenCalledWith("donor@example.com", "Jane Doe", "Grace Church", 1000, true, "MONTHLY", "church-1", "donor-1");
+  });
+
+  it("INVOICE_RECEIPT: calls sendInvoicePaymentReceiptEmail with rethrow:true so a real failure propagates and the outbox retries", async () => {
+    const { dispatchJob } = await import("../jobHandlers");
+    mockSendInvoicePaymentReceiptEmail.mockResolvedValue(undefined);
+    const job = makeJob({ jobType: "INVOICE_RECEIPT", entityType: "InvoicePayment", entityId: "invpay-1", payloadJson: { invoiceId: "inv-1", invoicePaymentId: "invpay-1" } });
+    await dispatchJob(job);
+    expect(mockSendInvoicePaymentReceiptEmail).toHaveBeenCalledWith("inv-1", "invpay-1", { rethrow: true });
+  });
+
+  it("INVOICE_RECEIPT: propagates a real send failure so the outbox retries", async () => {
+    const { dispatchJob } = await import("../jobHandlers");
+    mockSendInvoicePaymentReceiptEmail.mockRejectedValue(new Error("send failed"));
+    const job = makeJob({ jobType: "INVOICE_RECEIPT", entityType: "InvoicePayment", entityId: "invpay-1", payloadJson: { invoiceId: "inv-1", invoicePaymentId: "invpay-1" } });
+    await expect(dispatchJob(job)).rejects.toThrow("send failed");
   });
 
   it("unregistered job type throws NoHandlerRegisteredError, never silently succeeds", async () => {

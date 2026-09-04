@@ -109,10 +109,12 @@ export async function sendInvoiceEmail(invoiceId: string, token: string): Promis
 }
 
 /** Sent to the payer after any successful payment (Finix or offline) —
- * confirms the amount, method, and remaining balance. Never blocks the
- * caller's own success response; failures are swallowed and logged, same
- * as the existing donation-receipt send pattern. */
-export async function sendInvoicePaymentReceiptEmail(invoiceId: string, paymentId: string) {
+ * confirms the amount, method, and remaining balance. By default never
+ * blocks the caller; failures are swallowed and logged, same as the
+ * existing donation-receipt send pattern. Pass `rethrow: true` when the
+ * caller is the Stage 2 background-job outbox (INVOICE_RECEIPT handler),
+ * which needs a real failure to propagate so the job actually retries. */
+export async function sendInvoicePaymentReceiptEmail(invoiceId: string, paymentId: string, options?: { rethrow?: boolean }) {
   try {
     const [invoice, payment] = await Promise.all([
       prisma.invoice.findUnique({ where: { id: invoiceId } }),
@@ -169,6 +171,7 @@ export async function sendInvoicePaymentReceiptEmail(invoiceId: string, paymentI
     });
   } catch (err) {
     console.error("Failed to send invoice payment receipt email:", err);
+    if (options?.rethrow) throw err;
   }
 }
 

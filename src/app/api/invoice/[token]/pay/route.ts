@@ -13,6 +13,7 @@ import { FEE_CALCULATION_VERSION } from "@/lib/giving/feeCalculator";
 import { resolveWgcTransferFeeStrategy } from "@/lib/giving/serverFeeStrategy";
 import { toSafePaymentErrorResponse } from "@/lib/utils/errorNormalizer";
 import { logDashboardAction } from "@/lib/dashboardAudit";
+import { enqueueBackgroundJobInTransaction } from "@/lib/jobs/backgroundJobs";
 
 /**
  * Public, unauthenticated invoice payment submission — the payer is never
@@ -352,7 +353,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       })
     : status;
 
-  let createdPaymentId: string | null = null;
   let duplicateExisting: { id: string; status: string; finixTransferId: string | null } | null = null;
   try {
   await prisma.$transaction(async (tx) => {
@@ -378,8 +378,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         invoicePaymentAttemptId: attempt.id,
       },
     });
-    createdPaymentId = createdPayment.id;
-
     if (paymentStatus === "SUCCEEDED") {
       const newAmountPaidCents = balance.amountPaidCents + amountCents;
       await tx.invoice.update({
@@ -411,6 +409,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
             }),
           },
         },
+      });
+
+      await enqueueBackgroundJobInTransaction(tx, {
+        jobType: "INVOICE_RECEIPT",
+        entityType: "InvoicePayment",
+        entityId: createdPayment.id,
+        dedupeKey: `INVOICE_RECEIPT:invoicePayment:${createdPayment.id}`,
+        payload: { invoiceId: invoice.id, invoicePaymentId: createdPayment.id },
       });
     }
 
@@ -452,7 +458,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
           detail: "P2002 on InvoicePayment.finixTransferId — a concurrent writer already recorded this transfer",
         });
         duplicateExisting = { id: existing.id, status: existing.status, finixTransferId: existing.finixTransferId };
-        createdPaymentId = existing.id;
       } else {
         logPaymentSafetyEvent("PAYMENT_STATUS_UNCERTAIN", { churchId: invoice.churchId, finixTransferId: transfer.id, source: "checkout", route: "/api/invoice/[token]/pay" });
         return NextResponse.json(
@@ -478,10 +483,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       entityId: invoice.id,
       metadata: { amountCents, method: finixMethod, finixTransferId: transfer.id, payerEmail: payer.email },
     });
-    if (createdPaymentId) {
-      const { sendInvoicePaymentReceiptEmail } = await import("@/lib/invoices/invoiceEmails");
-      await sendInvoicePaymentReceiptEmail(invoice.id, createdPaymentId);
-    }
+    // The invoice receipt email is enqueued as a background job inside the
+    // same transaction above (REQUIRED transactional outbox, Stage 2 Task
+    // 2) — no synchronous send here anymore. On the P2002 duplicate path
+    // (duplicateExisting set), the winning transaction already enqueued it
+    // once; we deliberately do not re-enqueue here.
   }
 
   return NextResponse.json({

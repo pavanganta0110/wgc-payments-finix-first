@@ -4,6 +4,7 @@ import { sendDonationReceipt } from "@/lib/giving/generateReceipt";
 import { syncPaymentToQuickBooks } from "@/lib/integrations/quickbooks/sync";
 import { computePledgeFulfillment } from "@/lib/pledges/pledgeFulfillment";
 import { sendReceiptEmail } from "@/lib/giving/sendReceiptEmail";
+import { sendInvoicePaymentReceiptEmail } from "@/lib/invoices/invoiceEmails";
 import type { JobType } from "./backgroundJobs";
 
 /**
@@ -91,11 +92,25 @@ async function handleSendPlainEmail(job: BackgroundJob): Promise<void> {
   await sendReceiptEmail(payload.to, payload.name, payload.organizationName, payload.amountCents, payload.isRecurring, payload.interval, payload.churchId, payload.donorId);
 }
 
+/**
+ * sendInvoicePaymentReceiptEmail() swallows its own errors by default (same
+ * pattern as the other WGC email senders) — pass rethrow:true so a genuine
+ * send failure actually surfaces here and the outbox retries it. Idempotent
+ * in the sense that matters: re-running just resends the same receipt email
+ * (no dedup token to burn), acceptable for a non-financial confirmation,
+ * same trade-off already accepted for SEND_PLAIN_EMAIL.
+ */
+async function handleInvoiceReceipt(job: BackgroundJob): Promise<void> {
+  const { invoiceId, invoicePaymentId } = job.payloadJson as { invoiceId: string; invoicePaymentId: string };
+  await sendInvoicePaymentReceiptEmail(invoiceId, invoicePaymentId, { rethrow: true });
+}
+
 export const JOB_HANDLERS: Partial<Record<JobType, JobHandler>> = {
   SEND_RECEIPT: handleSendReceipt,
   QUICKBOOKS_PAYMENT: handleQuickBooksPayment,
   PLEDGE_RECOMPUTE: handlePledgeRecompute,
   SEND_PLAIN_EMAIL: handleSendPlainEmail,
+  INVOICE_RECEIPT: handleInvoiceReceipt,
   // APLOS_PAYMENT, PRINTFUL_ORDER, ANALYTICS_RECORD: not yet implemented —
   // PRINTFUL_ORDER deliberately waits for the Task 9 payment/fulfillment-
   // status separation.
