@@ -174,8 +174,8 @@ export default function Sidebar({ role }: { role?: string } = {}) {
           <GatewayIcon className="h-8 w-auto shrink-0" />
           {!collapsed && (
             <div className="flex flex-col leading-none">
-              <span className="font-serif text-base font-bold text-[#14213D]">WGC</span>
-              <span className="text-[9px] uppercase font-mono tracking-widest text-[#41506F] mt-0.5">Payments</span>
+              <span className="font-serif text-base font-bold text-wgc-navy-950">WGC</span>
+              <span className="text-[9px] uppercase font-mono tracking-widest text-wgc-navy-400 mt-0.5">Payments</span>
             </div>
           )}
         </Link>
@@ -212,12 +212,14 @@ export default function Sidebar({ role }: { role?: string } = {}) {
                 <button
                   onClick={() => toggleGroup(item.name)}
                   title={collapsed ? item.name : undefined}
+                  aria-expanded={isOpen}
+                  aria-controls={`nav-group-${item.name}`}
                   className={cn(
-                    "w-full flex items-center gap-3 py-2.5 rounded-xl text-sm font-semibold transition-colors",
-                    collapsed ? "justify-center px-2" : "px-4",
+                    "w-full flex items-center gap-3 py-2.5 rounded-xl text-sm font-semibold transition-colors border-l-2",
+                    collapsed ? "justify-center px-2 border-transparent" : "pl-[14px] pr-4",
                     isGroupActive
-                      ? "text-[#010409]"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      ? "bg-wgc-gold-500/10 text-wgc-navy-950 border-wgc-gold-500"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-transparent"
                   )}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
@@ -231,7 +233,7 @@ export default function Sidebar({ role }: { role?: string } = {}) {
                   )}
                 </button>
                 {!collapsed && isOpen && (
-                  <div className="ml-4 mt-1 space-y-1 border-l border-slate-100 pl-4">
+                  <div id={`nav-group-${item.name}`} className="ml-4 mt-1 space-y-1 border-l border-slate-100 pl-4">
                     {item.children.map((child) => {
                       const isActive = pathname === child.href;
                       return (
@@ -242,7 +244,7 @@ export default function Sidebar({ role }: { role?: string } = {}) {
                           className={cn(
                             "block py-2 rounded-lg text-sm transition-colors",
                             isActive
-                              ? "font-bold text-[#010409]"
+                              ? "font-bold text-wgc-navy-950"
                               : "text-slate-500 hover:text-slate-900"
                           )}
                         >
@@ -264,12 +266,13 @@ export default function Sidebar({ role }: { role?: string } = {}) {
                 href={item.href}
                 title={collapsed ? item.name : undefined}
                 prefetch={false}
+                aria-current={isActive ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-3 py-2.5 rounded-xl text-sm font-semibold transition-colors",
-                  collapsed ? "justify-center px-2" : "px-4",
+                  "flex items-center gap-3 py-2.5 rounded-xl text-sm font-semibold transition-colors border-l-2",
+                  collapsed ? "justify-center px-2 border-transparent" : "pl-[14px] pr-4",
                   isActive
-                    ? "bg-[#eab308]/10 text-[#010409]"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    ? "bg-wgc-gold-500/10 text-wgc-navy-950 border-wgc-gold-500"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-transparent"
                 )}
               >
                 <Icon className="w-4 h-4 shrink-0" />
