@@ -75,15 +75,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ churchI
 
   const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
   const setPasswordLink = `${process.env.NEXT_PUBLIC_APP_URL || "https://www.wgcpayments.com"}/merchant/set-password/${rawToken}`;
+  const bodyHtml = `<p>You've been invited to join <strong>${church.name}</strong> as a ${roleLabel} on WGC Payments.</p>
+               <p><a href="${setPasswordLink}">Accept invitation and set your password</a></p>
+               <p>This invitation link expires in 7 days.</p>`;
   const emailResult = await sendWgcEmail({
     to: email,
     subject: `You've been invited to join ${church.name} on WGC Payments`,
     title: "You're invited",
     badgeText: "Team Invitation",
     badgeColor: "#0B5DBC",
-    bodyHtml: `<p>You've been invited to join <strong>${church.name}</strong> as a ${roleLabel} on WGC Payments.</p>
-               <p><a href="${setPasswordLink}">Accept invitation and set your password</a></p>
-               <p>This invitation link expires in 7 days.</p>`,
+    bodyHtml,
   });
 
   await prisma.emailLog.create({
@@ -94,6 +95,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ churchI
       status: emailResult.success ? "SENT" : "ERROR",
       sentAt: emailResult.success ? new Date() : null,
       error: emailResult.success ? null : String(emailResult.error ?? "unknown error"),
+      bodyHtml,
     },
   });
 

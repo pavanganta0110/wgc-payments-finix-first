@@ -95,6 +95,7 @@ export async function sendWebhookEmail(
         to: to,
         subject: subject,
         status: "PENDING",
+        bodyHtml,
       },
     });
   });

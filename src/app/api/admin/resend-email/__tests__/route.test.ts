@@ -77,6 +77,13 @@ describe("POST /api/admin/resend-email — MORE_INFORMATION_REQUIRED", () => {
     expect(call.bodyHtml).toMatch(/https:\/\/www\.wgcpayments\.com\/onboarding\/update\/[a-f0-9]{64}/);
     // No longer the old "log in to your dashboard" generic text.
     expect(call.bodyHtml).not.toContain("log in to your merchant dashboard");
+
+    // The actual sent HTML is now stored so it can be viewed later from
+    // the admin Email Logs page (2026-09-04 request) — previously nothing
+    // recorded what an email actually said.
+    expect(mockPrisma.emailLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ bodyHtml: call.bodyHtml }) })
+    );
   });
 
   it("regenerates and stores a fresh secure token on every resend, so an expired/used link is replaced", async () => {

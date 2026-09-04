@@ -66,7 +66,8 @@ export async function POST(req: Request) {
           to: contactEmail,
           subject: subject,
           status: "SENT",
-          sentAt: new Date()
+          sentAt: new Date(),
+          bodyHtml
         }
       });
       return NextResponse.json({ success: true });

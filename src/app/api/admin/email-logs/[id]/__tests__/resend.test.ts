@@ -86,6 +86,12 @@ describe("POST /api/admin/email-logs/[id]/resend — onboarding status emails", 
         data: expect.objectContaining({ updateTokenHash: expect.stringMatching(/^[a-f0-9]{64}$/) }),
       })
     );
+
+    // The actual sent HTML is now stored so it can be viewed later from
+    // the admin Email Logs page (2026-09-04 request).
+    expect(mockPrisma.emailLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ bodyHtml: call.bodyHtml }) })
+    );
   });
 
   it("handles the ADMIN_RESEND_ prefixed log type the same way (a resend-of-a-resend)", async () => {

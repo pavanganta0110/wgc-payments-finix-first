@@ -186,16 +186,17 @@ export async function provisionChurchAccount(app: {
   // pattern already used in billingEmails.ts.
   const setPasswordLink = `${process.env.NEXT_PUBLIC_APP_URL || "https://www.wgcpayments.com"}/merchant/set-password/${rawToken}`;
 
+  const bodyHtml = `<p>Hi ${app.contactName || orgName},</p>
+               <p>Your WGC Payments merchant dashboard is ready. Use the secure link below to set your password and log in.</p>
+               <p><a href="${setPasswordLink}">Set your password</a></p>
+               <p>This link expires in 7 days. If it expires, contact WGC Payments Support and we'll send a new one.</p>`;
   const result = await sendWgcEmail({
     to: app.contactEmail,
     subject: "Your WGC Payments dashboard access",
     title: "Set up your dashboard access",
     badgeText: "Action Required",
     badgeColor: "#0B5DBC",
-    bodyHtml: `<p>Hi ${app.contactName || orgName},</p>
-               <p>Your WGC Payments merchant dashboard is ready. Use the secure link below to set your password and log in.</p>
-               <p><a href="${setPasswordLink}">Set your password</a></p>
-               <p>This link expires in 7 days. If it expires, contact WGC Payments Support and we'll send a new one.</p>`,
+    bodyHtml,
   });
 
   // Logged unconditionally (success or failure) so this is visible in the
@@ -211,6 +212,7 @@ export async function provisionChurchAccount(app: {
       status: result.success ? "SENT" : "ERROR",
       sentAt: result.success ? new Date() : null,
       error: result.success ? null : String(result.error ?? "unknown error"),
+      bodyHtml,
     },
   });
 
