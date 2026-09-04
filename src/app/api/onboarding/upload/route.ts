@@ -5,11 +5,37 @@ import { finixClient } from "@/lib/finix/client";
 import { extractRequestedFileType } from "@/lib/finix/parseVerificationOutcomes";
 import { sendWgcEmail, sendWgcAdminEmail } from "@/lib/email";
 
+// Matches UpdateForm.tsx's field-naming convention: each upload slot is
+// submitted as `file__<finixFileType>` (finixFileType may be the empty
+// string for the generic single-slot fallback), so more than one
+// differently-typed document can be submitted in the same request
+// (2026-09-04 finding: Finix can request several distinct documents at
+// once — e.g. a bank statement AND an EDD document — and a single
+// unlabeled file input can't say which upload is for which).
+const FILE_FIELD_PREFIX = "file__";
+const ALLOWED_FILE_TYPES = ["image/jpeg", "image/png", "application/pdf"];
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
     const token = formData.get("token") as string;
-    const file = formData.get("file") as File | null;
+
+    const filesToUpload: { finixFileType: string; file: File }[] = [];
+    for (const [key, value] of formData.entries()) {
+      if (key.startsWith(FILE_FIELD_PREFIX) && value instanceof File) {
+        filesToUpload.push({ finixFileType: key.slice(FILE_FIELD_PREFIX.length) || "ADDITIONAL_DOCUMENTATION", file: value });
+      }
+    }
+    // Legacy fallback: an in-flight request from a page served just
+    // before this deploy may still submit the old single unprefixed
+    // `file` field — honored the same way it always was (type resolved
+    // from the stored Verification, if any).
+    const legacyFile = formData.get("file");
+    if (legacyFile instanceof File) {
+      filesToUpload.push({ finixFileType: "", file: legacyFile }); // resolved below once `app` is loaded
+    }
+
     // "Update Data" style underwriting requests (DBA, ownership/business
     // type, MCC, email) have no document to upload at all — previously
     // this route required a file unconditionally, so a merchant asked only
@@ -24,7 +50,7 @@ export async function POST(req: Request) {
     const email = (formData.get("email") as string | null)?.trim() || undefined;
     const hasFieldUpdates = Boolean(doingBusinessAs || businessType || mcc || email);
 
-    if (!token || (!file && !hasFieldUpdates)) {
+    if (!token || (filesToUpload.length === 0 && !hasFieldUpdates)) {
       return NextResponse.json({ error: "Missing token, and no file or field update provided" }, { status: 400 });
     }
 
@@ -52,14 +78,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Configuration error: Identity missing." }, { status: 400 });
     }
 
-    // Validate file, if one was provided
-    if (file) {
-      const allowedTypes = ["image/jpeg", "image/png", "application/pdf"];
-      if (!allowedTypes.includes(file.type)) {
+    // Resolve the legacy field's type now that `app` is loaded, and
+    // validate every file.
+    for (const entry of filesToUpload) {
+      if (entry.finixFileType === "") {
+        entry.finixFileType = extractRequestedFileType(app.updateRequestedCodes) || "ADDITIONAL_DOCUMENTATION";
+      }
+      if (!ALLOWED_FILE_TYPES.includes(entry.file.type)) {
         return NextResponse.json({ error: "Invalid file type. Only JPG, PNG, and PDF are allowed." }, { status: 400 });
       }
-
-      if (file.size > 10 * 1024 * 1024) {
+      if (entry.file.size > MAX_FILE_SIZE_BYTES) {
         return NextResponse.json({ error: "File too large. Maximum size is 10MB." }, { status: 400 });
       }
     }
@@ -73,8 +101,9 @@ export async function POST(req: Request) {
     }
 
     // 1. Push any requested field corrections to the Finix Identity first —
-    // these are independent of the file upload below and Finix re-reviews
-    // both together once the single verification trigger (step 3) fires.
+    // these are independent of the file upload(s) below and Finix
+    // re-reviews everything together once the single verification trigger
+    // (step 3) fires.
     if (hasFieldUpdates && app.finixIdentityId) {
       const entity: Record<string, string> = {};
       if (doingBusinessAs) entity.doing_business_as = doingBusinessAs;
@@ -84,37 +113,27 @@ export async function POST(req: Request) {
       await finixClient.updateIdentity(app.finixIdentityId, { entity });
     }
 
-    let finixFileId: string | undefined;
-    let finixFileType = "ADDITIONAL_DOCUMENTATION";
-    if (file) {
-      // Use the actual file type Finix's outstanding Verification asked
-      // for (e.g. "ENHANCED_DUE_DILIGENCE_DOCUMENT") when we have it on
-      // file — falls back to the generic type only when the requirement
-      // wasn't a parseable FILE_UPLOAD outcome (e.g. updateRequestedCodes
-      // still holds an older raw Merchant payload from before the
-      // Verification-parsing fix, or this file wasn't actually requested
-      // by name).
-      const requestedFileType = extractRequestedFileType(app.updateRequestedCodes);
-      if (requestedFileType) finixFileType = requestedFileType;
-
-      // 2. Create File Resource in Finix
+    // 2. Create a File Resource + upload content in Finix for every
+    // submitted file, each tagged with its own real Finix file type
+    // (e.g. "ENHANCED_DUE_DILIGENCE_DOCUMENT") rather than one generic
+    // type for all of them.
+    const uploadedDocuments: { finixFileId: string; finixFileType: string; file: File }[] = [];
+    for (const { finixFileType, file } of filesToUpload) {
       const fileResource = await finixClient.createFileResource({
         display_name: file.name,
         linked_to: app.finixMerchantId,
         type: finixFileType
       });
-
-      finixFileId = fileResource.id;
+      const finixFileId = fileResource.id;
       if (!finixFileId) {
         throw new Error("Failed to create file resource in Finix.");
       }
-
-      // 3. Upload File Content to Finix
       await finixClient.uploadFileContent(finixFileId, file);
+      uploadedDocuments.push({ finixFileId, finixFileType, file });
     }
 
-    // 4. Trigger a new Verification if Identity exists — once, regardless
-    // of whether this submission included a file, field updates, or both.
+    // 3. Trigger a new Verification if Identity exists — once, regardless
+    // of how many files and/or field updates this submission included.
     if (app.finixIdentityId) {
       try {
         await finixClient.createVerification(app.finixIdentityId);
@@ -123,10 +142,10 @@ export async function POST(req: Request) {
       }
     }
 
-    // 5. Create Audit Record (file submissions only — MerchantDocument is
+    // 4. Create an Audit Record per uploaded document (MerchantDocument is
     // document-shaped; field-update changes are captured in the admin
     // email below instead of a new table for this initial gap-fix).
-    if (file && finixFileId) {
+    for (const { finixFileId, finixFileType, file } of uploadedDocuments) {
       await prisma.merchantDocument.create({
         data: {
           onboardingApplicationId: app.id,
@@ -141,7 +160,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // 6. Update Database Status & Invalidate Token
+    // 5. Update Database Status & Invalidate Token
     await prisma.onboardingApplication.update({
       where: { id: app.id },
       data: {
@@ -153,7 +172,7 @@ export async function POST(req: Request) {
       }
     });
 
-    // 7. Send Email to Merchant
+    // 6. Send Email to Merchant
     const safeOrgName = app.organizationName || "your organization";
     await sendWgcEmail({
       to: app.contactEmail,
@@ -165,7 +184,7 @@ export async function POST(req: Request) {
                  <p>Your application has been resubmitted for review. We will notify you once the review is completed or if any further information is required.</p>`
     });
 
-    // 8. Send Email to Admin
+    // 7. Send Email to Admin
     const fieldsUpdated = [
       doingBusinessAs ? "DBA" : null,
       businessType ? "Ownership Type" : null,
@@ -173,7 +192,7 @@ export async function POST(req: Request) {
       email ? "Email" : null,
     ].filter((f): f is string => Boolean(f));
     const whatChanged = [
-      file ? `document "${file.name}"` : null,
+      uploadedDocuments.length > 0 ? `document(s): ${uploadedDocuments.map((d) => d.file.name).join(", ")}` : null,
       fieldsUpdated.length > 0 ? `field update(s): ${fieldsUpdated.join(", ")}` : null,
     ].filter(Boolean).join(" and ");
 
@@ -183,7 +202,7 @@ export async function POST(req: Request) {
       finixMerchantId: app.finixMerchantId || undefined,
       finixIdentityId: app.finixIdentityId || undefined,
       newStatus: "UNDER_REVIEW",
-      documentsUploaded: file?.name,
+      documentsUploaded: uploadedDocuments.length > 0 ? uploadedDocuments.map((d) => d.file.name).join(", ") : undefined,
       whatHappened: `The merchant submitted ${whatChanged} via the secure link. A new verification was triggered.`,
       actionNeeded: "Wait for Finix to review the new verification.",
       adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications",
@@ -191,8 +210,9 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ success: true, message: "Information submitted successfully." });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Secure upload error:", error);
-    return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Internal Server Error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

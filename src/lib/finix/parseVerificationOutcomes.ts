@@ -51,37 +51,54 @@ export function parseVerificationOutcomes(verification: unknown): string | null 
   return items.map((i) => `• ${i}`).join("<br/>");
 }
 
+export interface FileUploadRequest {
+  /** Finix's real file type for this specific request, e.g. "ENHANCED_DUE_DILIGENCE_DOCUMENT" — used both as the Finix File resource `type` and as this request's stable identity (Finix outcomes don't carry a separate id). */
+  fileType: string;
+  /** The underwriter's note for this specific document, when Finix provided one (see parseVerificationOutcomes' outcome_message docs) — shown to the merchant so they know what to upload and why. */
+  message: string | null;
+}
+
 /**
- * Extracts the Finix file `type` a FILE_UPLOAD outcome actually asked
- * for (e.g. "ENHANCED_DUE_DILIGENCE_DOCUMENT"), from the same `outcomes`
- * array `parseVerificationOutcomes` reads. The merchant-facing upload
- * route previously hardcoded every uploaded file's Finix type to the
- * generic "ADDITIONAL_DOCUMENTATION" regardless of what was actually
- * requested (2026-09-04 finding, confirmed against Lighthouse Baptist
- * Church's real Verification, which specifically asked for
- * "ENHANCED_DUE_DILIGENCE_DOCUMENT") — a mismatched type risks Finix's
- * underwriting system not recognizing the upload as satisfying that
- * specific outstanding requirement.
+ * Extracts every FILE_UPLOAD outcome from a Verification's `outcomes`
+ * array, each with its Finix file `type` (e.g.
+ * "ENHANCED_DUE_DILIGENCE_DOCUMENT") and underwriter note. Lets the
+ * merchant-facing form render one labeled upload slot per distinct
+ * document Finix actually asked for, instead of a single generic file
+ * input that can't distinguish which upload is for which requirement
+ * when more than one document is requested at once (2026-09-04 finding
+ * — the prior single-slot form and extractRequestedFileType() below
+ * only ever handled the first FILE_UPLOAD outcome).
  *
- * Returns the first FILE_UPLOAD outcome's file_type found, or null if
- * there isn't one (no file was actually requested, or the shape didn't
- * include it) — callers should fall back to a safe generic type in that
- * case rather than sending an empty/invalid type to Finix.
- *
- * Only returns a single type: today's upload form has one file slot, so
- * multiple simultaneous FILE_UPLOAD outcomes with different file_types
- * aren't yet distinguishable at submission time — a known limitation,
- * not something this function can resolve on its own.
+ * Deduped by fileType (Finix could in principle send the same document
+ * request as more than one outcome) and skips any FILE_UPLOAD outcome
+ * missing a string file_type — nothing to tag an upload with in that
+ * case, and asking the merchant to upload into an unlabeled slot invites
+ * exactly the same mismatch this whole fix exists to prevent.
  */
-export function extractRequestedFileType(verification: unknown): string | null {
+export function extractFileUploadRequests(verification: unknown): FileUploadRequest[] {
   const outcomesRaw = (verification as { outcomes?: unknown })?.outcomes;
   const outcomes: unknown[] = Array.isArray(outcomesRaw) ? outcomesRaw : [];
 
+  const seen = new Set<string>();
+  const requests: FileUploadRequest[] = [];
   for (const o of outcomes) {
-    const outcome = o as { remediation_details?: { type?: unknown; file_type?: unknown } };
-    if (outcome?.remediation_details?.type === "FILE_UPLOAD" && typeof outcome.remediation_details.file_type === "string") {
-      return outcome.remediation_details.file_type;
-    }
+    const outcome = o as { outcome_message?: unknown; remediation_details?: { type?: unknown; file_type?: unknown } };
+    if (outcome?.remediation_details?.type !== "FILE_UPLOAD") continue;
+    const fileType = outcome.remediation_details.file_type;
+    if (typeof fileType !== "string" || seen.has(fileType)) continue;
+    seen.add(fileType);
+    const message = typeof outcome.outcome_message === "string" ? outcome.outcome_message.trim().replace(/\s+/g, " ") || null : null;
+    requests.push({ fileType, message });
   }
-  return null;
+  return requests;
+}
+
+/**
+ * Convenience wrapper around extractFileUploadRequests() for a caller
+ * that only needs a single fallback type (e.g. the legacy single-file
+ * upload path) — returns the first request's fileType, or null if there
+ * are none.
+ */
+export function extractRequestedFileType(verification: unknown): string | null {
+  return extractFileUploadRequests(verification)[0]?.fileType ?? null;
 }

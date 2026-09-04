@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseVerificationOutcomes, extractRequestedFileType } from "../parseVerificationOutcomes";
+import { parseVerificationOutcomes, extractRequestedFileType, extractFileUploadRequests } from "../parseVerificationOutcomes";
 
 describe("parseVerificationOutcomes", () => {
   it("prefers outcome_message (the underwriter's actual note) over the machine-oriented outcome_code", () => {
@@ -102,5 +102,47 @@ describe("extractRequestedFileType", () => {
     expect(extractRequestedFileType({})).toBeNull();
     expect(extractRequestedFileType(null)).toBeNull();
     expect(extractRequestedFileType(undefined)).toBeNull();
+  });
+});
+
+describe("extractFileUploadRequests", () => {
+  it("returns every distinct FILE_UPLOAD outcome, each with its file_type and note", () => {
+    const result = extractFileUploadRequests({
+      outcomes: [
+        { outcome_code: "INVALID_BUSINESS_MCC", remediation_details: { type: "FIELD_UPDATE" } },
+        { outcome_code: "BANK_STATEMENT_REQUESTED", outcome_message: "Please provide a bank statement.", remediation_details: { type: "FILE_UPLOAD", file_type: "BANK_STATEMENT" } },
+        { outcome_code: "EDD_DOCUMENT_REQUESTED", outcome_message: "Please provide an EDD document.", remediation_details: { type: "FILE_UPLOAD", file_type: "ENHANCED_DUE_DILIGENCE_DOCUMENT" } },
+      ],
+    });
+    expect(result).toEqual([
+      { fileType: "BANK_STATEMENT", message: "Please provide a bank statement." },
+      { fileType: "ENHANCED_DUE_DILIGENCE_DOCUMENT", message: "Please provide an EDD document." },
+    ]);
+  });
+
+  it("dedupes by file_type — the same document requested twice yields one slot", () => {
+    const result = extractFileUploadRequests({
+      outcomes: [
+        { remediation_details: { type: "FILE_UPLOAD", file_type: "BANK_STATEMENT" } },
+        { remediation_details: { type: "FILE_UPLOAD", file_type: "BANK_STATEMENT" } },
+      ],
+    });
+    expect(result).toHaveLength(1);
+  });
+
+  it("skips a FILE_UPLOAD outcome with no string file_type — nothing to tag it with", () => {
+    const result = extractFileUploadRequests({ outcomes: [{ remediation_details: { type: "FILE_UPLOAD" } }] });
+    expect(result).toEqual([]);
+  });
+
+  it("returns message: null when outcome_message is absent", () => {
+    const result = extractFileUploadRequests({ outcomes: [{ remediation_details: { type: "FILE_UPLOAD", file_type: "X" } }] });
+    expect(result).toEqual([{ fileType: "X", message: null }]);
+  });
+
+  it("returns an empty array for missing outcomes or non-object input", () => {
+    expect(extractFileUploadRequests({})).toEqual([]);
+    expect(extractFileUploadRequests(null)).toEqual([]);
+    expect(extractFileUploadRequests(undefined)).toEqual([]);
   });
 });
