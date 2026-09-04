@@ -68,8 +68,14 @@ export default function MobileSidebar({ role }: { role?: string }) {
 
         <div className="flex-1 overflow-y-auto p-4">
           <nav className="space-y-1">
-            {visibleItems.map((item) => {
+            {visibleItems.map((item, index) => {
               const Icon = item.icon;
+              const showSectionHeader = index === 0 || visibleItems[index - 1].section !== item.section;
+              const sectionHeader = showSectionHeader && (
+                <p className="px-4 pt-4 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 first:pt-1">
+                  {item.section}
+                </p>
+              );
 
               if (item.children) {
                 const isGroupActive = item.children.some((child) => pathname === child.href);
@@ -77,6 +83,7 @@ export default function MobileSidebar({ role }: { role?: string }) {
 
                 return (
                   <div key={item.name}>
+                    {sectionHeader}
                     <button
                       onClick={() => toggleGroup(item.name)}
                       className={cn(
@@ -120,20 +127,22 @@ export default function MobileSidebar({ role }: { role?: string }) {
 
               const isActive = pathname === item.href;
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  prefetch={false}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-colors",
-                    isActive
-                      ? "bg-[#eab308]/10 text-[#010409]"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                  )}
-                >
-                  <Icon className="w-5 h-5 shrink-0" />
-                  {item.name}
-                </Link>
+                <div key={item.href}>
+                  {sectionHeader}
+                  <Link
+                    href={item.href}
+                    prefetch={false}
+                    className={cn(
+                      "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-colors",
+                      isActive
+                        ? "bg-[#eab308]/10 text-[#010409]"
+                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    )}
+                  >
+                    <Icon className="w-5 h-5 shrink-0" />
+                    {item.name}
+                  </Link>
+                </div>
               );
             })}
           </nav>
