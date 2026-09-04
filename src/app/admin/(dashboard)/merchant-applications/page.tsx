@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import IrsLetterReviewModal from '@/components/admin/IrsLetterReviewModal';
 
 // WGC's Finix partner dashboard is white-labeled at this custom domain —
@@ -51,6 +52,10 @@ export default function MerchantApplicationsPage() {
   const [refreshingVerification, setRefreshingVerification] = useState<string | null>(null);
   const [provisioning, setProvisioning] = useState<string | null>(null);
   const [irsLetterModalApp, setIrsLetterModalApp] = useState<{ id: string; organizationName: string } | null>(null);
+  // Replaces window.confirm() — an in-page modal instead of a native
+  // browser dialog, which the merchant-applications workflow otherwise
+  // triggers several times per session (2026-09-04 request).
+  const [pendingConfirm, setPendingConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   const fetchApps = () => {
     fetch('/api/admin/merchant-applications')
@@ -69,9 +74,7 @@ export default function MerchantApplicationsPage() {
     fetchApps();
   }, []);
 
-  const resendEmail = async (appId: string) => {
-    if (!confirm("Are you sure you want to resend the latest status email to this merchant?")) return;
-
+  const doResendEmail = async (appId: string) => {
     try {
       const res = await fetch('/api/admin/resend-email', {
         method: 'POST',
@@ -80,18 +83,23 @@ export default function MerchantApplicationsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert("Email resent successfully!");
+        toast.success("Email resent successfully!");
       } else {
-        alert("Failed to resend email: " + data.error);
+        toast.error("Failed to resend email: " + data.error);
       }
-    } catch (err) {
-      alert("Error resending email.");
+    } catch {
+      toast.error("Error resending email.");
     }
   };
 
-  const regenerateToken = async (appId: string) => {
-    if (!confirm("Are you sure you want to regenerate the secure link and send it to the merchant?")) return;
+  const resendEmail = (appId: string) => {
+    setPendingConfirm({
+      message: "Are you sure you want to resend the latest status email to this merchant?",
+      onConfirm: () => doResendEmail(appId),
+    });
+  };
 
+  const doRegenerateToken = async (appId: string) => {
     setRegenerating(appId);
     try {
       const res = await fetch('/api/admin/regenerate-token', {
@@ -101,16 +109,23 @@ export default function MerchantApplicationsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert("Secure link regenerated and sent to merchant.");
+        toast.success("Secure link regenerated and sent to merchant.");
         fetchApps();
       } else {
-        alert("Failed to regenerate token: " + data.error);
+        toast.error("Failed to regenerate token: " + data.error);
       }
-    } catch (err) {
-      alert("Error regenerating token.");
+    } catch {
+      toast.error("Error regenerating token.");
     } finally {
       setRegenerating(null);
     }
+  };
+
+  const regenerateToken = (appId: string) => {
+    setPendingConfirm({
+      message: "Are you sure you want to regenerate the secure link and send it to the merchant?",
+      onConfirm: () => doRegenerateToken(appId),
+    });
   };
 
   const refreshVerification = async (appId: string) => {
@@ -119,40 +134,46 @@ export default function MerchantApplicationsPage() {
       const res = await fetch(`/api/admin/onboarding-applications/${appId}/refresh-verification`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        alert(
+        toast.success(
           data.outcomesFound
             ? "Pulled the current requested items from Finix. Requested Items is now up to date — resend the status email to send the merchant the real list."
-            : "Finix has no specific outcomes on file for this verification — the requested-items text was left as-is."
+            : "Finix has no specific outcomes on file for this verification — the requested-items text was left as-is.",
+          { duration: 6000 }
         );
         fetchApps();
       } else {
-        alert("Failed to refresh from Finix: " + data.error);
+        toast.error("Failed to refresh from Finix: " + data.error);
       }
-    } catch (err) {
-      alert("Error refreshing from Finix.");
+    } catch {
+      toast.error("Error refreshing from Finix.");
     } finally {
       setRefreshingVerification(null);
     }
   };
 
-  const provisionChurch = async (appId: string) => {
-    if (!confirm("Create the missing Church dashboard account for this approved merchant?")) return;
-
+  const doProvisionChurch = async (appId: string) => {
     setProvisioning(appId);
     try {
       const res = await fetch(`/api/admin/merchant-applications/${appId}/provision`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        alert("Church account provisioned. It will now appear in the Merchants Directory.");
+        toast.success("Church account provisioned. It will now appear in the Merchants Directory.");
         fetchApps();
       } else {
-        alert("Failed to provision: " + data.error);
+        toast.error("Failed to provision: " + data.error);
       }
-    } catch (err) {
-      alert("Error provisioning church account.");
+    } catch {
+      toast.error("Error provisioning church account.");
     } finally {
       setProvisioning(null);
     }
+  };
+
+  const provisionChurch = (appId: string) => {
+    setPendingConfirm({
+      message: "Create the missing Church dashboard account for this approved merchant?",
+      onConfirm: () => doProvisionChurch(appId),
+    });
   };
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
@@ -174,15 +195,15 @@ export default function MerchantApplicationsPage() {
       const data = await res.json();
 
       if (data.success) {
-        alert("Document uploaded to Finix successfully!");
+        toast.success("Document uploaded to Finix successfully!");
         setUploadModalAppId(null);
         setUploadFile(null);
         fetchApps();
       } else {
-        alert("Failed to upload: " + data.error);
+        toast.error("Failed to upload: " + data.error);
       }
-    } catch (err: any) {
-      alert("Upload failed: " + err.message);
+    } catch (err: unknown) {
+      toast.error("Upload failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setUploading(false);
     }
@@ -393,6 +414,33 @@ export default function MerchantApplicationsPage() {
           organizationName={irsLetterModalApp.organizationName}
           onClose={() => setIrsLetterModalApp(null)}
         />
+      )}
+
+      {pendingConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full">
+            <p className="text-sm text-gray-800 mb-6">{pendingConfirm.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPendingConfirm(null)}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  pendingConfirm.onConfirm();
+                  setPendingConfirm(null);
+                }}
+                className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
