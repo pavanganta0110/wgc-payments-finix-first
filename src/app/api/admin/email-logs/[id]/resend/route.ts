@@ -48,9 +48,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const app = await prisma.onboardingApplication.findUnique({ where: { id: log.onboardingApplicationId } });
     if (!app) return NextResponse.json({ error: "Application not found" }, { status: 404 });
 
+    let secureLink: string | undefined;
+    if (app.onboardingStatus === "MORE_INFORMATION_REQUIRED" || app.onboardingStatus === "ADDITIONAL_INFO_NEEDED") {
+      // A resend regenerates the secure token — the previous one may be
+      // expired or already invalidated by an earlier submission.
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+      await prisma.onboardingApplication.update({
+        where: { id: app.id },
+        data: { updateTokenHash: tokenHash, updateTokenExpiresAt: expiresAt },
+      });
+      secureLink = `https://www.wgcpayments.com/onboarding/update/${rawToken}`;
+    }
+
     const { subject, title, badgeText, badgeColor, bodyHtml } = buildOnboardingStatusEmailContent(
       app.onboardingStatus,
-      app.organizationName
+      app.organizationName,
+      { requestedItems: app.updateRequestedItems, secureLink }
     );
     const result = await sendWgcEmail({ to: app.contactEmail, subject, title, badgeText, badgeColor, bodyHtml });
 

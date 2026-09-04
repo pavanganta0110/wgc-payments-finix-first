@@ -221,7 +221,26 @@ async function writeOrgEmailLog(options: WgcEmailOptions, result: { success: boo
   }
 }
 
-export function buildOnboardingStatusEmailContent(status: string | null, orgName: string) {
+/**
+ * Single source of truth for onboarding-status emails — every admin
+ * "resend" surface (merchant-applications page, email-logs page) builds
+ * its content through this function rather than keeping its own copy, so
+ * a fix here can't silently miss one of the call sites again (2026-09-04:
+ * two separate resend routes had each hand-rolled their own MORE_
+ * INFORMATION_REQUIRED template, and one still pointed merchants — who
+ * have no login at this onboarding stage — at a nonexistent dashboard
+ * with no actual requirement or way to submit one).
+ *
+ * MORE_INFORMATION_REQUIRED/ADDITIONAL_INFO_NEEDED needs a live secure
+ * token, which is a DB write — callers generate and persist that
+ * themselves (each resend should invalidate any prior link) and pass the
+ * resulting `requestedItems`/`secureLink` in.
+ */
+export function buildOnboardingStatusEmailContent(
+  status: string | null,
+  orgName: string,
+  opts?: { requestedItems?: string | null; secureLink?: string }
+) {
   const safeOrgName = orgName || "your organization";
 
   if (status === "APPROVED") {
@@ -235,13 +254,19 @@ export function buildOnboardingStatusEmailContent(status: string | null, orgName
     };
   }
   if (status === "MORE_INFORMATION_REQUIRED" || status === "ADDITIONAL_INFO_NEEDED") {
+    const requestedItemsStr = opts?.requestedItems || "Additional documentation is required to verify your business and identity.";
+    const actionHtml = opts?.secureLink
+      ? `<p>Please use the secure link below to submit the requested information.</p>
+         <p><a href="${opts.secureLink}">Submit Required Information</a></p>`
+      : `<p>Please contact WGC Payments Support so we can help you complete the required updates.</p>`;
     return {
       subject: "Additional information needed for your WGC Payments account",
       title: "Additional information is required",
       badgeText: "Action Required",
       badgeColor: "#F59E0B",
-      bodyHtml: `<p>We need a little more information to continue reviewing your WGC Payments account for <strong>${safeOrgName}</strong>.</p>
-                  <p>Please log in to your merchant dashboard or contact WGC Payments Support so we can help you complete the required updates.</p>`,
+      bodyHtml: `<p>We need additional information to continue reviewing your WGC Payments account for <strong>${safeOrgName}</strong>.</p>
+                  <p><strong>Requested items:</strong><br/>${requestedItemsStr}</p>
+                  ${actionHtml}`,
     };
   }
   if (status === "REJECTED") {

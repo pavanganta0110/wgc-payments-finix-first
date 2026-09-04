@@ -10,7 +10,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  */
 
 const mockSendWgcEmail = vi.fn().mockResolvedValue({ success: true, data: {} });
-vi.mock("@/lib/email", () => ({ sendWgcEmail: (...a: unknown[]) => mockSendWgcEmail(...a) }));
+vi.mock("@/lib/email", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/email")>();
+  return { ...actual, sendWgcEmail: (...a: unknown[]) => mockSendWgcEmail(...a) };
+});
 
 const mockPrisma = {
   onboardingApplication: {
