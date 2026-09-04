@@ -2,8 +2,29 @@
 
 import { useState } from 'react';
 
+// Finix underwriting requests come in two shapes (see the "Requested Items"
+// list above this form): "Upload File" (handled by the file input below,
+// unchanged) and "Update Data" — a correction to a field on the merchant's
+// Finix Identity (business DBA, business type/ownership type, MCC, email).
+// Previously this form only had a file input, so a merchant asked for a
+// data correction had no way to actually submit it (2026-09-04 finding).
+// These fields map to Finix's real Identity.entity fields, confirmed
+// against this same codebase's own onboarding-creation payload
+// (src/app/api/onboarding/route.ts) rather than guessed: doing_business_as,
+// business_type, mcc, email. All optional/blank-skippable — a merchant only
+// fills in whatever their specific requested items actually asked for.
+const BUSINESS_TYPE_OPTIONS = [
+  { value: "", label: "No change" },
+  { value: "TAX_EXEMPT_ORGANIZATION", label: "Tax-Exempt Organization (churches/nonprofits)" },
+  { value: "CORPORATION", label: "Corporation" },
+];
+
 export default function UpdateForm({ token }: { token: string }) {
   const [file, setFile] = useState<File | null>(null);
+  const [doingBusinessAs, setDoingBusinessAs] = useState("");
+  const [businessType, setBusinessType] = useState("");
+  const [mcc, setMcc] = useState("");
+  const [email, setEmail] = useState("");
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -29,10 +50,13 @@ export default function UpdateForm({ token }: { token: string }) {
     setFile(selected);
   };
 
+  const hasAnyFieldUpdate = Boolean(doingBusinessAs.trim() || businessType || mcc.trim() || email.trim());
+  const canSubmit = Boolean(file || hasAnyFieldUpdate);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) {
-      setErrorMsg("Please select a file to upload.");
+    if (!canSubmit) {
+      setErrorMsg("Please provide the requested file or fill in at least one field above.");
       return;
     }
 
@@ -42,7 +66,11 @@ export default function UpdateForm({ token }: { token: string }) {
     try {
       const formData = new FormData();
       formData.append("token", token);
-      formData.append("file", file);
+      if (file) formData.append("file", file);
+      if (doingBusinessAs.trim()) formData.append("doingBusinessAs", doingBusinessAs.trim());
+      if (businessType) formData.append("businessType", businessType);
+      if (mcc.trim()) formData.append("mcc", mcc.trim());
+      if (email.trim()) formData.append("email", email.trim());
 
       const res = await fetch("/api/onboarding/upload", {
         method: "POST",
@@ -54,9 +82,9 @@ export default function UpdateForm({ token }: { token: string }) {
       if (data.success) {
         setSuccess(true);
       } else {
-        setErrorMsg(data.error || "Failed to upload document.");
+        setErrorMsg(data.error || "Failed to submit information.");
       }
-    } catch (err: any) {
+    } catch {
       setErrorMsg("An unexpected error occurred. Please try again.");
     } finally {
       setUploading(false);
@@ -66,9 +94,9 @@ export default function UpdateForm({ token }: { token: string }) {
   if (success) {
     return (
       <div className="text-center p-6 bg-green-50 rounded-xl border border-green-100 mt-6">
-        <h3 className="text-lg font-bold text-green-900 mb-2">Upload Successful</h3>
+        <h3 className="text-lg font-bold text-green-900 mb-2">Submitted Successfully</h3>
         <p className="text-green-800">
-          Your document has been submitted securely. We will notify you once the review is completed.
+          Your information has been submitted securely. We will notify you once the review is completed.
         </p>
       </div>
     );
@@ -76,6 +104,67 @@ export default function UpdateForm({ token }: { token: string }) {
 
   return (
     <form onSubmit={handleSubmit} className="mt-6">
+      <div className="mb-6 space-y-4">
+        <div>
+          <label htmlFor="dba-input" className="block text-sm font-bold text-gray-700 mb-1">
+            Doing Business As (DBA)
+          </label>
+          <input
+            id="dba-input"
+            type="text"
+            value={doingBusinessAs}
+            onChange={(e) => setDoingBusinessAs(e.target.value)}
+            placeholder="Leave blank if not requested"
+            className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="business-type-select" className="block text-sm font-bold text-gray-700 mb-1">
+            Ownership Type
+          </label>
+          <select
+            id="business-type-select"
+            value={businessType}
+            onChange={(e) => setBusinessType(e.target.value)}
+            className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {BUSINESS_TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="mcc-input" className="block text-sm font-bold text-gray-700 mb-1">
+            Business MCC
+          </label>
+          <input
+            id="mcc-input"
+            type="text"
+            inputMode="numeric"
+            value={mcc}
+            onChange={(e) => setMcc(e.target.value)}
+            placeholder="Leave blank if not requested"
+            className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="email-input" className="block text-sm font-bold text-gray-700 mb-1">
+            Business Email
+          </label>
+          <input
+            id="email-input"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Leave blank if not requested"
+            className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+
       <div className="mb-6">
         <label className="block text-sm font-bold text-gray-700 mb-2">
           Upload Document (PDF, JPG, PNG)
@@ -92,7 +181,7 @@ export default function UpdateForm({ token }: { token: string }) {
               </label>
             </div>
             <p className="text-xs text-gray-500">
-              PDF, PNG, JPG up to 10MB
+              PDF, PNG, JPG up to 10MB — leave blank if no document was requested
             </p>
           </div>
         </div>
@@ -112,10 +201,10 @@ export default function UpdateForm({ token }: { token: string }) {
 
       <button
         type="submit"
-        disabled={!file || uploading}
+        disabled={!canSubmit || uploading}
         className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all"
       >
-        {uploading ? "Uploading Securely..." : "Submit Required Information"}
+        {uploading ? "Submitting Securely..." : "Submit Required Information"}
       </button>
     </form>
   );
