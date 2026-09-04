@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import { finixClient } from "@/lib/finix/client";
+import { extractRequestedFileType } from "@/lib/finix/parseVerificationOutcomes";
 import { sendWgcEmail, sendWgcAdminEmail } from "@/lib/email";
 
 export async function POST(req: Request) {
@@ -84,12 +85,23 @@ export async function POST(req: Request) {
     }
 
     let finixFileId: string | undefined;
+    let finixFileType = "ADDITIONAL_DOCUMENTATION";
     if (file) {
+      // Use the actual file type Finix's outstanding Verification asked
+      // for (e.g. "ENHANCED_DUE_DILIGENCE_DOCUMENT") when we have it on
+      // file — falls back to the generic type only when the requirement
+      // wasn't a parseable FILE_UPLOAD outcome (e.g. updateRequestedCodes
+      // still holds an older raw Merchant payload from before the
+      // Verification-parsing fix, or this file wasn't actually requested
+      // by name).
+      const requestedFileType = extractRequestedFileType(app.updateRequestedCodes);
+      if (requestedFileType) finixFileType = requestedFileType;
+
       // 2. Create File Resource in Finix
       const fileResource = await finixClient.createFileResource({
         display_name: file.name,
         linked_to: app.finixMerchantId,
-        type: "ADDITIONAL_DOCUMENTATION"
+        type: finixFileType
       });
 
       finixFileId = fileResource.id;
@@ -118,7 +130,7 @@ export async function POST(req: Request) {
       await prisma.merchantDocument.create({
         data: {
           onboardingApplicationId: app.id,
-          documentType: "ADDITIONAL_DOCUMENTATION",
+          documentType: finixFileType,
           fileName: file.name,
           fileSize: file.size,
           mimeType: file.type,

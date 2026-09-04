@@ -50,3 +50,38 @@ export function parseVerificationOutcomes(verification: unknown): string | null 
   if (items.length === 0) return null;
   return items.map((i) => `• ${i}`).join("<br/>");
 }
+
+/**
+ * Extracts the Finix file `type` a FILE_UPLOAD outcome actually asked
+ * for (e.g. "ENHANCED_DUE_DILIGENCE_DOCUMENT"), from the same `outcomes`
+ * array `parseVerificationOutcomes` reads. The merchant-facing upload
+ * route previously hardcoded every uploaded file's Finix type to the
+ * generic "ADDITIONAL_DOCUMENTATION" regardless of what was actually
+ * requested (2026-09-04 finding, confirmed against Lighthouse Baptist
+ * Church's real Verification, which specifically asked for
+ * "ENHANCED_DUE_DILIGENCE_DOCUMENT") — a mismatched type risks Finix's
+ * underwriting system not recognizing the upload as satisfying that
+ * specific outstanding requirement.
+ *
+ * Returns the first FILE_UPLOAD outcome's file_type found, or null if
+ * there isn't one (no file was actually requested, or the shape didn't
+ * include it) — callers should fall back to a safe generic type in that
+ * case rather than sending an empty/invalid type to Finix.
+ *
+ * Only returns a single type: today's upload form has one file slot, so
+ * multiple simultaneous FILE_UPLOAD outcomes with different file_types
+ * aren't yet distinguishable at submission time — a known limitation,
+ * not something this function can resolve on its own.
+ */
+export function extractRequestedFileType(verification: unknown): string | null {
+  const outcomesRaw = (verification as { outcomes?: unknown })?.outcomes;
+  const outcomes: unknown[] = Array.isArray(outcomesRaw) ? outcomesRaw : [];
+
+  for (const o of outcomes) {
+    const outcome = o as { remediation_details?: { type?: unknown; file_type?: unknown } };
+    if (outcome?.remediation_details?.type === "FILE_UPLOAD" && typeof outcome.remediation_details.file_type === "string") {
+      return outcome.remediation_details.file_type;
+    }
+  }
+  return null;
+}

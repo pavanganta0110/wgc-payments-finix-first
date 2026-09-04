@@ -134,6 +134,30 @@ describe("POST /api/onboarding/upload — field-update submissions", () => {
     expect(mockCreateVerification).toHaveBeenCalledTimes(1);
   });
 
+  it("tags the uploaded file with the real Finix file_type Finix's Verification asked for, not a hardcoded generic type", async () => {
+    mockPrisma.onboardingApplication.findFirst.mockResolvedValue({
+      ...APP_ROW,
+      updateRequestedCodes: {
+        outcomes: [{ outcome_code: "EDD_DOCUMENT_REQUESTED", remediation_details: { type: "FILE_UPLOAD", file_type: "ENHANCED_DUE_DILIGENCE_DOCUMENT" } }],
+      },
+    });
+    const { POST } = await load();
+    await POST(postReq({ file: pdfFile() }));
+
+    expect(mockCreateFileResource).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "ENHANCED_DUE_DILIGENCE_DOCUMENT" })
+    );
+    expect(mockPrisma.merchantDocument.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ documentType: "ENHANCED_DUE_DILIGENCE_DOCUMENT" }) })
+    );
+  });
+
+  it("falls back to the generic ADDITIONAL_DOCUMENTATION type when no FILE_UPLOAD outcome is on file", async () => {
+    const { POST } = await load(); // APP_ROW has no updateRequestedCodes
+    await POST(postReq({ file: pdfFile() }));
+    expect(mockCreateFileResource).toHaveBeenCalledWith(expect.objectContaining({ type: "ADDITIONAL_DOCUMENTATION" }));
+  });
+
   it("accepts a file AND field updates together, triggering exactly one verification", async () => {
     const { POST } = await load();
     const res = await POST(postReq({ file: pdfFile(), mcc: "8661" }));

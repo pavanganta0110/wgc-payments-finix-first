@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseVerificationOutcomes } from "../parseVerificationOutcomes";
+import { parseVerificationOutcomes, extractRequestedFileType } from "../parseVerificationOutcomes";
 
 describe("parseVerificationOutcomes", () => {
   it("prefers outcome_message (the underwriter's actual note) over the machine-oriented outcome_code", () => {
@@ -72,5 +72,35 @@ describe("parseVerificationOutcomes", () => {
     expect(parseVerificationOutcomes(null)).toBeNull();
     expect(parseVerificationOutcomes(undefined)).toBeNull();
     expect(parseVerificationOutcomes("not an object")).toBeNull();
+  });
+});
+
+describe("extractRequestedFileType", () => {
+  it("returns the file_type from a FILE_UPLOAD outcome's remediation_details", () => {
+    const result = extractRequestedFileType({
+      outcomes: [
+        { outcome_code: "INVALID_BUSINESS_MCC", remediation_details: { type: "FIELD_UPDATE", field_name: "entity.mcc" } },
+        { outcome_code: "EDD_DOCUMENT_REQUESTED", remediation_details: { type: "FILE_UPLOAD", file_type: "ENHANCED_DUE_DILIGENCE_DOCUMENT" } },
+      ],
+    });
+    expect(result).toBe("ENHANCED_DUE_DILIGENCE_DOCUMENT");
+  });
+
+  it("returns null when no outcome is a FILE_UPLOAD type", () => {
+    const result = extractRequestedFileType({
+      outcomes: [{ outcome_code: "INVALID_BUSINESS_MCC", remediation_details: { type: "FIELD_UPDATE" } }],
+    });
+    expect(result).toBeNull();
+  });
+
+  it("returns null when a FILE_UPLOAD outcome has no file_type string", () => {
+    const result = extractRequestedFileType({ outcomes: [{ remediation_details: { type: "FILE_UPLOAD" } }] });
+    expect(result).toBeNull();
+  });
+
+  it("returns null for missing outcomes or non-object input", () => {
+    expect(extractRequestedFileType({})).toBeNull();
+    expect(extractRequestedFileType(null)).toBeNull();
+    expect(extractRequestedFileType(undefined)).toBeNull();
   });
 });
