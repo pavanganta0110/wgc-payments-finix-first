@@ -6,6 +6,7 @@ const mockSyncPaymentToQuickBooks = vi.fn();
 const mockComputePledgeFulfillment = vi.fn();
 const mockSendReceiptEmail = vi.fn();
 const mockSendInvoicePaymentReceiptEmail = vi.fn();
+const mockSendWgcEmail = vi.fn();
 const mockFindFirst = vi.fn();
 
 vi.mock("@/lib/giving/generateReceipt", () => ({ sendDonationReceipt: (...a: unknown[]) => mockSendDonationReceipt(...a) }));
@@ -13,6 +14,7 @@ vi.mock("@/lib/integrations/quickbooks/sync", () => ({ syncPaymentToQuickBooks: 
 vi.mock("@/lib/pledges/pledgeFulfillment", () => ({ computePledgeFulfillment: (...a: unknown[]) => mockComputePledgeFulfillment(...a) }));
 vi.mock("@/lib/giving/sendReceiptEmail", () => ({ sendReceiptEmail: (...a: unknown[]) => mockSendReceiptEmail(...a) }));
 vi.mock("@/lib/invoices/invoiceEmails", () => ({ sendInvoicePaymentReceiptEmail: (...a: unknown[]) => mockSendInvoicePaymentReceiptEmail(...a) }));
+vi.mock("@/lib/email", () => ({ sendWgcEmail: (...a: unknown[]) => mockSendWgcEmail(...a) }));
 vi.mock("@/lib/prisma", () => ({ prisma: { quickBooksSyncRecord: { findFirst: (...a: unknown[]) => mockFindFirst(...a) } } }));
 
 function makeJob(overrides: Partial<BackgroundJob> = {}): BackgroundJob {
@@ -116,6 +118,64 @@ describe("dispatchJob", () => {
     mockSendInvoicePaymentReceiptEmail.mockRejectedValue(new Error("send failed"));
     const job = makeJob({ jobType: "INVOICE_RECEIPT", entityType: "InvoicePayment", entityId: "invpay-1", payloadJson: { invoiceId: "inv-1", invoicePaymentId: "invpay-1" } });
     await expect(dispatchJob(job)).rejects.toThrow("send failed");
+  });
+
+  it("SETUP_LINK_CONFIRMATION: sends the donor email, then the org email when churchContactEmail is present", async () => {
+    const { dispatchJob } = await import("../jobHandlers");
+    mockSendWgcEmail.mockResolvedValue({ success: true, data: {} });
+    const job = makeJob({
+      jobType: "SETUP_LINK_CONFIRMATION",
+      entityType: "FinixSubscription",
+      entityId: "sub-1",
+      payloadJson: {
+        donorEmail: "jane@example.com",
+        donorName: "Jane Doe",
+        churchName: "Grace Church",
+        churchContactEmail: "org@example.com",
+        amountCents: 5000,
+        billingInterval: "MONTHLY",
+      },
+    });
+    await dispatchJob(job);
+
+    expect(mockSendWgcEmail).toHaveBeenCalledTimes(2);
+    expect(mockSendWgcEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "jane@example.com" }));
+    expect(mockSendWgcEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "org@example.com" }));
+  });
+
+  it("SETUP_LINK_CONFIRMATION: skips the org email when churchContactEmail is null", async () => {
+    const { dispatchJob } = await import("../jobHandlers");
+    mockSendWgcEmail.mockResolvedValue({ success: true, data: {} });
+    const job = makeJob({
+      jobType: "SETUP_LINK_CONFIRMATION",
+      payloadJson: {
+        donorEmail: "jane@example.com",
+        donorName: "Jane Doe",
+        churchName: "Grace Church",
+        churchContactEmail: null,
+        amountCents: 5000,
+        billingInterval: "MONTHLY",
+      },
+    });
+    await dispatchJob(job);
+    expect(mockSendWgcEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("SETUP_LINK_CONFIRMATION: propagates a send failure so the outbox retries", async () => {
+    const { dispatchJob } = await import("../jobHandlers");
+    mockSendWgcEmail.mockRejectedValue(new Error("resend down"));
+    const job = makeJob({
+      jobType: "SETUP_LINK_CONFIRMATION",
+      payloadJson: {
+        donorEmail: "jane@example.com",
+        donorName: "Jane Doe",
+        churchName: "Grace Church",
+        churchContactEmail: null,
+        amountCents: 5000,
+        billingInterval: "MONTHLY",
+      },
+    });
+    await expect(dispatchJob(job)).rejects.toThrow("resend down");
   });
 
   it("unregistered job type throws NoHandlerRegisteredError, never silently succeeds", async () => {

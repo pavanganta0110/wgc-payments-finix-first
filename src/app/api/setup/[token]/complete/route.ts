@@ -6,10 +6,8 @@ import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { hashSetupLinkToken } from "@/lib/subscriptions/setupLinkToken";
 import { checkSetupLinkRateLimit } from "@/lib/subscriptions/setupLinkRateLimit";
 import { isValidEmail, normalizePhone } from "@/lib/donors/donorContact";
-import { sendWgcEmail } from "@/lib/email";
-import { formatCents } from "@/lib/format";
-import { frequencyLabel } from "@/lib/subscriptions/subscriptionStatus";
 import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
+import { enqueueBackgroundJobInTransaction } from "@/lib/jobs/backgroundJobs";
 
 const TERMS_VERSION = "2026-01-recurring-donor-v1";
 
@@ -127,113 +125,115 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       }
     }
 
-    // upsert (keyed on finixSubscriptionId @unique), not a bare create —
-    // Postgres compiles this to an atomic INSERT ... ON CONFLICT, so a
-    // concurrent writer for this same Finix subscription (a raced retry,
-    // or a subscription.* webhook arriving before this write completes)
-    // can never throw an unhandled P2002 here; it converges safely.
-    await prisma.finixSubscription.upsert({
-      where: { finixSubscriptionId: finixSubscription.id },
-      create: {
-        finixSubscriptionId: finixSubscription.id,
-        churchId: link.churchId,
-        donorId: donorRecord.id,
-        fundId: link.fundId,
-        finixMerchantId: church.finixMerchantId,
-        finixBuyerIdentityId: identityId,
-        finixPaymentInstrumentId: instrumentId,
-        state: finixSubscription.state ?? "ACTIVE",
-        amountCents: link.amountCents,
-        currency: "USD",
-        billingInterval: link.billingInterval,
-        collectionMethod: "BILL_AUTOMATICALLY",
-        nextBillingDate: parseFinixDate(finixSubscription.next_billing_date),
-        startedAt: link.startDate,
-        consentSource: "DONOR_DIRECT",
-        supersedesSubscriptionId: oldSubscriptionForUpdate?.id ?? null,
-        // Team-access Checkpoint 3: this setup link has no giving-link
-        // association (SubscriptionSetupLink is donor-direct/admin-sent,
-        // not tied to a GivingLink) — no attribution can be proven here.
-        // Exception: a payment-update-link is a continuation of an
-        // existing subscription (see supersedesSubscriptionId above), so it
-        // inherits that subscription's already-snapshotted attribution
-        // rather than losing it on a payment-method change.
-        attributedUserId: oldSubscriptionForUpdate?.attributedUserId ?? null,
-        lastSyncedAt: new Date(),
-      },
-      update: { state: finixSubscription.state ?? undefined, lastSyncedAt: new Date() },
-    });
-
-    if (oldSubscriptionForUpdate) {
-      await prisma.finixSubscription.update({
-        where: { id: oldSubscriptionForUpdate.id },
-        data: { canceledAt: new Date(), cancelReason: "Replaced via donor payment method update", state: "CANCELED", lastSyncedAt: new Date() },
+    // TRANSACTIONAL OUTBOX (Stage 2 Task 2, Flow 2b): required local
+    // subscription/setup state and the required notification job commit
+    // together — closes the crash window between "Finix subscription
+    // created" and "local state fully durable" that existed here before
+    // (these writes ran as separate, non-atomic statements, and the two
+    // confirmation emails were synchronous swallow-on-failure sends with
+    // no durable record they still needed sending after a crash). The
+    // Finix subscription (and cancellation of any superseded subscription)
+    // already happened above, before this transaction ever opens —
+    // nothing external is called from inside it.
+    await prisma.$transaction(async (tx) => {
+      // upsert (keyed on finixSubscriptionId @unique), not a bare create —
+      // Postgres compiles this to an atomic INSERT ... ON CONFLICT, so a
+      // concurrent writer for this same Finix subscription (a raced retry,
+      // or a subscription.* webhook arriving before this write completes)
+      // can never throw an unhandled P2002 here; it converges safely.
+      await tx.finixSubscription.upsert({
+        where: { finixSubscriptionId: finixSubscription.id },
+        create: {
+          finixSubscriptionId: finixSubscription.id,
+          churchId: link.churchId,
+          donorId: donorRecord.id,
+          fundId: link.fundId,
+          finixMerchantId: church.finixMerchantId,
+          finixBuyerIdentityId: identityId,
+          finixPaymentInstrumentId: instrumentId,
+          state: finixSubscription.state ?? "ACTIVE",
+          amountCents: link.amountCents,
+          currency: "USD",
+          billingInterval: link.billingInterval,
+          collectionMethod: "BILL_AUTOMATICALLY",
+          nextBillingDate: parseFinixDate(finixSubscription.next_billing_date),
+          startedAt: link.startDate,
+          consentSource: "DONOR_DIRECT",
+          supersedesSubscriptionId: oldSubscriptionForUpdate?.id ?? null,
+          // Team-access Checkpoint 3: this setup link has no giving-link
+          // association (SubscriptionSetupLink is donor-direct/admin-sent,
+          // not tied to a GivingLink) — no attribution can be proven here.
+          // Exception: a payment-update-link is a continuation of an
+          // existing subscription (see supersedesSubscriptionId above), so it
+          // inherits that subscription's already-snapshotted attribution
+          // rather than losing it on a payment-method change.
+          attributedUserId: oldSubscriptionForUpdate?.attributedUserId ?? null,
+          lastSyncedAt: new Date(),
+        },
+        update: { state: finixSubscription.state ?? undefined, lastSyncedAt: new Date() },
       });
-    }
 
-    await prisma.subscriptionConsent.create({
-      data: {
-        churchId: link.churchId,
-        donorId: donorRecord.id,
-        finixSubscriptionId: finixSubscription.id,
-        consentSource: "DONOR_DIRECT",
-        termsVersion: TERMS_VERSION,
-        ipAddress: ip !== "unknown" ? ip : null,
-        userAgent: req.headers.get("user-agent") || null,
-        setupLinkId: link.id,
-        recurringTermsSnapshot: {
+      if (oldSubscriptionForUpdate) {
+        await tx.finixSubscription.update({
+          where: { id: oldSubscriptionForUpdate.id },
+          data: { canceledAt: new Date(), cancelReason: "Replaced via donor payment method update", state: "CANCELED", lastSyncedAt: new Date() },
+        });
+      }
+
+      await tx.subscriptionConsent.create({
+        data: {
+          churchId: link.churchId,
+          donorId: donorRecord.id,
+          finixSubscriptionId: finixSubscription.id,
+          consentSource: "DONOR_DIRECT",
+          termsVersion: TERMS_VERSION,
+          ipAddress: ip !== "unknown" ? ip : null,
+          userAgent: req.headers.get("user-agent") || null,
+          setupLinkId: link.id,
+          recurringTermsSnapshot: {
+            amountCents: link.amountCents,
+            billingInterval: link.billingInterval,
+            startDate: link.startDate.toISOString(),
+            endDate: link.endDate?.toISOString() ?? null,
+            organizationName: church.name,
+          },
+          donorNameSnapshot: `${firstName} ${lastName}`.trim(),
+          donorEmailSnapshot: email,
+          amountCentsSnapshot: link.amountCents,
+          frequencySnapshot: link.billingInterval,
+          startDateSnapshot: link.startDate,
+          paymentMethodLastFourSnapshot: instrumentSnapshot?.cardLast4 || instrumentSnapshot?.bankLast4 || null,
+          organizationNameSnapshot: church.name,
+        },
+      });
+
+      await tx.subscriptionSetupLink.update({
+        where: { id: link.id },
+        data: { status: "COMPLETED", completedAt: new Date(), donorId: donorRecord.id, finixSubscriptionId: finixSubscription.id },
+      });
+
+      // REGENERABLE/optional (Stage 2 Task 2 classification): plain
+      // confirmation emails, not tax receipts — the subscription itself is
+      // already durable regardless of whether these send. Still enqueued
+      // in the same transaction so there's no crash window at all, not
+      // even a brief one. See handleSetupLinkConfirmation's own comment
+      // for the accepted at-least-once-delivery risk (same as
+      // SEND_PLAIN_EMAIL elsewhere).
+      await enqueueBackgroundJobInTransaction(tx, {
+        jobType: "SETUP_LINK_CONFIRMATION",
+        entityType: "FinixSubscription",
+        entityId: finixSubscription.id,
+        dedupeKey: `SETUP_LINK_CONFIRMATION:subscription:${finixSubscription.id}`,
+        payload: {
+          donorEmail: email,
+          donorName: `${firstName} ${lastName}`.trim(),
+          churchName: church.name,
+          churchContactEmail: church.primaryContactEmail,
           amountCents: link.amountCents,
           billingInterval: link.billingInterval,
-          startDate: link.startDate.toISOString(),
-          endDate: link.endDate?.toISOString() ?? null,
-          organizationName: church.name,
         },
-        donorNameSnapshot: `${firstName} ${lastName}`.trim(),
-        donorEmailSnapshot: email,
-        amountCentsSnapshot: link.amountCents,
-        frequencySnapshot: link.billingInterval,
-        startDateSnapshot: link.startDate,
-        paymentMethodLastFourSnapshot: instrumentSnapshot?.cardLast4 || instrumentSnapshot?.bankLast4 || null,
-        organizationNameSnapshot: church.name,
-      },
-    });
-
-    await prisma.subscriptionSetupLink.update({
-      where: { id: link.id },
-      data: { status: "COMPLETED", completedAt: new Date(), donorId: donorRecord.id, finixSubscriptionId: finixSubscription.id },
-    });
-
-    // The subscription is already durably COMPLETED above — an email
-    // failure here must never roll that back or be reported as a setup
-    // failure to the donor (matches the same rule everywhere else in this
-    // codebase: Resend/QuickBooks/Aplos failures never undo a real charge).
-    try {
-      await sendWgcEmail({
-        to: email,
-        subject: `Your recurring donation to ${church.name} is set up`,
-        title: "Recurring Donation Confirmed",
-        badgeText: "Confirmed",
-        badgeColor: "#10B981",
-        bodyHtml: `<p>Thank you! Your recurring donation of <strong>${formatCents(link.amountCents)}</strong> (${frequencyLabel(link.billingInterval)}) to ${church.name} has been set up.</p>`,
       });
-    } catch (err) {
-      console.error("Failed to send donor recurring-setup confirmation email:", err);
-    }
-
-    if (church.primaryContactEmail) {
-      try {
-        await sendWgcEmail({
-          to: church.primaryContactEmail,
-          subject: `New recurring donation set up — ${formatCents(link.amountCents)}/${frequencyLabel(link.billingInterval)}`,
-          title: "New Recurring Donation",
-          badgeText: "New",
-          badgeColor: "#10B981",
-          bodyHtml: `<p>${firstName} ${lastName} (${email}) set up a recurring donation of ${formatCents(link.amountCents)}, ${frequencyLabel(link.billingInterval)}.</p>`,
-        });
-      } catch (err) {
-        console.error("Failed to send org recurring-setup notification email:", err);
-      }
-    }
+    });
 
     return NextResponse.json({
       success: true,

@@ -5,6 +5,9 @@ import { syncPaymentToQuickBooks } from "@/lib/integrations/quickbooks/sync";
 import { computePledgeFulfillment } from "@/lib/pledges/pledgeFulfillment";
 import { sendReceiptEmail } from "@/lib/giving/sendReceiptEmail";
 import { sendInvoicePaymentReceiptEmail } from "@/lib/invoices/invoiceEmails";
+import { sendWgcEmail } from "@/lib/email";
+import { formatCents } from "@/lib/format";
+import { frequencyLabel } from "@/lib/subscriptions/subscriptionStatus";
 import type { JobType } from "./backgroundJobs";
 
 /**
@@ -105,12 +108,60 @@ async function handleInvoiceReceipt(job: BackgroundJob): Promise<void> {
   await sendInvoicePaymentReceiptEmail(invoiceId, invoicePaymentId, { rethrow: true });
 }
 
+/**
+ * Flow 2b (setup-link subscription completion) — donor confirmation +
+ * org notification, previously two synchronous sendWgcEmail calls each
+ * wrapped in their own swallow-on-failure try/catch directly in the
+ * route (src/app/api/setup/[token]/complete/route.ts), sent AFTER the
+ * subscription was already durably marked COMPLETED but with no durable
+ * record that the emails still needed sending if the process crashed
+ * before either fired. Content matches that prior implementation
+ * exactly ("Use the newest correct email implementation INSIDE the
+ * Stage 2 job handler"). No dedup mechanism beyond this job's own
+ * dedupeKey (keyed per Finix subscription id) — same accepted residual-
+ * risk classification as SEND_PLAIN_EMAIL: a lease reclaim after send
+ * but before COMPLETED could resend once, acceptable for a
+ * non-financial confirmation. Errors propagate (not swallowed) so a
+ * genuine send failure actually retries through the outbox.
+ */
+async function handleSetupLinkConfirmation(job: BackgroundJob): Promise<void> {
+  const payload = job.payloadJson as {
+    donorEmail: string;
+    donorName: string;
+    churchName: string;
+    churchContactEmail: string | null;
+    amountCents: number;
+    billingInterval: string;
+  };
+
+  await sendWgcEmail({
+    to: payload.donorEmail,
+    subject: `Your recurring donation to ${payload.churchName} is set up`,
+    title: "Recurring Donation Confirmed",
+    badgeText: "Confirmed",
+    badgeColor: "#10B981",
+    bodyHtml: `<p>Thank you! Your recurring donation of <strong>${formatCents(payload.amountCents)}</strong> (${frequencyLabel(payload.billingInterval)}) to ${payload.churchName} has been set up.</p>`,
+  });
+
+  if (payload.churchContactEmail) {
+    await sendWgcEmail({
+      to: payload.churchContactEmail,
+      subject: `New recurring donation set up — ${formatCents(payload.amountCents)}/${frequencyLabel(payload.billingInterval)}`,
+      title: "New Recurring Donation",
+      badgeText: "New",
+      badgeColor: "#10B981",
+      bodyHtml: `<p>${payload.donorName} (${payload.donorEmail}) set up a recurring donation of ${formatCents(payload.amountCents)}, ${frequencyLabel(payload.billingInterval)}.</p>`,
+    });
+  }
+}
+
 export const JOB_HANDLERS: Partial<Record<JobType, JobHandler>> = {
   SEND_RECEIPT: handleSendReceipt,
   QUICKBOOKS_PAYMENT: handleQuickBooksPayment,
   PLEDGE_RECOMPUTE: handlePledgeRecompute,
   SEND_PLAIN_EMAIL: handleSendPlainEmail,
   INVOICE_RECEIPT: handleInvoiceReceipt,
+  SETUP_LINK_CONFIRMATION: handleSetupLinkConfirmation,
   // APLOS_PAYMENT, PRINTFUL_ORDER, ANALYTICS_RECORD: not yet implemented —
   // PRINTFUL_ORDER deliberately waits for the Task 9 payment/fulfillment-
   // status separation.
