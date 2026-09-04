@@ -44,6 +44,23 @@ beforeEach(() => {
 });
 
 describe("POST /api/admin/email-logs/[id]/resend — onboarding status emails", () => {
+  it("falls back to legalBusinessName when organizationName is empty", async () => {
+    mockPrisma.emailLog.findUnique.mockResolvedValue({ id: "log-1", type: "MORE_INFORMATION_REQUIRED", onboardingApplicationId: "app-1" });
+    mockPrisma.onboardingApplication.findUnique.mockResolvedValue({
+      id: "app-1",
+      contactEmail: "contact@example.com",
+      organizationName: "",
+      legalBusinessName: "Lighthouse Baptist Church",
+      onboardingStatus: "MORE_INFORMATION_REQUIRED",
+      updateRequestedItems: null,
+    });
+    const { POST } = await load();
+    await POST(postReq(), params());
+    const call = mockSendWgcEmail.mock.calls[0][0];
+    expect(call.bodyHtml).toContain("Lighthouse Baptist Church");
+    expect(call.bodyHtml).not.toContain("your organization");
+  });
+
   it("MORE_INFORMATION_REQUIRED: sends real requested items and a secure link, not the old generic dashboard message", async () => {
     mockPrisma.emailLog.findUnique.mockResolvedValue({ id: "log-1", type: "MORE_INFORMATION_REQUIRED", onboardingApplicationId: "app-1" });
     mockPrisma.onboardingApplication.findUnique.mockResolvedValue({

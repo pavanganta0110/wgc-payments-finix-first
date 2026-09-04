@@ -39,7 +39,13 @@ export async function POST(req: Request) {
 
     const { subject, title, badgeText, badgeColor, bodyHtml } = buildOnboardingStatusEmailContent(
       status,
-      app.organizationName,
+      // organizationName is frequently empty on real applications (this
+      // codebase captures the legal name during onboarding, not always a
+      // separate DBA/org name) — legalBusinessName is the fallback the
+      // original MERCHANT.UPDATED webhook email already used; this resend
+      // route hadn't (2026-09-04 finding: it showed "your organization"
+      // instead of the church's actual name).
+      app.organizationName || app.legalBusinessName,
       { requestedItems: app.updateRequestedItems, secureLink }
     );
 

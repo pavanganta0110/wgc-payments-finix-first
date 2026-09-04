@@ -39,6 +39,22 @@ beforeEach(() => {
 });
 
 describe("POST /api/admin/resend-email — MORE_INFORMATION_REQUIRED", () => {
+  it("falls back to legalBusinessName when organizationName is empty (a real production application had this)", async () => {
+    mockPrisma.onboardingApplication.findUnique.mockResolvedValue({
+      id: "app-1",
+      contactEmail: "contact@example.com",
+      organizationName: "",
+      legalBusinessName: "Lighthouse Baptist Church",
+      onboardingStatus: "MORE_INFORMATION_REQUIRED",
+      updateRequestedItems: null,
+    });
+    const { POST } = await load();
+    await POST(postReq({ applicationId: "app-1" }));
+    const call = mockSendWgcEmail.mock.calls[0][0];
+    expect(call.bodyHtml).toContain("Lighthouse Baptist Church");
+    expect(call.bodyHtml).not.toContain("your organization");
+  });
+
   it("sends the real requested items and a secure link, not the old generic message", async () => {
     mockPrisma.onboardingApplication.findUnique.mockResolvedValue({
       id: "app-1",

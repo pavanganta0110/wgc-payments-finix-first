@@ -65,7 +65,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const { subject, title, badgeText, badgeColor, bodyHtml } = buildOnboardingStatusEmailContent(
       app.onboardingStatus,
-      app.organizationName,
+      app.organizationName || app.legalBusinessName,
       { requestedItems: app.updateRequestedItems, secureLink }
     );
     const result = await sendWgcEmail({ to: app.contactEmail, subject, title, badgeText, badgeColor, bodyHtml });

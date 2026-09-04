@@ -48,6 +48,7 @@ export default function MerchantApplicationsPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [regenerating, setRegenerating] = useState<string | null>(null);
+  const [refreshingVerification, setRefreshingVerification] = useState<string | null>(null);
   const [provisioning, setProvisioning] = useState<string | null>(null);
   const [irsLetterModalApp, setIrsLetterModalApp] = useState<{ id: string; organizationName: string } | null>(null);
 
@@ -109,6 +110,28 @@ export default function MerchantApplicationsPage() {
       alert("Error regenerating token.");
     } finally {
       setRegenerating(null);
+    }
+  };
+
+  const refreshVerification = async (appId: string) => {
+    setRefreshingVerification(appId);
+    try {
+      const res = await fetch(`/api/admin/onboarding-applications/${appId}/refresh-verification`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        alert(
+          data.outcomesFound
+            ? "Pulled the current requested items from Finix. Requested Items is now up to date — resend the status email to send the merchant the real list."
+            : "Finix has no specific outcomes on file for this verification — the requested-items text was left as-is."
+        );
+        fetchApps();
+      } else {
+        alert("Failed to refresh from Finix: " + data.error);
+      }
+    } catch (err) {
+      alert("Error refreshing from Finix.");
+    } finally {
+      setRefreshingVerification(null);
     }
   };
 
@@ -284,6 +307,14 @@ export default function MerchantApplicationsPage() {
                           className="text-xs border border-gray-300 hover:bg-gray-50 text-gray-700 px-2 py-1.5 rounded transition-colors"
                         >
                           Upload as Admin
+                        </button>
+                        <button
+                          onClick={() => refreshVerification(app.id)}
+                          disabled={refreshingVerification === app.id}
+                          className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-800 px-2 py-1.5 rounded transition-colors font-semibold shadow-sm disabled:opacity-50"
+                          title="Pull the current requested items directly from Finix's Verification API — use this if Requested Items looks generic or out of date."
+                        >
+                          {refreshingVerification === app.id ? "Refreshing..." : "Refresh from Finix"}
                         </button>
                       </>
                     )}

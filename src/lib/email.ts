@@ -238,7 +238,7 @@ async function writeOrgEmailLog(options: WgcEmailOptions, result: { success: boo
  */
 export function buildOnboardingStatusEmailContent(
   status: string | null,
-  orgName: string,
+  orgName: string | null,
   opts?: { requestedItems?: string | null; secureLink?: string }
 ) {
   const safeOrgName = orgName || "your organization";
