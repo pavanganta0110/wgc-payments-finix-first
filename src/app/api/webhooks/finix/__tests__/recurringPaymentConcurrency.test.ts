@@ -10,12 +10,17 @@ import { Prisma } from "@prisma/client";
  *     deliveries race to create it.
  *   - The loser of the race fetches and reuses the winner's row rather
  *     than throwing an unhandled error or silently creating a duplicate.
- *   - The downstream QuickBooks sync call — the only side effect this
- *     specific branch triggers — is invoked against the SAME payment id
- *     either way, so it can never diverge into two different sync targets
- *     even though it may be called once per concurrent delivery (that
- *     redundant call is itself idempotent — see quickbooks/sync.ts's own
- *     existing-record short-circuit, verified separately).
+ *   - Payment creation and its required downstream jobs (SEND_RECEIPT,
+ *     QUICKBOOKS_PAYMENT) now commit in one transaction (Stage 2 Flow 3,
+ *     Step 6/7) — the P2002 loser enqueues NOTHING further, since the
+ *     winner already committed its own jobs inside its own transaction.
+ *     Both jobs' dedupeKeys are keyed by payment id, so even if this
+ *     invariant were ever violated, the DB-unique dedupeKey constraint
+ *     would still collapse duplicate enqueue attempts to one row.
+ *   - RECEIPT ASYMMETRY FIX (Step 7, 2026-09-04): this path previously
+ *     synced to QuickBooks but never enqueued a receipt for a recurring
+ *     charge whose Payment did not exist yet at all — now both jobs are
+ *     enqueued together whenever the newly-created Payment is SUCCEEDED.
  */
 
 const syncPaymentToQuickBooks = vi.fn().mockResolvedValue(undefined);
@@ -47,6 +52,8 @@ const mockPrisma = {
   finixFee: { findMany: vi.fn().mockResolvedValue([]) },
   finixDispute: { findUnique: vi.fn().mockResolvedValue({ id: "existing" }), upsert: vi.fn().mockResolvedValue({}) },
   bankReturn: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn().mockResolvedValue({}), update: vi.fn().mockResolvedValue({}) },
+  backgroundJob: { create: vi.fn().mockResolvedValue({ id: "job-1" }) },
+  $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(mockPrisma)),
 };
 vi.mock("@/lib/prisma", () => ({ prisma: mockPrisma }));
 
@@ -98,7 +105,7 @@ describe("recurring-payment webhook — transfer.created + transfer.updated raci
     expect(mockPrisma.payment.findUnique).toHaveBeenCalledWith({ where: { finixTransferId: "TR-recurring-1" } });
   });
 
-  it("QuickBooks sync — the only side effect this branch triggers — always targets the SAME payment id, whether called once or twice", async () => {
+  it("the winner enqueues SEND_RECEIPT + QUICKBOOKS_PAYMENT exactly once each, targeting the real payment id; the P2002 loser enqueues nothing further", async () => {
     mockPrisma.payment.create.mockResolvedValueOnce(WINNER_PAYMENT).mockRejectedValueOnce(makeP2002());
 
     const { syncFinixDataFromWebhookEvent } = await load();
@@ -107,13 +114,22 @@ describe("recurring-payment webhook — transfer.created + transfer.updated raci
       syncFinixDataFromWebhookEvent("TRANSFER", "transfer.updated", TRANSFER_DATA, "evt-updated-2", new Date()),
     ]);
 
-    // Every call (whether from the winner or the P2002-recovered loser)
-    // must reference the one real payment id — never a divergent id that
-    // would indicate two different logical payments got synced.
-    for (const call of syncPaymentToQuickBooks.mock.calls) {
-      expect(call[0]).toBe(WINNER_PAYMENT.id);
-    }
-    expect(syncPaymentToQuickBooks.mock.calls.length).toBeGreaterThan(0);
+    // Never called directly anymore — dispatched through the durable
+    // QUICKBOOKS_PAYMENT job instead.
+    expect(syncPaymentToQuickBooks).not.toHaveBeenCalled();
+
+    const jobCalls = mockPrisma.backgroundJob.create.mock.calls.map((c) => c[0].data);
+    const receiptJobs = jobCalls.filter((d) => d.jobType === "SEND_RECEIPT");
+    const qbJobs = jobCalls.filter((d) => d.jobType === "QUICKBOOKS_PAYMENT");
+
+    // Exactly one of each — the winner's transaction enqueued both; the
+    // P2002 loser enqueued neither.
+    expect(receiptJobs).toHaveLength(1);
+    expect(qbJobs).toHaveLength(1);
+    expect(receiptJobs[0].entityId).toBe(WINNER_PAYMENT.id);
+    expect(qbJobs[0].entityId).toBe(WINNER_PAYMENT.id);
+    expect(receiptJobs[0].dedupeKey).toBe(`SEND_RECEIPT:payment:${WINNER_PAYMENT.id}:version:1`);
+    expect(qbJobs[0].dedupeKey).toBe(`QUICKBOOKS_PAYMENT:payment:${WINNER_PAYMENT.id}`);
   });
 
   it("a P2002 loser that finds NO existing row (a genuine anomaly, not a race) does not silently swallow the error", async () => {
@@ -122,10 +138,11 @@ describe("recurring-payment webhook — transfer.created + transfer.updated raci
 
     const { syncFinixDataFromWebhookEvent } = await load();
     // Should not throw out of the whole webhook handler — the outer
-    // try/catch in the route logs it — but must also not proceed to call
-    // QuickBooks against a nonexistent payment.
+    // try/catch in the route logs it — but must also not proceed to
+    // enqueue any job against a nonexistent payment.
     await syncFinixDataFromWebhookEvent("TRANSFER", "transfer.created", TRANSFER_DATA, "evt-created-3", new Date());
 
     expect(syncPaymentToQuickBooks).not.toHaveBeenCalled();
+    expect(mockPrisma.backgroundJob.create).not.toHaveBeenCalled();
   });
 });

@@ -19,8 +19,8 @@ import { syncAllChurchesPricing, syncChurchPricingForMerchantProfile } from "@/l
 import { describeAchReturnReason } from "@/lib/finix/achReturnReasonCodes";
 import { calculateWgcFeeAmounts } from "@/lib/giving/feeCalculator";
 import { upsertComplianceFormFromFinix } from "@/lib/finix/sync/complianceForms";
-import { syncPaymentToQuickBooks } from "@/lib/integrations/quickbooks/sync";
 import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
+import { enqueueBackgroundJobInTransaction } from "@/lib/jobs/backgroundJobs";
 import { deriveFundingSpeedFromOperationKey } from "@/lib/depositColumns";
 import { isSettlementTerminalStatus } from "@/lib/finix/settlementStatus";
 import type { InvoiceStatus } from "@/lib/invoices/invoiceStatus";
@@ -375,27 +375,37 @@ export async function syncFinixDataFromWebhookEvent(
         where: { finixTransferId: data.id },
       });
       if (priorPayment && priorPayment.status !== (data.state || "PENDING").toUpperCase()) {
-        await prisma.payment.updateMany({
-          where: { finixTransferId: data.id },
-          data: { status: (data.state || "PENDING").toUpperCase() },
-        });
+        const newStatus = (data.state || "PENDING").toUpperCase();
+        const transitioningToSucceeded = priorPayment.status !== "SUCCEEDED" && newStatus === "SUCCEEDED";
 
-        if (
-          priorPayment.status !== "SUCCEEDED" &&
-          (data.state || "").toUpperCase() === "SUCCEEDED"
-        ) {
-          try {
-            const { sendDonationReceipt } = await import("@/lib/giving/generateReceipt");
-            await sendDonationReceipt(priorPayment.id, churchId);
-          } catch (err) {
-            console.error("Failed to send async donation receipt:", err);
+        // TRANSACTIONAL OUTBOX (Stage 2 Flow 3, Step 6): the status
+        // transition and its required downstream jobs commit together —
+        // previously this was a plain update followed by two swallowed,
+        // synchronous calls (sendDonationReceipt, syncPaymentToQuickBooks)
+        // with a real crash window between "Payment marked SUCCEEDED" and
+        // "receipt/QuickBooks jobs exist anywhere." Applies to any
+        // late-settling payment (one-time or recurring), not just
+        // recurring — the eligibility check above (a status-changing
+        // webhook for an already-known Payment) never distinguished them.
+        await prisma.$transaction(async (tx) => {
+          await tx.payment.update({ where: { id: priorPayment.id }, data: { status: newStatus } });
+          if (transitioningToSucceeded) {
+            await enqueueBackgroundJobInTransaction(tx, {
+              jobType: "SEND_RECEIPT",
+              entityType: "Payment",
+              entityId: priorPayment.id,
+              dedupeKey: `SEND_RECEIPT:payment:${priorPayment.id}:version:1`,
+              payload: { paymentId: priorPayment.id, churchId },
+            });
+            await enqueueBackgroundJobInTransaction(tx, {
+              jobType: "QUICKBOOKS_PAYMENT",
+              entityType: "Payment",
+              entityId: priorPayment.id,
+              dedupeKey: `QUICKBOOKS_PAYMENT:payment:${priorPayment.id}`,
+              payload: { paymentId: priorPayment.id },
+            });
           }
-          try {
-            await syncPaymentToQuickBooks(priorPayment.id);
-          } catch (err) {
-            console.error("Failed to sync payment to QuickBooks:", err);
-          }
-        }
+        });
       } else if (!priorPayment && !data.subscription) {
         // No Payment row exists for this one-time transfer at all — the
         // synchronous checkout path either crashed before writing it, or
@@ -517,48 +527,83 @@ export async function syncFinixDataFromWebhookEvent(
               const merchantExpectedNetCents = (donationAmountCents + feeCoveredCents) - feeRes.expectedFeeCents;
 
               const donorId = sub.donorId || instrument?.donorId || null;
-              let newRecurringPayment;
+              // TRANSACTIONAL OUTBOX (Stage 2 Flow 3, Step 6/7): Payment
+              // creation and its required downstream jobs commit together.
+              //
+              // RECEIPT ASYMMETRY FIX (Step 7): previously this specific
+              // path — a recurring charge whose Payment did not exist yet
+              // at all (as opposed to an existing PENDING Payment later
+              // transitioning to SUCCEEDED, handled above) — synced to
+              // QuickBooks when created already SUCCEEDED but never sent a
+              // donation receipt at all. PREVIOUS BEHAVIOR: donor received
+              // no receipt for a recurring charge whose Payment row was
+              // first created in this webhook delivery already SUCCEEDED.
+              // NEW BEHAVIOR: every successful recurring payment gets
+              // exactly one receipt, matching the existing-Payment
+              // transition path immediately above and the intended product
+              // behavior confirmed by that path's own established
+              // precedent (this is the same donation-receipt guarantee
+              // every other payment flow in this codebase already makes).
               try {
-                newRecurringPayment = await prisma.payment.create({
-                  data: {
-                    churchId,
-                    donorId,
-                    givingLinkId: sub.givingLinkId || null,
-                    // Team-access Checkpoint 3: inherited directly from the
-                    // subscription's own snapshotted attribution — never
-                    // re-read from the giving link here, so a link
-                    // reassignment after the subscription was created doesn't
-                    // change attribution for this or any other recurring
-                    // charge on this subscription.
-                    attributedUserId: resolveRecurringPaymentAttribution(sub),
-                    finixTransferId: data.id,
-                    finixBuyerIdentityId: sub.finixBuyerIdentityId || data.merchant_identity || null,
-                    finixPaymentInstrumentId: data.source || null,
-                    amountCents: data.amount ?? (donationAmountCents + (donorCoversFee ? feeCoveredCents : 0)),
-                    donationAmountCents,
-                    feeCoveredCents,
-                    paymentMethodType: (instrument?.paymentMethodType === "bank" || data.payment_type === "bank_account") ? "BANK_ACCOUNT" : "PAYMENT_CARD",
-                    status: (data.state || "PENDING").toUpperCase(),
-                    donorCoversFee,
-                    cardBrand: cardBrandStr,
-                    percentageBps,
-                    fixedFeeCents,
-                    feeCalculationVersion: "v1",
-                    merchantExpectedNetCents,
-                    finixSubscriptionId: sub.finixSubscriptionId,
-                  },
+                await prisma.$transaction(async (tx) => {
+                  const payment = await tx.payment.create({
+                    data: {
+                      churchId,
+                      donorId,
+                      givingLinkId: sub.givingLinkId || null,
+                      // Team-access Checkpoint 3: inherited directly from the
+                      // subscription's own snapshotted attribution — never
+                      // re-read from the giving link here, so a link
+                      // reassignment after the subscription was created doesn't
+                      // change attribution for this or any other recurring
+                      // charge on this subscription.
+                      attributedUserId: resolveRecurringPaymentAttribution(sub),
+                      finixTransferId: data.id,
+                      finixBuyerIdentityId: sub.finixBuyerIdentityId || data.merchant_identity || null,
+                      finixPaymentInstrumentId: data.source || null,
+                      amountCents: data.amount ?? (donationAmountCents + (donorCoversFee ? feeCoveredCents : 0)),
+                      donationAmountCents,
+                      feeCoveredCents,
+                      paymentMethodType: (instrument?.paymentMethodType === "bank" || data.payment_type === "bank_account") ? "BANK_ACCOUNT" : "PAYMENT_CARD",
+                      status: (data.state || "PENDING").toUpperCase(),
+                      donorCoversFee,
+                      cardBrand: cardBrandStr,
+                      percentageBps,
+                      fixedFeeCents,
+                      feeCalculationVersion: "v1",
+                      merchantExpectedNetCents,
+                      finixSubscriptionId: sub.finixSubscriptionId,
+                    },
+                  });
+
+                  if (payment.status === "SUCCEEDED") {
+                    await enqueueBackgroundJobInTransaction(tx, {
+                      jobType: "SEND_RECEIPT",
+                      entityType: "Payment",
+                      entityId: payment.id,
+                      dedupeKey: `SEND_RECEIPT:payment:${payment.id}:version:1`,
+                      payload: { paymentId: payment.id, churchId },
+                    });
+                    await enqueueBackgroundJobInTransaction(tx, {
+                      jobType: "QUICKBOOKS_PAYMENT",
+                      entityType: "Payment",
+                      entityId: payment.id,
+                      dedupeKey: `QUICKBOOKS_PAYMENT:payment:${payment.id}`,
+                      payload: { paymentId: payment.id },
+                    });
+                  }
                 });
               } catch (createErr) {
                 if (createErr instanceof Prisma.PrismaClientKnownRequestError && createErr.code === "P2002") {
                   // Payment.finixTransferId is unique — a concurrent
                   // delivery of transfer.created/transfer.updated for this
-                  // same recurring charge already created this row. Expected
-                  // "one wins" outcome, not a failure: pick up the winner's
-                  // row so QuickBooks sync below still runs exactly once
-                  // against the real record, and log it as prevented rather
-                  // than letting it fall into the generic catch below as an
-                  // undifferentiated error.
-                  const existing = await prisma.payment.findUnique({ where: { finixTransferId: data.id } });
+                  // same recurring charge already created this row (and, if
+                  // it committed successfully, already enqueued its own
+                  // jobs inside that same transaction) — the loser does
+                  // nothing further, matching the "one wins" pattern used
+                  // everywhere else in this codebase's transactional-outbox
+                  // flows. Logged as prevented rather than falling into the
+                  // generic catch below as an undifferentiated error.
                   logPaymentSafetyEvent("PAYMENT_DUPLICATE_PREVENTED", {
                     churchId,
                     finixTransferId: data.id,
@@ -566,23 +611,10 @@ export async function syncFinixDataFromWebhookEvent(
                     route: "/api/webhooks/finix",
                     detail: "P2002 on Payment.finixTransferId — concurrent transfer.created/transfer.updated delivery for the same recurring charge",
                   });
+                  const existing = await prisma.payment.findUnique({ where: { finixTransferId: data.id } });
                   if (!existing) throw createErr;
-                  newRecurringPayment = existing;
                 } else {
                   throw createErr;
-                }
-              }
-
-              // Covers the case where this recurring charge's Payment is
-              // created already SUCCEEDED (rather than PENDING-then-updated,
-              // which is handled separately above) — syncPaymentToQuickBooks
-              // is idempotent, so this can never double-sync alongside that
-              // other path.
-              if (newRecurringPayment.status === "SUCCEEDED") {
-                try {
-                  await syncPaymentToQuickBooks(newRecurringPayment.id);
-                } catch (err) {
-                  console.error("Failed to sync payment to QuickBooks:", err);
                 }
               }
             }
