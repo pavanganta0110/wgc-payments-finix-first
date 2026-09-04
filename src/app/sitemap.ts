@@ -15,6 +15,7 @@ const ROUTES = [
   "/start",
   "/resources",
   "/resources/church-payment-processing-guide-2026",
+  "/resources/nonprofit-payment-processing-guide-2026",
   "/resources/church-payment-processing-pricing-guide",
   "/resources/white-label-payment-processing-nonprofit-church-software",
   "/for/churches",
