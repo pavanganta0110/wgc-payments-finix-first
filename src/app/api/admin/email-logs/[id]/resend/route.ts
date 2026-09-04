@@ -48,9 +48,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const app = await prisma.onboardingApplication.findUnique({ where: { id: log.onboardingApplicationId } });
     if (!app) return NextResponse.json({ error: "Application not found" }, { status: 404 });
 
+    let secureLink: string | undefined;
+    if (app.onboardingStatus === "MORE_INFORMATION_REQUIRED" || app.onboardingStatus === "ADDITIONAL_INFO_NEEDED") {
+      // A resend regenerates the secure token — the previous one may be
+      // expired or already invalidated by an earlier submission.
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+      await prisma.onboardingApplication.update({
+        where: { id: app.id },
+        data: { updateTokenHash: tokenHash, updateTokenExpiresAt: expiresAt },
+      });
+      secureLink = `https://www.wgcpayments.com/onboarding/update/${rawToken}`;
+    }
+
     const { subject, title, badgeText, badgeColor, bodyHtml } = buildOnboardingStatusEmailContent(
       app.onboardingStatus,
-      app.organizationName
+      app.organizationName || app.legalBusinessName,
+      { requestedItems: app.updateRequestedItems, secureLink }
     );
     const result = await sendWgcEmail({ to: app.contactEmail, subject, title, badgeText, badgeColor, bodyHtml });
 
@@ -63,6 +79,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         status: result.success ? "SENT" : "FAILED",
         sentAt: result.success ? new Date() : null,
         error: result.success ? null : String(result.error ?? "unknown error"),
+        bodyHtml,
       },
     });
 
@@ -89,15 +106,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const link = `${appUrl}/merchant/set-password/${rawToken}`;
     const copy = ACCOUNT_LINK_TYPES[log.type];
 
+    const accountLinkBodyHtml = `<p>${copy.intro}</p>
+                 <p><a href="${link}">Set your password</a></p>
+                 <p>This link expires in 7 days.</p>`;
     const result = await sendWgcEmail({
       to: user.email,
       subject: copy.subject,
       title: copy.title,
       badgeText: "Action Required",
       badgeColor: "#0B5DBC",
-      bodyHtml: `<p>${copy.intro}</p>
-                 <p><a href="${link}">Set your password</a></p>
-                 <p>This link expires in 7 days.</p>`,
+      bodyHtml: accountLinkBodyHtml,
     });
 
     const newLog = await prisma.emailLog.create({
@@ -108,6 +126,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         status: result.success ? "SENT" : "FAILED",
         sentAt: result.success ? new Date() : null,
         error: result.success ? null : String(result.error ?? "unknown error"),
+        bodyHtml: accountLinkBodyHtml,
       },
     });
 

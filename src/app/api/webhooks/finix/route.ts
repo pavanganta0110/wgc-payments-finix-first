@@ -7,6 +7,7 @@ import { resolveRecurringPaymentAttribution } from "@/lib/auth/attributionSnapsh
 import { sendWgcEmail, sendWgcAdminEmail } from "@/lib/email";
 import { redactFinixPayload } from "@/lib/finix/redact";
 import { finixClient } from "@/lib/finix/client";
+import { parseVerificationOutcomes } from "@/lib/finix/parseVerificationOutcomes";
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { mapFinixDisputeStateToWgcStatus } from "@/lib/finix/statusMapping";
 import { provisionChurchAndBillingGateOrAlert } from "@/lib/billing/provisionChurchAndBillingGate";
@@ -95,6 +96,7 @@ export async function sendWebhookEmail(
         to: to,
         subject: subject,
         status: "PENDING",
+        bodyHtml,
       },
     });
   });
@@ -1722,20 +1724,9 @@ export async function POST(req: Request) {
           if (verificationId) {
             try {
               verificationPayload = await finixClient.getVerification(verificationId);
-              const outcomesRaw = (verificationPayload as { outcomes?: unknown })?.outcomes;
-              const outcomes: unknown[] = Array.isArray(outcomesRaw) ? outcomesRaw : [];
-              const items = outcomes
-                .map((o) => {
-                  const outcome = o as { outcome_code?: unknown; remediation_details?: { field_name?: unknown } };
-                  const code = typeof outcome?.outcome_code === "string" ? outcome.outcome_code : null;
-                  if (!code) return null;
-                  const readable = code.toLowerCase().replace(/_/g, " ").replace(/^./, (c: string) => c.toUpperCase());
-                  const fieldName = outcome?.remediation_details?.field_name;
-                  return typeof fieldName === "string" ? `${readable} (${fieldName})` : readable;
-                })
-                .filter((s): s is string => !!s);
-              if (items.length > 0) {
-                requestedItemsStr = items.map((i: string) => `• ${i}`).join("<br/>");
+              const parsed = parseVerificationOutcomes(verificationPayload);
+              if (parsed) {
+                requestedItemsStr = parsed;
                 requestedItemsResolved = true;
               }
             } catch (err) {

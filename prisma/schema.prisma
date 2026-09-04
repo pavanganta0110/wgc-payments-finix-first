@@ -337,6 +337,13 @@ model EmailLog {
   status                  String
   providerMessageId       String?
   error                   String?
+  /// The actual rendered HTML body sent (or attempted) — previously never
+  /// stored anywhere, so there was no way to see what an email actually
+  /// said after the fact short of the Resend provider's own dashboard
+  /// (2026-09-04 request). Nullable: older rows predate this column, and
+  /// a handful of send paths that don't build a bodyHtml string directly
+  /// (e.g. account-link emails composed inline) may leave it unset.
+  bodyHtml                String?
   sentAt                  DateTime?
   createdAt               DateTime  @default(now())
 }

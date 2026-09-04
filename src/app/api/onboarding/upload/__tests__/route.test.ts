@@ -134,6 +134,30 @@ describe("POST /api/onboarding/upload — field-update submissions", () => {
     expect(mockCreateVerification).toHaveBeenCalledTimes(1);
   });
 
+  it("tags the uploaded file with the real Finix file_type Finix's Verification asked for, not a hardcoded generic type", async () => {
+    mockPrisma.onboardingApplication.findFirst.mockResolvedValue({
+      ...APP_ROW,
+      updateRequestedCodes: {
+        outcomes: [{ outcome_code: "EDD_DOCUMENT_REQUESTED", remediation_details: { type: "FILE_UPLOAD", file_type: "ENHANCED_DUE_DILIGENCE_DOCUMENT" } }],
+      },
+    });
+    const { POST } = await load();
+    await POST(postReq({ file: pdfFile() }));
+
+    expect(mockCreateFileResource).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "ENHANCED_DUE_DILIGENCE_DOCUMENT" })
+    );
+    expect(mockPrisma.merchantDocument.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ documentType: "ENHANCED_DUE_DILIGENCE_DOCUMENT" }) })
+    );
+  });
+
+  it("falls back to the generic ADDITIONAL_DOCUMENTATION type when no FILE_UPLOAD outcome is on file", async () => {
+    const { POST } = await load(); // APP_ROW has no updateRequestedCodes
+    await POST(postReq({ file: pdfFile() }));
+    expect(mockCreateFileResource).toHaveBeenCalledWith(expect.objectContaining({ type: "ADDITIONAL_DOCUMENTATION" }));
+  });
+
   it("accepts a file AND field updates together, triggering exactly one verification", async () => {
     const { POST } = await load();
     const res = await POST(postReq({ file: pdfFile(), mcc: "8661" }));
@@ -160,5 +184,46 @@ describe("POST /api/onboarding/upload — field-update submissions", () => {
         data: expect.objectContaining({ onboardingStatus: "UNDER_REVIEW", updateTokenHash: null, updateTokenExpiresAt: null }),
       })
     );
+  });
+});
+
+describe("POST /api/onboarding/upload — multiple, distinctly-typed document uploads", () => {
+  it("accepts two file__<type>-named uploads in one request, each tagged with its own real Finix type", async () => {
+    const { POST } = await load();
+    const bankStatement = pdfFile("bank-statement.pdf");
+    const eddDoc = pdfFile("edd.pdf");
+    await POST(postReq({ "file__BANK_STATEMENT": bankStatement, "file__ENHANCED_DUE_DILIGENCE_DOCUMENT": eddDoc }));
+
+    expect(mockCreateFileResource).toHaveBeenCalledTimes(2);
+    expect(mockCreateFileResource).toHaveBeenCalledWith(expect.objectContaining({ type: "BANK_STATEMENT", display_name: "bank-statement.pdf" }));
+    expect(mockCreateFileResource).toHaveBeenCalledWith(expect.objectContaining({ type: "ENHANCED_DUE_DILIGENCE_DOCUMENT", display_name: "edd.pdf" }));
+    expect(mockUploadFileContent).toHaveBeenCalledTimes(2);
+    expect(mockPrisma.merchantDocument.create).toHaveBeenCalledTimes(2);
+    // Still exactly one verification trigger no matter how many documents were submitted.
+    expect(mockCreateVerification).toHaveBeenCalledTimes(1);
+  });
+
+  it("validates every file in a multi-upload request, not just the first", async () => {
+    const { POST } = await load();
+    const good = pdfFile("good.pdf");
+    const tooBig = new File([new Uint8Array(11 * 1024 * 1024)], "big.pdf", { type: "application/pdf" });
+    const res = await POST(postReq({ "file__BANK_STATEMENT": good, "file__ENHANCED_DUE_DILIGENCE_DOCUMENT": tooBig }));
+    expect(res.status).toBe(400);
+    expect(mockCreateFileResource).not.toHaveBeenCalled();
+  });
+
+  it("treats an empty file__ suffix as the generic ADDITIONAL_DOCUMENTATION type (no typed FILE_UPLOAD outcomes on file)", async () => {
+    const { POST } = await load();
+    await POST(postReq({ "file__": pdfFile() }));
+    expect(mockCreateFileResource).toHaveBeenCalledWith(expect.objectContaining({ type: "ADDITIONAL_DOCUMENTATION" }));
+  });
+
+  it("combines multiple typed uploads with field updates in a single submission", async () => {
+    const { POST } = await load();
+    const res = await POST(postReq({ "file__BANK_STATEMENT": pdfFile(), "file__ENHANCED_DUE_DILIGENCE_DOCUMENT": pdfFile(), mcc: "8661" }));
+    expect(res.status).toBe(200);
+    expect(mockUpdateIdentity).toHaveBeenCalledWith("ID123", { entity: { mcc: "8661" } });
+    expect(mockCreateFileResource).toHaveBeenCalledTimes(2);
+    expect(mockCreateVerification).toHaveBeenCalledTimes(1);
   });
 });

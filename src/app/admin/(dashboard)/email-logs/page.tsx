@@ -11,6 +11,7 @@ interface EmailLogEntry {
   error: string | null;
   sentAt: string | null;
   createdAt: string;
+  bodyHtml: string | null;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -44,6 +45,7 @@ export default function EmailLogsPage() {
   const [sort, setSort] = useState<'newest' | 'oldest'>('newest');
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const [viewingLog, setViewingLog] = useState<EmailLogEntry | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -164,19 +166,55 @@ export default function EmailLogsPage() {
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <p className="text-xs text-slate-400">{new Date(log.createdAt).toLocaleString()}</p>
-                  {isResendable(log.type) && (
-                    <button
-                      onClick={() => resend(log.id)}
-                      disabled={resendingId === log.id}
-                      className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      {resendingId === log.id ? 'Resending…' : 'Resend'}
-                    </button>
-                  )}
+                  <div className="flex gap-2">
+                    {log.bodyHtml && (
+                      <button
+                        onClick={() => setViewingLog(log)}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
+                      >
+                        View
+                      </button>
+                    )}
+                    {isResendable(log.type) && (
+                      <button
+                        onClick={() => resend(log.id)}
+                        disabled={resendingId === log.id}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {resendingId === log.id ? 'Resending…' : 'Resend'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {viewingLog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setViewingLog(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 p-5 border-b border-slate-200">
+              <div className="min-w-0">
+                <p className="font-bold text-slate-900 truncate">{viewingLog.subject}</p>
+                <p className="text-xs text-slate-500 mt-1">To: {viewingLog.to} · {new Date(viewingLog.createdAt).toLocaleString()}</p>
+              </div>
+              <button onClick={() => setViewingLog(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none px-1">×</button>
+            </div>
+            <div className="flex-1 overflow-auto p-2">
+              {/* Sandboxed iframe, not dangerouslySetInnerHTML — this renders
+                  the exact HTML that was actually sent, without letting any
+                  script or link inside it execute in the admin page's own
+                  context. */}
+              <iframe
+                title={`Email preview: ${viewingLog.subject}`}
+                sandbox=""
+                srcDoc={viewingLog.bodyHtml ?? ""}
+                className="w-full h-[60vh] border-0"
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>
