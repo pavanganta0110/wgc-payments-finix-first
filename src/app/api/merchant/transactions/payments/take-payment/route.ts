@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { finixClient } from "@/lib/finix/client";
+import { finixClient, type FinixTransferResponse } from "@/lib/finix/client";
+import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
 import { FEE_CALCULATION_VERSION } from "@/lib/giving/feeCalculator";
 import { resolveWgcTransferFeeStrategy } from "@/lib/giving/serverFeeStrategy";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
@@ -238,91 +240,125 @@ export async function POST(req: Request) {
       transferPayload.supplemental_fee = feeStrategy.supplementalFeeCents;
     }
 
-    let transfer;
+    let transfer: FinixTransferResponse;
     try {
       transfer = await finixClient.createTransfer(transferPayload);
     } catch (err) {
       return toSafePaymentErrorResponse(err, "PAYMENT_FAILED", "We couldn’t complete your donation. No charge was made.", true, { action: "createTransfer" });
     }
 
-    await prisma.paymentAttempt.update({
-      where: { id: attempt.id },
-      data: {
-        status: (transfer.state || "PENDING").toUpperCase(),
-        finixTransferId: transfer.id,
-        donorId: donorRecord.id,
-      },
-    });
-
-    await prisma.finixTransfer.upsert({
-      where: { finixTransferId: transfer.id },
-      create: {
-        finixTransferId: transfer.id,
-        churchId: church.id,
-        finixMerchantId: church.finixMerchantId,
-        finixPaymentInstrumentId: instrumentId,
-        type: transfer.type ?? "DEBIT",
-        state: transfer.state ?? "PENDING",
-        amountCents: totalCents,
-        currency: "USD",
-        source: "wgc_admin_payment",
-        tagsJson: transferPayload.tags,
-        createdAtFinix: new Date(),
-        lastSyncedAt: new Date(),
-      },
-      update: {
-        state: transfer.state ?? undefined,
-        lastSyncedAt: new Date(),
-      },
-    });
-
+    // Finix has confirmed the charge — from here, any failure must never be
+    // reported to the admin as "no charge was made" (see the identical
+    // pattern and rationale in donate/route.ts's post-charge write block).
     const goodsServicesProvidedValue = Boolean(goodsServicesProvided);
     const goodsServicesFairMarketValueCentsValue = goodsServicesProvidedValue ? goodsServicesFairMarketValueCents ?? 0 : null;
     const recordedContributionAmountCents = goodsServicesProvidedValue
       ? computeRecordedContributionAmountCents(donationAmountCents, goodsServicesFairMarketValueCentsValue ?? 0)
       : donationAmountCents;
 
-    const newPayment = await prisma.payment.create({
-      data: {
-        churchId: church.id,
-        donorId: donorRecord.id,
-        // Team-access Checkpoint 3: no "assign to another user" parameter
-        // exists in this flow today (createdByAdminUserId below has always
-        // been unconditionally the acting session user, never
-        // client-selectable) — so this defaults to the acting merchant user
-        // for every role, which also happens to satisfy "FUNDRAISER is
-        // always forced to themselves" for free, without extra branching.
-        // Building an explicit OWNER/ADMIN "assign to someone else" control
-        // would be new UI + API surface, out of scope for this checkpoint.
-        attributedUserId: auth.userId,
-        finixTransferId: transfer.id,
-        finixBuyerIdentityId: identityId,
-        finixPaymentInstrumentId: instrumentId,
-        amountCents: totalCents,
-        donationAmountCents,
-        feeCoveredCents,
-        paymentMethodType: method === "card" ? "PAYMENT_CARD" : "BANK_ACCOUNT",
-        status: transfer.state ?? "PENDING",
-        idempotencyId,
-        fraudSessionId,
-        fundName: fundName || null,
-        note: note || null,
-        isAnonymous: isAnonymous ?? false,
-        createdByAdminUserId: auth.userId,
-        paymentAttemptId: attempt.id,
-        goodsServicesProvided: goodsServicesProvidedValue,
-        goodsServicesDescription: goodsServicesProvidedValue ? goodsServicesDescription : null,
-        goodsServicesFairMarketValueCents: goodsServicesFairMarketValueCentsValue,
-        goodsServicesInternalNote: goodsServicesProvidedValue ? goodsServicesInternalNote : null,
-        recordedContributionAmountCents,
-        donorCoversFee: coverFees,
-        cardBrand: feeStrategy.normalizedCardBrand,
-        percentageBps: feeStrategy.percentageBasisPoints,
-        fixedFeeCents: feeStrategy.fixedFeeCents,
-        feeCalculationVersion: FEE_CALCULATION_VERSION,
-        merchantExpectedNetCents: totalCents - feeStrategy.expectedFeeCents,
-      },
-    });
+    let newPayment;
+    try {
+      await prisma.paymentAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: (transfer.state || "PENDING").toUpperCase(),
+          finixTransferId: transfer.id,
+          donorId: donorRecord.id,
+        },
+      });
+
+      await prisma.finixTransfer.upsert({
+        where: { finixTransferId: transfer.id },
+        create: {
+          finixTransferId: transfer.id,
+          churchId: church.id,
+          finixMerchantId: church.finixMerchantId,
+          finixPaymentInstrumentId: instrumentId,
+          type: transfer.type ?? "DEBIT",
+          state: transfer.state ?? "PENDING",
+          amountCents: totalCents,
+          currency: "USD",
+          source: "wgc_admin_payment",
+          tagsJson: transferPayload.tags,
+          createdAtFinix: new Date(),
+          lastSyncedAt: new Date(),
+        },
+        update: {
+          state: transfer.state ?? undefined,
+          lastSyncedAt: new Date(),
+        },
+      });
+
+      newPayment = await prisma.payment.create({
+        data: {
+          churchId: church.id,
+          donorId: donorRecord.id,
+          // Team-access Checkpoint 3: no "assign to another user" parameter
+          // exists in this flow today (createdByAdminUserId below has always
+          // been unconditionally the acting session user, never
+          // client-selectable) — so this defaults to the acting merchant user
+          // for every role, which also happens to satisfy "FUNDRAISER is
+          // always forced to themselves" for free, without extra branching.
+          // Building an explicit OWNER/ADMIN "assign to someone else" control
+          // would be new UI + API surface, out of scope for this checkpoint.
+          attributedUserId: auth.userId,
+          finixTransferId: transfer.id,
+          finixBuyerIdentityId: identityId,
+          finixPaymentInstrumentId: instrumentId,
+          amountCents: totalCents,
+          donationAmountCents,
+          feeCoveredCents,
+          paymentMethodType: method === "card" ? "PAYMENT_CARD" : "BANK_ACCOUNT",
+          status: transfer.state ?? "PENDING",
+          idempotencyId,
+          fraudSessionId,
+          fundName: fundName || null,
+          note: note || null,
+          isAnonymous: isAnonymous ?? false,
+          createdByAdminUserId: auth.userId,
+          paymentAttemptId: attempt.id,
+          goodsServicesProvided: goodsServicesProvidedValue,
+          goodsServicesDescription: goodsServicesProvidedValue ? goodsServicesDescription : null,
+          goodsServicesFairMarketValueCents: goodsServicesFairMarketValueCentsValue,
+          goodsServicesInternalNote: goodsServicesProvidedValue ? goodsServicesInternalNote : null,
+          recordedContributionAmountCents,
+          donorCoversFee: coverFees,
+          cardBrand: feeStrategy.normalizedCardBrand,
+          percentageBps: feeStrategy.percentageBasisPoints,
+          fixedFeeCents: feeStrategy.fixedFeeCents,
+          feeCalculationVersion: FEE_CALCULATION_VERSION,
+          merchantExpectedNetCents: totalCents - feeStrategy.expectedFeeCents,
+        },
+      });
+    } catch (writeError: unknown) {
+      if (writeError instanceof Prisma.PrismaClientKnownRequestError && writeError.code === "P2002") {
+        const existingPayment = await prisma.payment.findUnique({ where: { finixTransferId: transfer.id } });
+        if (existingPayment) {
+          logPaymentSafetyEvent("PAYMENT_DUPLICATE_PREVENTED", {
+            churchId: church.id,
+            paymentAttemptId: attempt.id,
+            finixTransferId: transfer.id,
+            source: "checkout",
+            route: "/api/merchant/transactions/payments/take-payment",
+            detail: "P2002 on Payment.finixTransferId — a concurrent writer already created this Payment",
+          });
+          newPayment = existingPayment;
+        } else {
+          logPaymentSafetyEvent("PAYMENT_STATUS_UNCERTAIN", { churchId: church.id, finixTransferId: transfer.id, source: "checkout", route: "/api/merchant/transactions/payments/take-payment" });
+          return NextResponse.json(
+            { success: false, code: "PAYMENT_STATUS_UNCERTAIN", message: "We’re confirming this payment. Please do not submit it again.", retryable: false, transferId: transfer.id },
+            { status: 503 }
+          );
+        }
+      } else {
+        console.error("Post-charge database write failed after Finix confirmed the transfer:", writeError);
+        logPaymentSafetyEvent("PAYMENT_STATUS_UNCERTAIN", { churchId: church.id, finixTransferId: transfer.id, source: "checkout", route: "/api/merchant/transactions/payments/take-payment" });
+        return NextResponse.json(
+          { success: false, code: "PAYMENT_STATUS_UNCERTAIN", message: "We’re confirming this payment. Please do not submit it again.", retryable: false, transferId: transfer.id },
+          { status: 503 }
+        );
+      }
+    }
 
     await logDashboardAction({
       churchId: church.id,

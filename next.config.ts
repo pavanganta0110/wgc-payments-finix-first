@@ -74,6 +74,16 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  // Dev-server-only (Next.js ignores this outside `next dev`/`next start`
+  // of a dev build; has no effect on the production build or deploy).
+  // Without it, `next dev`'s Origin check 403s every /_next/static chunk
+  // and the /_next/hmr websocket for any request whose Origin is
+  // 127.0.0.1 instead of localhost — which silently blocks ALL client-side
+  // JavaScript from ever loading, breaking hydration entirely. Playwright's
+  // baseURL (see playwright.config.ts) is http://127.0.0.1, which is
+  // exactly this case — this was the real root cause of the E2E suite's
+  // "element not found" / stuck-loading failures, not a Stage 1 code bug.
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   async redirects() {
     return [
       { source: "/for-software-partners", destination: "/software-partners", permanent: true },

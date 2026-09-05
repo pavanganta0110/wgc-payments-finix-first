@@ -107,6 +107,42 @@ describe("chargePromoShortfall", () => {
     expect(mockLogBillingAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: "promo_shortfall.charged" }));
   });
 
+  it("cold-review fix: an ambiguous/timeout Finix error marks CHARGE_UNCERTAIN (not CHARGE_FAILED), never creates a BillingCharge, and blocks a further retry", async () => {
+    mockCreateTransfer.mockRejectedValue(new Error("Finix Error: request timed out after 20000ms"));
+    const { chargePromoShortfall, PromoShortfallChargeError } = await load();
+
+    await expect(chargePromoShortfall("shortfall-1", ACTOR)).rejects.toThrow(PromoShortfallChargeError);
+
+    expect(mockPrisma.billingCharge.create).not.toHaveBeenCalled();
+    expect(mockPrisma.promoShortfallCharge.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "CHARGE_UNCERTAIN" }) })
+    );
+
+    // A second attempt (e.g. an admin clicking "Charge now" again, unaware
+    // the outcome is unknown) must be refused BEFORE ever calling Finix
+    // again — previously CHARGE_FAILED would have let this straight
+    // through, risking a real second charge if the first one actually
+    // landed (Finix's own idempotency-on-retry behavior is unverified from
+    // this environment, so this can never depend on it).
+    mockPrisma.promoShortfallCharge.findUnique.mockResolvedValue({ ...SHORTFALL, status: "CHARGE_UNCERTAIN" });
+    mockCreateTransfer.mockClear();
+    await expect(chargePromoShortfall("shortfall-1", ACTOR)).rejects.toThrow(PromoShortfallChargeError);
+    expect(mockCreateTransfer).not.toHaveBeenCalled();
+  });
+
+  it("a definite (non-ambiguous) Finix rejection still marks CHARGE_FAILED, and a retry after that IS allowed to reach Finix again", async () => {
+    mockCreateTransfer.mockRejectedValueOnce(new Error("card_declined"));
+    const { chargePromoShortfall } = await load();
+    await expect(chargePromoShortfall("shortfall-1", ACTOR)).rejects.toThrow();
+
+    mockPrisma.promoShortfallCharge.findUnique.mockResolvedValue({ ...SHORTFALL, status: "CHARGE_FAILED" });
+    mockCreateTransfer.mockResolvedValueOnce({ id: "TR_retry", state: "SUCCEEDED" });
+    const result = await chargePromoShortfall("shortfall-1", ACTOR);
+
+    expect(mockCreateTransfer).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe("CHARGED");
+  });
+
   it("returns an error (not a thrown exception the caller can't handle) for a nonexistent shortfall id", async () => {
     mockPrisma.promoShortfallCharge.findUnique.mockResolvedValue(null);
     const { chargePromoShortfall, PromoShortfallChargeError } = await load();

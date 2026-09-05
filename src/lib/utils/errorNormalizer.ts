@@ -262,10 +262,18 @@ export function toSafePaymentErrorResponse(
   };
   console.error("[WGC-SECURE-PAYMENT-ERROR]", JSON.stringify(logBlock));
 
-  // Determine if it was a network timeout or abort
+  // Determine if it was a network timeout or abort. This previously only
+  // matched the literal substring "timeout" — but finixClient's own actual
+  // timeout error text is "Finix Error: request timed out after 20000ms"
+  // (see client.ts), which never contained that substring. This meant a
+  // real Finix request timeout during createTransfer/createSubscription —
+  // exactly the case where WGC genuinely doesn't know if Finix received
+  // the charge — fell through to the generic PAYMENT_FAILED/retryable:true
+  // response instead of PAYMENT_STATUS_UNCERTAIN, telling a donor whose
+  // card may have just been charged to "please try again."
   if (error instanceof Error || (error && typeof error === "object")) {
     const msg = String(error.message || JSON.stringify(error)).toLowerCase();
-    if (msg.includes("timeout") || msg.includes("abort") || msg.includes("econnreset") || msg.includes("network")) {
+    if (msg.includes("timeout") || msg.includes("timed out") || msg.includes("abort") || msg.includes("econnreset") || msg.includes("network")) {
       return NextResponse.json(
         {
           success: false,

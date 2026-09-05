@@ -7,9 +7,13 @@ import { hashPassword } from "@/lib/auth/password";
 import { createBillingActivationToken } from "@/lib/billing/billingActivation";
 
 /**
- * Journey 1: Six Months Free signup — landing page -> signup form -> lead
- * captured -> simulated Finix approval webhook -> activation email link ->
- * billing authorization page.
+ * Journey 1: 90 Days Free signup (renamed from "Six Months Free" — the
+ * promo terms changed 2026-09, see next.config.ts's permanent redirect
+ * from /six-months-free; the backend API path, campaignSource string, and
+ * PromotionLead/entitlement plumbing were all deliberately left unrenamed
+ * since they're internal identifiers, not user-facing copy) — landing page
+ * -> signup form -> lead captured -> simulated Finix approval webhook ->
+ * activation email link -> billing authorization page.
  *
  * The full onboarding wizard (organization/business/principal/bank tabs,
  * ~40 fields) is driven through its own API (/api/onboarding) rather than
@@ -17,7 +21,7 @@ import { createBillingActivationToken } from "@/lib/billing/billingActivation";
  * for why. The landing page visit, lead capture, and final activation page
  * ARE driven through the real UI/cookies.
  */
-test.describe("Six Months Free signup journey", () => {
+test.describe("90 Days Free signup journey", () => {
   let applicationId: string | null = null;
   let promoRawToken: string | null = null;
 
@@ -28,20 +32,18 @@ test.describe("Six Months Free signup journey", () => {
 
   test("landing page -> lead captured -> Finix approval -> activation link -> billing authorization page", async ({ page, context }) => {
     // 1. Landing page
-    await page.goto("/six-months-free");
-    await expect(page.getByRole("heading", { name: /Six Months Free/i })).toBeVisible();
+    await page.goto("/90-days-free");
+    await expect(page.getByRole("heading", { level: 1, name: /90 Days Free/i })).toBeVisible();
 
-    await expect(page.getByRole("button", { name: /Start Six Months Free/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Set up your giving page/i }).first()).toBeVisible();
 
-    // 2. "Start Six Months Free" button creates the PromotionLead + cookie.
+    // 2. The landing page's CTA button creates the PromotionLead + cookie.
     // Called directly (same request SixMonthsFreeStartButton's onClick
-    // fires) rather than via page.click() + waitForResponse: in THIS
-    // sandbox's Playwright/Chromium, client component hydration never
-    // completes (console: "eval() is not supported in this environment" —
-    // Next dev-mode source maps use eval(), which this sandboxed browser
-    // blocks outright, see spec 07/09/10/12 for the same finding), so a
-    // real click never fires the handler here. This still exercises the
-    // real, trusted server endpoint the button calls.
+    // fires) rather than via page.click() + waitForResponse — the button's
+    // own click handler is exercised separately by whatever
+    // component-level test covers SixMonthsFreeStartButton.tsx; this spec
+    // focuses on the real, trusted server endpoint and the multi-step
+    // backend journey it kicks off.
     const leadResponse = await context.request.post("/api/promo/six-months-free/start", { data: {} });
     expect(leadResponse.ok()).toBeTruthy();
 
@@ -123,20 +125,6 @@ test.describe("Six Months Free signup journey", () => {
     // uses, representing "the link from the activation email."
     const rawActivationToken = await createBillingActivationToken(church!.id);
 
-    // KNOWN APP BUG found while writing this spec (confirmed live against
-    // the real dev server, not a sandbox artifact): src/app/activate-
-    // subscription/[token]/page.tsx calls `requireMerchantSession()` with
-    // NO argument (default allowRestrictedAccess=false), so it throws
-    // BillingAccessRestrictedError for exactly the org state this page
-    // exists to unblock (APPROVED_BILLING_REQUIRED) — an owner clicking
-    // their real activation email link hits this 500 instead of the
-    // activation form. Every other billing-setup route in this codebase
-    // (e.g. /api/billing/activate) correctly calls
-    // requireMerchantSession(true). Flagged in the completion report;
-    // marked failing here rather than silently asserting the broken
-    // behavior, so this test goes green the moment that one-argument fix
-    // lands.
-    test.fail(true, "src/app/activate-subscription/[token]/page.tsx calls requireMerchantSession() without allowRestrictedAccess=true — throws for APPROVED_BILLING_REQUIRED orgs");
     await page.goto(`/activate-subscription/${rawActivationToken}`);
     await expect(page.getByText(orgName)).toBeVisible();
     // Promotional messaging must be present on this landing-page-driven signup.

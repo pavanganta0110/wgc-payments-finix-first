@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { finixClient } from "@/lib/finix/client";
+import { finixClient, type FinixTransferResponse, type FinixSubscriptionResponse } from "@/lib/finix/client";
 import { FEE_CALCULATION_VERSION } from "@/lib/giving/feeCalculator";
 import { resolveWgcTransferFeeStrategy } from "@/lib/giving/serverFeeStrategy";
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
@@ -21,6 +21,7 @@ import { resolveEmbedCorsOrigin, embedCorsHeaders, embedPreflightResponse } from
 import { assertNonprofitApproved } from "@/lib/onboarding/nonprofitVerificationGuard";
 import { checkDonationRateLimit } from "@/lib/giving/donationRateLimit";
 import { computePledgeFulfillment } from "@/lib/pledges/pledgeFulfillment";
+import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
 import crypto from "crypto";
 
 /**
@@ -274,10 +275,20 @@ async function handleDonate(req: Request, slug: string) {
     const existingAttempt = await prisma.paymentAttempt.findUnique({ where: { clientAttemptId } });
     if (existingAttempt) {
       if (existingAttempt.status === "SUCCEEDED" || existingAttempt.status === "PENDING") {
+        // A donor who refreshes after a completed gift and resubmits with
+        // the same (sessionStorage-restored) clientAttemptId must land back
+        // on the real success screen showing the real amount they gave —
+        // not just "no second charge, but the total now silently reads
+        // $0.00." amountCents/feeCents/totalCents are already on this row
+        // (set before the charge was ever attempted), so no extra query is
+        // needed to answer this fully from here.
         return NextResponse.json({
           success: true,
           transferId: existingAttempt.finixTransferId,
           state: existingAttempt.status,
+          donationAmountCents: existingAttempt.amountCents,
+          feeCoveredCents: existingAttempt.feeCents,
+          totalCents: existingAttempt.totalCents,
           duplicate: true,
         });
       }
@@ -456,7 +467,11 @@ async function handleDonate(req: Request, slug: string) {
     logEvent("3_PAYMENT_INSTRUMENT_CREATED", { identityId, instrumentId });
     // 2. Perform Fee Calculation
     logEvent("4_FEE_STRATEGY_CALCULATED", { cardBrand });
-    let feeStrategy;
+    // Explicit type (rather than inferred) so createPaymentRecord's closure
+    // further below — defined after this is assigned, but TypeScript can't
+    // control-flow-narrow a `let` captured by a nested function — resolves
+    // to a real type instead of implicit `any`.
+    let feeStrategy: ReturnType<typeof resolveWgcTransferFeeStrategy>;
     try {
       logEvent("5_FEE_PROFILE_CONFIGURATION_LOADED", {});
       feeStrategy = resolveWgcTransferFeeStrategy({
@@ -533,6 +548,9 @@ async function handleDonate(req: Request, slug: string) {
           success: true,
           transferId: existingTransfer.id,
           state: existingTransfer.state,
+          donationAmountCents: existingPayment.donationAmountCents,
+          feeCoveredCents: existingPayment.feeCoveredCents,
+          totalCents: existingPayment.amountCents,
           duplicate: true,
         });
       }
@@ -560,13 +578,16 @@ async function handleDonate(req: Request, slug: string) {
         success: true,
         transferId: currentAttempt.finixTransferId,
         state: currentAttempt.status,
+        donationAmountCents: currentAttempt.amountCents,
+        feeCoveredCents: currentAttempt.feeCents,
+        totalCents: currentAttempt.totalCents,
         duplicate: true,
       });
     }
 
     const attemptPaymentMethodType =
       paymentMethod === "apple_pay" ? "APPLE_PAY" : paymentMethod === "google_pay" ? "GOOGLE_PAY" : paymentMethod === "card" ? "PAYMENT_CARD" : "BANK_ACCOUNT";
-    let attempt;
+    let attempt: Awaited<ReturnType<typeof prisma.paymentAttempt.create>>;
     try {
       attempt = currentAttempt
         ? await prisma.paymentAttempt.update({
@@ -595,7 +616,23 @@ async function handleDonate(req: Request, slug: string) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         const raced = await prisma.paymentAttempt.findUnique({ where: { clientAttemptId } });
         if (raced && (raced.status === "SUCCEEDED" || raced.status === "PENDING")) {
-          return NextResponse.json({ success: true, transferId: raced.finixTransferId, state: raced.status, duplicate: true });
+          logPaymentSafetyEvent("PAYMENT_DUPLICATE_PREVENTED", {
+            churchId: church.id,
+            paymentAttemptId: raced.id,
+            finixTransferId: raced.finixTransferId,
+            source: "checkout",
+            route: "/api/g/[slug]/donate",
+            detail: "P2002 on PaymentAttempt.clientAttemptId — a concurrent submission of the same attempt won the race",
+          });
+          return NextResponse.json({
+            success: true,
+            transferId: raced.finixTransferId,
+            state: raced.status,
+            donationAmountCents: raced.amountCents,
+            feeCoveredCents: raced.feeCents,
+            totalCents: raced.totalCents,
+            duplicate: true,
+          });
         }
       }
       throw err;
@@ -615,75 +652,134 @@ async function handleDonate(req: Request, slug: string) {
 
     // 6. Handle Subscription flow
     if (isRecurring) {
-      const subscription = await finixClient.createSubscription({
-        amount: totalCents,
-        currency: "USD",
-        billing_interval: interval as any,
-        linked_to: church.finixMerchantId,
-        linked_type: "MERCHANT",
-        buyer_details: { identity_id: identityId, instrument_id: instrumentId },
-        tags: {
+      let subscription: FinixSubscriptionResponse;
+      try {
+        // idempotency_id: the same idempotencyId derived above for the
+        // one-time /transfers path — a retried submission (same
+        // clientAttemptId) collapses to the same key. The PRIMARY
+        // protection against a duplicate subscription is still the
+        // PaymentAttempt unique-constraint claim already taken above
+        // (this call is never reached twice for the same clientAttemptId
+        // once that claim succeeds); this is defense-in-depth on Finix's
+        // side, whose actual behavior here is unconfirmed — see the doc
+        // comment on FinixClient.createSubscription.
+        subscription = await finixClient.createSubscription({
+          amount: totalCents,
+          currency: "USD",
+          billing_interval: interval as any,
+          linked_to: church.finixMerchantId,
+          linked_type: "MERCHANT",
+          buyer_details: { identity_id: identityId, instrument_id: instrumentId },
+          idempotency_id: idempotencyId,
+          tags: {
             source: "wgc_giving_link",
             merchantId: church.finixMerchantId,
             churchId: church.id,
             givingLinkId: link.id,
-        },
-      });
+          },
+        });
+      } catch (error) {
+        return toSafePaymentErrorResponse(error, "PAYMENT_FAILED", "We couldn’t start your recurring donation. No charge was made.", true, { action: "createSubscription" });
+      }
 
-      await prisma.finixSubscription.upsert({
-        where: { finixSubscriptionId: subscription.id },
-        create: {
-          finixSubscriptionId: subscription.id,
-          churchId: church.id,
-          // The donor record was already resolved (created or matched by
-          // Finix identity) earlier in this request — this is the same
-          // donorRecord used for the one-time-transfer path below, never
-          // re-derived from the processor's subscription response.
-          donorId: donorRecord.id,
-          givingLinkId: link.id,
-          // Team-access Checkpoint 3: snapshotted once at subscription
-          // creation from the giving link's owner — see the comment on the
-          // one-time Payment.attributedUserId above for the full rationale.
-          // Every recurring charge generated from this subscription later
-          // (webhooks/finix/route.ts) inherits this value directly.
-          attributedUserId: resolvePaymentAttributionFromGivingLink(link, church.id),
-          finixMerchantId: church.finixMerchantId,
-          finixBuyerIdentityId: identityId,
-          finixPaymentInstrumentId: instrumentId,
-          fundId: resolvedFund.fundId,
-          fundName: resolvedFund.fundName,
-          state: subscription.state ?? "ACTIVE",
-          amountCents: totalCents,
-          currency: "USD",
-          billingInterval: interval,
-          collectionMethod: "BILL_AUTOMATICALLY",
-          nextBillingDate: parseFinixDate(subscription.next_billing_date),
-          startedAt: new Date(),
-          donationAmountCents,
-          donorCoversFee: link.feeCoverEnabled && coverFees,
-          feeCalculationVersion: FEE_CALCULATION_VERSION,
-          lastSyncedAt: new Date(),
-        },
-        update: {
-          state: subscription.state ?? undefined,
-          nextBillingDate: parseFinixDate(subscription.next_billing_date) ?? undefined,
-          lastSyncedAt: new Date(),
-        },
-      });
+      // Finix has confirmed the subscription — from here, the same
+      // uncertain-outcome rule as the one-time flow applies (see the
+      // comment above the transfer flow's post-charge write block).
+      try {
+        await prisma.finixSubscription.upsert({
+          where: { finixSubscriptionId: subscription.id },
+          create: {
+            finixSubscriptionId: subscription.id,
+            churchId: church.id,
+            // The donor record was already resolved (created or matched by
+            // Finix identity) earlier in this request — this is the same
+            // donorRecord used for the one-time-transfer path below, never
+            // re-derived from the processor's subscription response.
+            donorId: donorRecord.id,
+            givingLinkId: link.id,
+            // Team-access Checkpoint 3: snapshotted once at subscription
+            // creation from the giving link's owner — see the comment on the
+            // one-time Payment.attributedUserId above for the full rationale.
+            // Every recurring charge generated from this subscription later
+            // (webhooks/finix/route.ts) inherits this value directly.
+            attributedUserId: resolvePaymentAttributionFromGivingLink(link, church.id),
+            finixMerchantId: church.finixMerchantId,
+            finixBuyerIdentityId: identityId,
+            finixPaymentInstrumentId: instrumentId,
+            fundId: resolvedFund.fundId,
+            fundName: resolvedFund.fundName,
+            state: subscription.state ?? "ACTIVE",
+            amountCents: totalCents,
+            currency: "USD",
+            billingInterval: interval,
+            collectionMethod: "BILL_AUTOMATICALLY",
+            nextBillingDate: parseFinixDate(subscription.next_billing_date),
+            startedAt: new Date(),
+            donationAmountCents,
+            donorCoversFee: link.feeCoverEnabled && coverFees,
+            feeCalculationVersion: FEE_CALCULATION_VERSION,
+            lastSyncedAt: new Date(),
+          },
+          update: {
+            state: subscription.state ?? undefined,
+            nextBillingDate: parseFinixDate(subscription.next_billing_date) ?? undefined,
+            lastSyncedAt: new Date(),
+          },
+        });
 
-      await prisma.paymentAttempt.update({
-        where: { id: attempt.id },
-        data: { status: "SUCCEEDED", donorId: donorRecord.id },
-      });
+        await prisma.paymentAttempt.update({
+          where: { id: attempt.id },
+          data: { status: "SUCCEEDED", donorId: donorRecord.id, finixTransferId: subscription.id },
+        });
+      } catch (writeError) {
+        console.error("Post-confirmation database write failed after Finix confirmed the subscription:", writeError);
+        return buildPaymentUncertainResponse(subscription.id, clientAttemptId);
+      }
 
-      await sendReceiptEmail(donor.email, fullName, church.name, totalCents, true, interval, church.id, donorRecord.id);
-
-      await prisma.givingLink.update({
-        where: { id: link.id },
-        data: { totalAttempts: { increment: 1 }, lastUsedAt: new Date() },
-      });
+      // FinixSubscription now durably exists — a failure in either of
+      // these must never be reported back as a failed/uncertain donation.
+      try {
+        await sendReceiptEmail(donor.email, fullName, church.name, totalCents, true, interval, church.id, donorRecord.id);
+      } catch (err) {
+        console.error("Failed to send recurring-donation receipt email:", err);
+      }
+      try {
+        await prisma.givingLink.update({
+          where: { id: link.id },
+          data: { totalAttempts: { increment: 1 }, lastUsedAt: new Date() },
+        });
+      } catch (err) {
+        console.error("Failed to update giving link counters after subscription was recorded:", err);
+      }
 
       return NextResponse.json({ success: true, subscriptionId: subscription.id, recurring: true });
+    }
+
+    // Returned once Finix has confirmed a charge/subscription but a
+    // subsequent local write failed or raced ambiguously — the donor must
+    // never be told the payment failed here, only that it's unresolved.
+    // clientAttemptId is echoed back so the frontend can poll
+    // GET /api/g/[slug]/payment-attempt/[clientAttemptId] for the real
+    // outcome once it's known (webhook-driven recovery, or a human-visible
+    // reconciliation alert for the rare case neither path resolves it).
+    function buildPaymentUncertainResponse(transferId: string, clientAttemptIdForResponse: string) {
+      logPaymentSafetyEvent("PAYMENT_STATUS_UNCERTAIN", {
+        churchId: church?.id ?? null,
+        finixTransferId: transferId,
+        source: "checkout",
+        route: "/api/g/[slug]/donate",
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PAYMENT_STATUS_UNCERTAIN",
+          message: "We’re confirming your donation. Please do not submit another payment.",
+          retryable: false,
+          transferId,
+          clientAttemptId: clientAttemptIdForResponse,
+        },
+        { status: 503 }
+      );
     }
 
     // 7. Handle Transfer flow
@@ -722,7 +818,7 @@ async function handleDonate(req: Request, slug: string) {
       supplemental_fee: transferPayload.supplemental_fee,
       feePaidBy: feeStrategy.feePaidBy
     });
-    let transfer;
+    let transfer: FinixTransferResponse;
     try {
       transfer = await finixClient.createTransfer(transferPayload);
       logEvent("8_FINIX_TRANSFER_RESPONSE_RECEIVED", { transferId: transfer.id, state: transfer.state });
@@ -730,73 +826,126 @@ async function handleDonate(req: Request, slug: string) {
       return toSafePaymentErrorResponse(error, "PAYMENT_FAILED", "We couldn’t complete your donation. No charge was made.", true, { action: "createTransfer" });
     }
 
-    await prisma.finixTransfer.upsert({
-      where: { finixTransferId: transfer.id },
-      create: {
-        finixTransferId: transfer.id,
-        churchId: church.id,
-        finixMerchantId: church.finixMerchantId,
-        finixPaymentInstrumentId: instrumentId,
-        type: transfer.type ?? "DEBIT",
-        state: transfer.state ?? "PENDING",
-        amountCents: totalCents,
-        currency: "USD",
-        source: "wgc_giving_link",
-        tagsJson: transferPayload.tags,
-        createdAtFinix: new Date(),
-        lastSyncedAt: new Date(),
-      },
-      update: { state: transfer.state ?? undefined, lastSyncedAt: new Date() },
-    });
+    // Finix has now confirmed the charge attempt (we have a real transfer
+    // id). From here until Payment durably exists, ANY failure — a dead DB
+    // connection, a timeout, a crashed process — must NEVER be reported to
+    // the donor as "failed" or "no charge was made," because the card may
+    // genuinely have been charged. See buildPaymentUncertainResponse below
+    // and PRIORITY 4/5 in the payment-safety audit. The webhook handler
+    // independently reconstructs this exact Payment row if this whole
+    // block never completes (see webhooks/finix/route.ts's one-time-donation
+    // orphan recovery) — this is the other half of that safety net.
+    //
+    // Defined here (rather than earlier in the function) so it closes over
+    // church/link/attempt/feeStrategy/transfer only after each has already
+    // been assigned and null-checked above — TypeScript can't narrow a
+    // closure defined before its captured `let` variables are assigned.
+    async function createPaymentRecord() {
+      // Non-null assertions: church/link were already validated non-null
+      // far above (the `if (!church...) return` / `if (!link) return`
+      // guards near the top of this handler) — this function is only ever
+      // reached after those checks passed, but TypeScript can't carry that
+      // narrowing into a closure over a `let`/`const` from an outer scope.
+      const safeChurch = church!;
+      const safeLink = link!;
+      return prisma.payment.create({
+        data: {
+          churchId: safeChurch.id,
+          donorId: donorRecord.id,
+          paymentAttemptId: attempt.id,
+          givingLinkId: safeLink.id,
+          // Team-access Checkpoint 3: snapshotted once here, at payment
+          // creation — never re-derived from the giving link later (a
+          // subsequent reassignment must not change this payment's
+          // attribution). church was looked up via link.churchId above, so
+          // this is guaranteed same-church by construction. Stays null when
+          // the link has no owner — never substituted with the church's
+          // primary owner.
+          attributedUserId: resolvePaymentAttributionFromGivingLink(safeLink, safeChurch.id),
+          finixTransferId: transfer.id,
+          finixBuyerIdentityId: identityId,
+          finixPaymentInstrumentId: instrumentId,
+          amountCents: totalCents,
+          donationAmountCents,
+          feeCoveredCents,
+          paymentMethodType:
+            paymentMethod === "apple_pay"
+              ? "APPLE_PAY"
+              : paymentMethod === "google_pay"
+                ? "GOOGLE_PAY"
+                : paymentMethod === "card"
+                  ? "PAYMENT_CARD"
+                  : "BANK_ACCOUNT",
+          status: transfer.state ?? "PENDING",
+          donorCoversFee: safeLink.feeCoverEnabled && coverFees,
+          cardBrand: feeStrategy.normalizedCardBrand,
+          percentageBps: feeStrategy.percentageBasisPoints,
+          fixedFeeCents: feeStrategy.fixedFeeCents,
+          feeCalculationVersion: FEE_CALCULATION_VERSION,
+          merchantExpectedNetCents: totalCents - feeStrategy.expectedFeeCents,
+          fundId: resolvedFund.fundId,
+          fundName: resolvedFund.fundName || safeLink.fundName || null,
+          pledgeId: resolvedPledgeId,
+          isAnonymous: fieldSettings.anonymousDonation !== "HIDDEN" ? Boolean(donor.isAnonymous) : false,
+          note: fieldSettings.donorNote !== "HIDDEN" ? donor.note?.trim() || null : null,
+        },
+      });
+    }
 
-    await prisma.paymentAttempt.update({
-      where: { id: attempt.id },
-      data: { status: (transfer.state || "PENDING").toUpperCase(), finixTransferId: transfer.id, donorId: donorRecord.id },
-    });
+    let newPayment;
+    try {
+      await prisma.finixTransfer.upsert({
+        where: { finixTransferId: transfer.id },
+        create: {
+          finixTransferId: transfer.id,
+          churchId: church.id,
+          finixMerchantId: church.finixMerchantId,
+          finixPaymentInstrumentId: instrumentId,
+          type: transfer.type ?? "DEBIT",
+          state: transfer.state ?? "PENDING",
+          amountCents: totalCents,
+          currency: "USD",
+          source: "wgc_giving_link",
+          tagsJson: transferPayload.tags,
+          createdAtFinix: new Date(),
+          lastSyncedAt: new Date(),
+        },
+        update: { state: transfer.state ?? undefined, lastSyncedAt: new Date() },
+      });
 
-    logEvent("9_PAYMENT_DATABASE_SAVE_COMPLETED", { transferId: transfer.id });
-    const newPayment = await prisma.payment.create({
-      data: {
-        churchId: church.id,
-        donorId: donorRecord.id,
-        paymentAttemptId: attempt.id,
-        givingLinkId: link.id,
-        // Team-access Checkpoint 3: snapshotted once here, at payment
-        // creation — never re-derived from the giving link later (a
-        // subsequent reassignment must not change this payment's
-        // attribution). church was looked up via link.churchId above, so
-        // this is guaranteed same-church by construction. Stays null when
-        // the link has no owner — never substituted with the church's
-        // primary owner.
-        attributedUserId: resolvePaymentAttributionFromGivingLink(link, church.id),
-        finixTransferId: transfer.id,
-        finixBuyerIdentityId: identityId,
-        finixPaymentInstrumentId: instrumentId,
-        amountCents: totalCents,
-        donationAmountCents,
-        feeCoveredCents,
-        paymentMethodType:
-          paymentMethod === "apple_pay"
-            ? "APPLE_PAY"
-            : paymentMethod === "google_pay"
-              ? "GOOGLE_PAY"
-              : paymentMethod === "card"
-                ? "PAYMENT_CARD"
-                : "BANK_ACCOUNT",
-        status: transfer.state ?? "PENDING",
-        donorCoversFee: link.feeCoverEnabled && coverFees,
-        cardBrand: feeStrategy.normalizedCardBrand,
-        percentageBps: feeStrategy.percentageBasisPoints,
-        fixedFeeCents: feeStrategy.fixedFeeCents,
-        feeCalculationVersion: FEE_CALCULATION_VERSION,
-        merchantExpectedNetCents: totalCents - feeStrategy.expectedFeeCents,
-        fundId: resolvedFund.fundId,
-        fundName: resolvedFund.fundName || link.fundName || null,
-        pledgeId: resolvedPledgeId,
-        isAnonymous: fieldSettings.anonymousDonation !== "HIDDEN" ? Boolean(donor.isAnonymous) : false,
-        note: fieldSettings.donorNote !== "HIDDEN" ? donor.note?.trim() || null : null,
-      },
-    });
+      await prisma.paymentAttempt.update({
+        where: { id: attempt.id },
+        data: { status: (transfer.state || "PENDING").toUpperCase(), finixTransferId: transfer.id, donorId: donorRecord.id },
+      });
+
+      logEvent("9_PAYMENT_DATABASE_SAVE_COMPLETED", { transferId: transfer.id });
+      newPayment = await createPaymentRecord();
+    } catch (writeError: unknown) {
+      if (writeError instanceof Prisma.PrismaClientKnownRequestError && writeError.code === "P2002") {
+        // Payment.finixTransferId is unique — this means a concurrent
+        // process (a race against this same request, or the webhook
+        // handler's own orphan recovery) already created the Payment row
+        // for this exact transfer. That's the expected "one wins" outcome,
+        // not an error: fetch it and continue as a normal success.
+        const existing = await prisma.payment.findUnique({ where: { finixTransferId: transfer.id } });
+        if (existing) {
+          logPaymentSafetyEvent("PAYMENT_DUPLICATE_PREVENTED", {
+            churchId: church.id,
+            paymentAttemptId: attempt.id,
+            finixTransferId: transfer.id,
+            source: "checkout",
+            route: "/api/g/[slug]/donate",
+            detail: "P2002 on Payment.finixTransferId — a concurrent writer (webhook orphan recovery or a raced retry) already created this Payment",
+          });
+          newPayment = existing;
+        } else {
+          return buildPaymentUncertainResponse(transfer.id, clientAttemptId);
+        }
+      } else {
+        console.error("Post-charge database write failed after Finix confirmed the transfer:", writeError);
+        return buildPaymentUncertainResponse(transfer.id, clientAttemptId);
+      }
+    }
 
 
 
@@ -812,7 +961,15 @@ async function handleDonate(req: Request, slug: string) {
     } else if (claimedOneTimeLinkId) {
       linkUpdateData.status = "ACTIVE";
     }
-    await prisma.givingLink.update({ where: { id: link.id }, data: linkUpdateData });
+    // Payment already durably exists at this point (created above, or
+    // fetched via the P2002 race branch) — a failure here is a reporting
+    // gap on GivingLink's own counters, never a reason to tell the donor
+    // their already-recorded payment is uncertain or failed.
+    try {
+      await prisma.givingLink.update({ where: { id: link.id }, data: linkUpdateData });
+    } catch (err) {
+      console.error("Failed to update giving link counters after payment was recorded:", err);
+    }
 
     if (succeeded && resolvedPledgeId) {
       try {
