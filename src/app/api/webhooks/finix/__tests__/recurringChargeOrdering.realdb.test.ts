@@ -161,15 +161,79 @@ describe("Recurring-charge webhook — real sandbox Postgres ordering + idempote
     expect(payments[0].status).toBe("SUCCEEDED");
   });
 
-  // Test F (checkout + webhook race) and Test G (checkout + webhook +
-  // reconciler race) are intentionally NOT implemented here.
+  it("Test F — the checkout path's own Payment-creation transaction racing the webhook's, for the same finixTransferId, still yields exactly one Payment", async () => {
+    // WHAT'S REAL vs MOCKED (Flow 3 Task 14 requirement): real Postgres,
+    // the real Payment.finixTransferId @unique constraint, and the real
+    // syncFinixDataFromWebhookEvent webhook-side logic (as in every other
+    // test in this file). The "checkout side" is NOT the full HTTP route
+    // (take-payment/route.ts) — driving that would additionally require
+    // mocking Finix charge/instrument creation, session auth, and fee
+    // calculation, none of which is what this race is actually testing.
+    // Instead this directly exercises take-payment's own transaction body
+    // (Payment.create + conditional SEND_RECEIPT outbox enqueue inside one
+    // prisma.$transaction, P2002-caught exactly the same way) verbatim —
+    // the real Payment-persistence code path, just invoked without its
+    // surrounding HTTP/Finix machinery.
+    const { syncFinixDataFromWebhookEvent } = await import("../route");
+    const { enqueueBackgroundJobInTransaction } = await import("@/lib/jobs/backgroundJobs");
+    const data = transferData({ state: "SUCCEEDED" });
+
+    async function checkoutSideCreate() {
+      try {
+        return await prisma.$transaction(async (tx) => {
+          const payment = await tx.payment.create({
+            data: {
+              churchId: CHURCH_ID,
+              finixTransferId: data.id,
+              amountCents: 5000,
+              donationAmountCents: 5000,
+              paymentMethodType: "PAYMENT_CARD",
+              status: "SUCCEEDED",
+              idempotencyId: `checkout-race-${data.id}`,
+            },
+          });
+          await enqueueBackgroundJobInTransaction(tx, {
+            jobType: "SEND_RECEIPT",
+            entityType: "Payment",
+            entityId: payment.id,
+            dedupeKey: `SEND_RECEIPT:payment:${payment.id}:version:1`,
+            payload: { paymentId: payment.id, churchId: CHURCH_ID },
+          });
+          return payment;
+        });
+      } catch (err) {
+        // Same P2002-fallback shape as take-payment/route.ts and the
+        // webhook's own new-Payment branch: a concurrent writer won, so
+        // fetch and return its row instead of treating this as a failure.
+        const existing = await prisma.payment.findUnique({ where: { finixTransferId: data.id } });
+        if (existing) return existing;
+        throw err;
+      }
+    }
+
+    await Promise.all([
+      checkoutSideCreate(),
+      syncFinixDataFromWebhookEvent("TRANSFER", "transfer.updated", data, "evt-f-1", new Date()),
+    ]);
+
+    const payments = await prisma.payment.findMany({ where: { finixTransferId: data.id } });
+    expect(payments).toHaveLength(1);
+
+    const jobs = await prisma.backgroundJob.findMany({ where: { entityId: payments[0].id } });
+    expect(jobs.filter((j) => j.jobType === "SEND_RECEIPT")).toHaveLength(1);
+    // QUICKBOOKS_PAYMENT is only enqueued by the webhook side's own branch
+    // in this scenario (the checkout-side fixture above doesn't sync to
+    // QuickBooks, matching take-payment/route.ts's real behavior) — since
+    // whichever side wins the create() race is the one whose enqueue
+    // logic actually runs, this asserts "at most one" rather than
+    // asserting it always fires.
+    expect(jobs.filter((j) => j.jobType === "QUICKBOOKS_PAYMENT").length).toBeLessThanOrEqual(1);
+  });
+
+  // Test G (checkout + webhook + reconciler race) is intentionally NOT
+  // implemented here.
   //
-  // Test F requires driving the actual public checkout path
-  // (donate/route.ts) concurrently with this webhook path against the
-  // same transfer id — a real integration test, not yet built, tracked as
-  // remaining Flow 3 work rather than fabricated here.
-  //
-  // Test G explicitly requires Task 8's payment-reconciliation worker,
+  // It explicitly requires Task 8's payment-reconciliation worker,
   // which does not exist yet (Task 8 is the next major piece of work
   // after Flow 3, per the standing plan). Per explicit instruction: "If
   // the reconciler does not exist yet, create the test fixture/interface
@@ -178,6 +242,6 @@ describe("Recurring-charge webhook — real sandbox Postgres ordering + idempote
   // fixture is created here yet because the reconciler's real interface
   // (what it will actually call to attempt recovery) isn't defined until
   // Task 8 design happens; inventing one now risks a fixture that doesn't
-  // match the real implementation. Both are recorded as BLOCKED, not
-  // skipped silently.
+  // match the real implementation. Recorded as BLOCKED UNTIL RECONCILER,
+  // not skipped silently.
 });

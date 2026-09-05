@@ -17,8 +17,14 @@ const PROMOTION_ENDING_SOON_DAYS = 14;
 
 // FinixWebhookEvent.processingStatus values in use (see
 // src/app/api/webhooks/finix/route.ts and src/app/api/cron/reconcile/route.ts):
-// PENDING (default) | COMPLETED | FAILED | ERROR.
-const UNPROCESSED_WEBHOOK_STATUSES = ["PENDING", "FAILED", "ERROR"];
+// PENDING (default) | PROCESSING | COMPLETED | FAILED | ERROR.
+// PROCESSING was added by Stage 2 Flow 3's fast-ack split — a webhook now
+// spends real, non-instant time in PENDING/PROCESSING while its
+// BackgroundJob is queued/running, instead of the sub-second window before
+// that change, so this list intentionally still reports it as
+// "not yet completed" rather than silently excluding normal in-flight
+// processing latency from view.
+const UNPROCESSED_WEBHOOK_STATUSES = ["PENDING", "PROCESSING", "FAILED", "ERROR"];
 
 export interface TrialMissingDatesRow {
   subscriptionId: string;

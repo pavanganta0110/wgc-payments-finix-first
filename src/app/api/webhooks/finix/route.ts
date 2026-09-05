@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import crypto from "crypto";
-import { Prisma } from "@prisma/client";
+import { Prisma, type FinixWebhookEvent } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveRecurringPaymentAttribution } from "@/lib/auth/attributionSnapshot";
 import { sendWgcEmail, sendWgcAdminEmail } from "@/lib/email";
@@ -1363,6 +1363,423 @@ export async function syncFinixDataFromWebhookEvent(
   });
 }
 
+/**
+ * Stage 2 fast-ack split (Flow 3): the actual Finix business-processing
+ * work for one webhook event — WGC platform-billing routing, the additive
+ * transfer/dispute/settlement data-sync layer (syncFinixDataFromWebhookEvent,
+ * itself already transactional-outbox-safe per Flow 3's Payment-mutation
+ * fix), and onboarding-application status transitions/emails. This used to
+ * run synchronously inside POST, before Finix ever got its 200 back. It now
+ * runs inside the PROCESS_FINIX_WEBHOOK BackgroundJob handler
+ * (see jobHandlers.ts), dispatched AFTER POST has already durably
+ * persisted this FinixWebhookEvent row (in the same transaction as the job
+ * enqueue — see POST below) and returned 200.
+ *
+ * MUST be safe to call more than once for the same row: a BackgroundJob
+ * lease can expire and be reclaimed after a worker died mid-run, and the
+ * outbox will call this again on RETRY — see Task 5/6/7 of the Flow 3 spec.
+ * The processingStatus === "COMPLETED" short-circuit below is what makes
+ * that safe for the one part of this function that ISN'T naturally
+ * idempotent on its own (the onboarding-status emails) —
+ * syncFinixDataFromWebhookEvent's own upserts and dedupeKey-guarded job
+ * enqueues are already safe to re-run by themselves (Flow 3's earlier
+ * partial increment).
+ *
+ * A genuine failure here MUST throw (not swallow) so the caller's
+ * BackgroundJob outbox actually retries/backs off — Finix itself was
+ * already acked at ingress and will never redeliver this specific event
+ * again, so this is now the ONLY retry mechanism left for it.
+ */
+export async function processFinixWebhookEvent(webhookEvent: FinixWebhookEvent): Promise<void> {
+  if (webhookEvent.processingStatus === "COMPLETED") {
+    return;
+  }
+
+  const { entity, eventType, data } = getFinixEventData(webhookEvent.rawPayloadJson);
+  const eventId = webhookEvent.finixEventId;
+  const occurredAt = webhookEvent.occurredAt ?? new Date();
+
+  await prisma.finixWebhookEvent.update({
+    where: { id: webhookEvent.id },
+    data: { processingStatus: "PROCESSING" },
+  });
+  logPaymentSafetyEvent("WEBHOOK_PROCESSING", {
+    detail: `finixEventId=${eventId} entity=${entity} type=${eventType} webhookEventId=${webhookEvent.id}`,
+    route: "/api/webhooks/finix",
+  });
+
+  // WGC platform-subscription billing events — resolved by
+  // finixSubscriptionId, never by trusting anything client-submitted.
+  // Matches nothing (returns false) for the overwhelming majority of
+  // events (every donation/invoice transfer on a client organization's
+  // own merchant), so this never interferes with the logic below.
+  try {
+    const { handleWgcSubscriptionWebhookEvent } = await import("@/lib/billing/wgcSubscriptionWebhook");
+    const handled = await handleWgcSubscriptionWebhookEvent(eventType, data);
+    if (handled) {
+      // Pre-existing gap found while wiring this into the retry-driven
+      // outbox (2026-09-04): this branch never marked the event COMPLETED,
+      // so it stayed "PENDING" forever and permanently showed up in the
+      // admin billing-monitoring "unprocessed webhooks" list even though
+      // it was genuinely fully handled. Fixed here — correctness of this
+      // exact flag now also gates whether a lease-reclaim retry re-runs
+      // this function's non-idempotent onboarding-email half below.
+      await prisma.finixWebhookEvent.update({
+        where: { id: webhookEvent.id },
+        data: { processedAt: new Date(), processingStatus: "COMPLETED" },
+      });
+      logPaymentSafetyEvent("WEBHOOK_COMPLETED", { detail: `finixEventId=${eventId} webhookEventId=${webhookEvent.id} outcome=wgc_billing`, route: "/api/webhooks/finix" });
+      return;
+    }
+  } catch (wgcBillingError) {
+    console.error("WGC subscription webhook handling failed:", wgcBillingError);
+    // Fall through to the existing logic below rather than failing the
+    // whole webhook — this event may still be a legitimate church-merchant
+    // event that the existing sync layer needs to process.
+  }
+
+  // Additive Finix data sync layer — stores transfers/disputes/settlements
+  // into their own tables for future reporting/admin dashboard use. This
+  // is independent of and does not affect the onboarding status logic
+  // below. A failure here is archived rather than thrown — see the
+  // dedicated archive-on-failure block — because it has its own separate
+  // failure record (finixRawEventArchive) and must not block the
+  // onboarding-status logic below for a real merchant application.
+  let syncSucceeded = false;
+  let lastSyncError: unknown;
+  for (let attempt = 1; attempt <= 3 && !syncSucceeded; attempt++) {
+    try {
+      await syncFinixDataFromWebhookEvent(entity, eventType, data, eventId, occurredAt);
+      syncSucceeded = true;
+    } catch (syncError) {
+      lastSyncError = syncError;
+      console.error(`Finix data sync (additive layer) failed, attempt ${attempt}/3:`, syncError);
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 300));
+    }
+  }
+  if (!syncSucceeded) {
+    // This archive write is the last line of defense — if the sync above
+    // failed because of a sustained connection issue (not just a blip),
+    // this write can hit the same issue and fail too, silently losing
+    // the event with no trace anywhere. A few retries here specifically
+    // guard against that "shouldn't retry, must, then can't even record
+    // it" case.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await prisma.finixRawEventArchive.upsert({
+          where: { finixEventId: eventId },
+          create: {
+            finixEventId: eventId,
+            entity,
+            eventType,
+            resourceId: data?.id ?? null,
+            finixMerchantId: data?.merchant ?? data?.linked_to ?? null,
+            payloadRedactedJson: redactFinixPayload(data ?? {}),
+            processingStatus: "FAILED",
+            errorMessage: lastSyncError instanceof Error ? lastSyncError.message : String(lastSyncError),
+          },
+          update: {
+            processingStatus: "FAILED",
+            errorMessage: lastSyncError instanceof Error ? lastSyncError.message : String(lastSyncError),
+          },
+        });
+        break;
+      } catch (archiveError) {
+        console.error(`Failed to record sync failure, attempt ${attempt}/3:`, archiveError);
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 300));
+      }
+    }
+  }
+
+  try {
+    const app = await findOnboardingApplicationForFinixEvent(data);
+
+    if (!app) {
+      await prisma.finixWebhookEvent.update({
+        where: { id: webhookEvent.id },
+        data: { processedAt: new Date(), processingStatus: "COMPLETED" },
+      });
+      logPaymentSafetyEvent("WEBHOOK_COMPLETED", { detail: `finixEventId=${eventId} webhookEventId=${webhookEvent.id} outcome=no_matching_app`, route: "/api/webhooks/finix" });
+      return;
+    }
+
+    const contactEmail = app.contactEmail;
+    const orgName = app.legalBusinessName || app.organizationName;
+    const safeOrgName = orgName || "your organization";
+
+    const updateData: any = {
+      lastFinixEventId: eventId,
+      lastFinixEventType: eventType,
+      lastWebhookPayloadSummary: { type: eventType, entity, status: data?.status, state: data?.state, onboarding_state: data?.onboarding_state }
+    };
+
+    if (eventType === "merchant.created") {
+      const onboardingState = data?.onboarding_state;
+      if (onboardingState === "PROVISIONING") {
+        if (app.onboardingStatus !== "APPROVED" && app.onboardingStatus !== "REJECTED") {
+          updateData.onboardingStatus = "UNDER_REVIEW";
+          updateData.finixMerchantId = data.id;
+          updateData.lastStatusChangedAt = new Date();
+        }
+      }
+    } else if (eventType === "merchant.underwritten" || eventType === "merchant.updated") {
+      const onboardingState = data?.onboarding_state;
+      const status = data?.status;
+
+      if (onboardingState === "APPROVED" || status === "APPROVED") {
+        const wasAlreadyApproved = app.onboardingStatus === "APPROVED";
+        updateData.onboardingStatus = "APPROVED";
+        updateData.onboardingState = "APPROVED";
+        updateData.processingEnabled = data?.processing_enabled || false;
+        updateData.settlementEnabled = data?.settlement_enabled || false;
+        if (!wasAlreadyApproved) {
+          updateData.lastStatusChangedAt = new Date();
+          updateData.approvedAt = new Date();
+        }
+
+        await sendWebhookEmail(
+          app.id,
+          "APPROVED",
+          contactEmail,
+          "Your WGC Payments account has been approved",
+          "Your account has been approved",
+          "Approved",
+          "#10B981",
+          `<p>Hi ${safeOrgName},</p>
+           <p>Great news — your WGC Payments account has been approved.</p>
+           <p>Your merchant account is now approved for payment processing. You will receive a separate secure dashboard access email with instructions to log in and set or reset your password.</p>`
+        );
+
+        await sendWgcAdminEmail({
+          merchantName: safeOrgName,
+          contactEmail,
+          finixMerchantId: app.finixMerchantId || data.id,
+          finixIdentityId: app.finixIdentityId || undefined,
+          newStatus: "APPROVED",
+          whatHappened: "Finix approved the merchant onboarding application.",
+          actionNeeded: "None.",
+          adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications"
+        });
+
+        // Provision the Church row + church_admin User account, and the
+        // WGC platform-billing gate (activation token + email) — see
+        // provisionChurchAndBillingGate.ts. Never throws (alerts WGC
+        // admins by email instead) so a failure here never blocks the
+        // approval response back to Finix, and — unlike the previous
+        // console.error-only behavior — is never silently lost: a
+        // provisioning failure used to mean the merchant was approved in
+        // Finix but simply never appeared in the Merchants Directory,
+        // with nobody notified (2026-08-15 admin bug report). The same
+        // function is also exposed as a manual retry action from
+        // /admin/merchant-applications for any application already
+        // caught in that state.
+        await provisionChurchAndBillingGateOrAlert({
+          id: app.id,
+          organizationName: app.organizationName,
+          legalBusinessName: app.legalBusinessName,
+          contactEmail: app.contactEmail,
+          contactName: app.contactName,
+          finixMerchantId: app.finixMerchantId || data.id,
+          finixIdentityId: app.finixIdentityId,
+          finixApplicationId: app.finixApplicationId,
+        });
+      } else if (onboardingState === "UPDATE_REQUESTED") {
+        // Work out what Finix is actually asking for on EVERY delivery of
+        // this state, not just the first — previously this whole capture
+        // was nested inside the "first transition" guard below, so a
+        // second/later MERCHANT.UPDATED webhook (still onboarding_state
+        // UPDATE_REQUESTED, e.g. Finix refining or re-sending the
+        // requirement) was silently skipped entirely and the admin
+        // dashboard's "Required Info / Errors" column stayed blank even
+        // though Finix had told us something (2026-08-15 admin bug
+        // report).
+        //
+        // Confirmed against a real production UPDATE_REQUESTED delivery
+        // (Lighthouse Baptist Church, 2026-09-04): the Merchant webhook
+        // payload itself never carries the reason — `data.messages`,
+        // `data.verification?.messages`, and `data.outstanding_requirements`
+        // are all absent; `data.verification` is a bare ID string
+        // pointing at a *separate* Finix Verification resource. Per
+        // Finix's docs (docs.finix.com/guides/platform-payments/
+        // onboarding-sellers/seller-onboarding-update-requests), that
+        // Verification is the actual source of truth: it carries an
+        // `outcomes` array, each entry an `outcome_code` (e.g.
+        // "BANK_STATEMENT_ONE_MONTH_REQUESTED") plus `remediation_details`
+        // describing what to update. So fetch it and parse that first;
+        // the old merchant-payload guesses stay as a fallback in case a
+        // future delivery ever does carry something inline, or the fetch
+        // fails/returns no outcomes.
+        let requestedItemsStr = "Additional documentation is required to verify your business and identity.";
+        let requestedItemsResolved = false;
+        let verificationPayload: unknown = null;
+
+        const verificationId = typeof data?.verification === "string" ? data.verification : null;
+        if (verificationId) {
+          try {
+            verificationPayload = await finixClient.getVerification(verificationId);
+            const parsed = parseVerificationOutcomes(verificationPayload);
+            if (parsed) {
+              requestedItemsStr = parsed;
+              requestedItemsResolved = true;
+            }
+          } catch (err) {
+            // Never let a Finix Verification fetch failure block the
+            // webhook's own 200 response — falls through to the
+            // merchant-payload guesses, then the generic message.
+            console.error(`Failed to fetch Finix verification ${verificationId} for UPDATE_REQUESTED requirement details:`, err);
+          }
+        }
+
+        if (!requestedItemsResolved) {
+          const messagesSource = data?.messages ?? data?.verification?.messages ?? data?.outstanding_requirements ?? null;
+          if (messagesSource) {
+            try {
+              const msgs = Array.isArray(messagesSource) ? messagesSource : [messagesSource];
+              const items = msgs.map((m: any) => (typeof m === "object" ? (m.message || m.code || m.description || JSON.stringify(m)) : String(m)));
+              if (items.length > 0) {
+                requestedItemsStr = items.map((i: string) => `• ${i}`).join("<br/>");
+                requestedItemsResolved = true;
+              }
+            } catch (e) {
+              console.error("Failed to parse requested items:", e);
+            }
+          }
+        }
+
+        if (requestedItemsResolved) updateData.updateRequestedItems = requestedItemsStr;
+        // Always store the raw (redacted) source of truth — the fetched
+        // Verification when we got one, otherwise the Merchant payload —
+        // so the real requirement is recoverable from the admin UI even
+        // when the outcome_code parsing above doesn't match Finix's
+        // actual shape for a given failure type.
+        updateData.updateRequestedCodes = redactFinixPayload((verificationPayload ?? data ?? {}) as object);
+
+        if (app.onboardingStatus !== "MORE_INFORMATION_REQUIRED" && app.onboardingStatus !== "APPROVED") {
+          updateData.onboardingStatus = "MORE_INFORMATION_REQUIRED";
+          updateData.onboardingState = "UPDATE_REQUESTED";
+          updateData.lastStatusChangedAt = new Date();
+          updateData.updateRequestedAt = new Date();
+
+          const rawToken = crypto.randomBytes(32).toString("hex");
+          const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+
+          const expiresAt = new Date();
+          expiresAt.setDate(expiresAt.getDate() + 7);
+
+          updateData.updateTokenHash = tokenHash;
+          updateData.updateTokenExpiresAt = expiresAt;
+
+          const secureLink = `https://www.wgcpayments.com/onboarding/update/${rawToken}`;
+
+          await sendWebhookEmail(
+            app.id,
+            "MORE_INFORMATION_REQUIRED",
+            contactEmail,
+            "Additional information needed for your WGC Payments account",
+            "Additional information is required",
+            "Action Required",
+            "#F59E0B",
+            `<p>We need additional information to continue reviewing your WGC Payments account for <strong>${safeOrgName}</strong>.</p>
+             <p><strong>Requested items:</strong><br/>${requestedItemsStr}</p>
+             <p>Please use the secure link below to submit the requested information.</p>
+             <p><a href="${secureLink}">Submit Required Information</a></p>`
+          );
+
+          await sendWgcAdminEmail({
+            merchantName: safeOrgName,
+            contactEmail,
+            finixMerchantId: app.finixMerchantId || data.id,
+            newStatus: "MORE_INFORMATION_REQUIRED",
+            whatHappened: "Finix requested additional information or documents for the merchant.",
+            actionNeeded: "Merchant has been sent a secure upload link.",
+            adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications"
+          });
+        }
+      } else if (onboardingState === "REJECTED" || status === "REJECTED" || status === "FAILED") {
+        const wasAlreadyRejected = app.onboardingStatus === "REJECTED";
+        updateData.onboardingStatus = "REJECTED";
+        updateData.onboardingState = "REJECTED";
+        if (!wasAlreadyRejected) {
+          updateData.lastStatusChangedAt = new Date();
+          updateData.rejectedAt = new Date();
+        }
+
+        await sendWebhookEmail(
+          app.id,
+          "REJECTED",
+          contactEmail,
+          "Update on your WGC Payments application",
+          "Update on your application",
+          "Not Approved",
+          "#EF4444",
+          `<p>Thank you for your interest in WGC Payments.</p><p>After review, we are unable to approve the onboarding application for <strong>${safeOrgName}</strong> at this time.</p><p>If you believe this was a mistake or would like more information, please contact WGC Payments Support.</p>`
+        );
+
+        await sendWgcAdminEmail({
+          merchantName: safeOrgName,
+          contactEmail,
+          finixMerchantId: app.finixMerchantId || data.id,
+          newStatus: "REJECTED",
+          whatHappened: "Finix rejected the merchant onboarding application.",
+          actionNeeded: "Review rejection reason in Finix. Contact merchant if needed.",
+          adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications"
+        });
+      }
+    } else if (eventType === "verification.created") {
+      const state = data?.state;
+      if (state === "PENDING") {
+        updateData.finixVerificationId = data.id;
+        updateData.verificationState = "PENDING";
+        if (app.onboardingStatus !== "APPROVED" && app.onboardingStatus !== "REJECTED") {
+          updateData.onboardingStatus = "UNDER_REVIEW";
+        }
+      }
+    } else if (eventType === "verification.updated") {
+      const state = data?.state;
+      updateData.verificationState = state;
+
+      if (state === "SUCCEEDED") {
+        if (app.onboardingStatus === "UNDER_REVIEW") {
+          updateData.onboardingStatus = "UNDER_REVIEW";
+        }
+      } else if (state === "FAILED") {
+        // Save but don't transition merchant status to failed immediately, rely on merchant.updated
+      }
+    }
+
+    await prisma.onboardingApplication.update({
+      where: { id: app.id },
+      data: updateData
+    });
+
+    await prisma.finixWebhookEvent.update({
+      where: { id: webhookEvent.id },
+      data: { processedAt: new Date(), processingStatus: "COMPLETED" },
+    });
+    logPaymentSafetyEvent("WEBHOOK_COMPLETED", { detail: `finixEventId=${eventId} webhookEventId=${webhookEvent.id} outcome=onboarding_transition`, route: "/api/webhooks/finix" });
+
+    return;
+  } catch (processError: any) {
+    await prisma.finixWebhookEvent.update({
+      where: { id: webhookEvent.id },
+      data: { processingStatus: "ERROR", errorMessage: processError.message },
+    });
+    logPaymentSafetyEvent("WEBHOOK_FAILED", { detail: `finixEventId=${eventId} webhookEventId=${webhookEvent.id} error=${processError.message}`, route: "/api/webhooks/finix" });
+
+    // Send admin alert for failed webhook processing
+    await sendWgcAdminEmail({
+      merchantName: "System Alert",
+      contactEmail: "N/A",
+      newStatus: "WEBHOOK_FAILED",
+      whatHappened: `Failed to process webhook event: ${eventType} (${eventId})`,
+      actionNeeded: `Check logs. Error: ${processError.message}`,
+      adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications"
+    });
+
+    throw processError;
+  }
+}
+
 // Some webhook-provider dashboards probe reachability with GET/HEAD before
 // (or instead of) an empty-body POST — answered the same harmless way as
 // the empty-POST case below, never touching auth/DB/Finix.
@@ -1530,391 +1947,61 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "Already processed" }, { status: 200 });
     }
 
+    // Stage 2 fast-ack ingress (Flow 3): durably persist the event AND its
+    // required PROCESS_FINIX_WEBHOOK job in ONE short transaction, then
+    // return 200 immediately below. No business logic (Finix API calls,
+    // Payment writes, onboarding emails) runs before this response — see
+    // processFinixWebhookEvent above for where all of that now lives.
+    //
+    // If this transaction fails for any reason OTHER than a genuine
+    // duplicate (P2002 on finixEventId), the outer catch at the bottom of
+    // this function returns 500 with NO acknowledgment, so Finix retries
+    // delivery — per Flow 3 Task 1, we never accept an event into WGC
+    // unless its durable processing job is guaranteed to exist alongside
+    // it (same transaction, so a crash between the two is impossible).
     let webhookEvent;
     try {
-      webhookEvent = await prisma.finixWebhookEvent.create({
-        data: {
-          finixEventId: eventId,
-          entity,
-          type: eventType,
-          occurredAt,
-          merchantId: merchantId || null,
-          identityId: identityId || null,
-          verificationId: verificationId || null,
-          rawPayloadJson: payload,
-        },
+      webhookEvent = await prisma.$transaction(async (tx) => {
+        const created = await tx.finixWebhookEvent.create({
+          data: {
+            finixEventId: eventId,
+            entity,
+            type: eventType,
+            occurredAt,
+            merchantId: merchantId || null,
+            identityId: identityId || null,
+            verificationId: verificationId || null,
+            rawPayloadJson: payload,
+          },
+        });
+        await enqueueBackgroundJobInTransaction(tx, {
+          jobType: "PROCESS_FINIX_WEBHOOK",
+          entityType: "FinixWebhookEvent",
+          entityId: created.id,
+          dedupeKey: `PROCESS_FINIX_WEBHOOK:webhookEvent:${created.id}`,
+          payload: { webhookEventId: created.id },
+        });
+        return created;
       });
     } catch (err) {
       // A concurrent delivery of the same event ID won the race between our
-      // findUnique check above and this create (finixEventId is @unique) —
-      // return the same clean "already processed" response instead of a
-      // 500, so Finix doesn't redeliver and compound the burst.
+      // findUnique check above and this transaction's create (finixEventId
+      // is @unique) — return the same clean "already processed" response
+      // instead of a 500, so Finix doesn't redeliver and compound the
+      // burst. No duplicate job is possible either way: the loser's create
+      // never commits, so it never reaches the job-enqueue statement.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         return NextResponse.json({ message: "Already processed" }, { status: 200 });
       }
       throw err;
     }
 
-    // WGC platform-subscription billing events — resolved by
-    // finixSubscriptionId, never by trusting anything client-submitted.
-    // Matches nothing (returns false) for the overwhelming majority of
-    // events (every donation/invoice transfer on a client organization's
-    // own merchant), so this never interferes with the logic below.
-    try {
-      const { handleWgcSubscriptionWebhookEvent } = await import("@/lib/billing/wgcSubscriptionWebhook");
-      const handled = await handleWgcSubscriptionWebhookEvent(eventType, data);
-      if (handled) {
-        return NextResponse.json({ message: "WGC billing event processed" }, { status: 200 });
-      }
-    } catch (wgcBillingError) {
-      console.error("WGC subscription webhook handling failed:", wgcBillingError);
-      // Fall through to the existing logic below rather than failing the
-      // whole webhook — this event may still be a legitimate church-merchant
-      // event that the existing sync layer needs to process.
-    }
+    logPaymentSafetyEvent("WEBHOOK_RECEIVED", {
+      detail: `finixEventId=${eventId} entity=${entity} type=${eventType} webhookEventId=${webhookEvent.id}`,
+      route: "/api/webhooks/finix",
+    });
 
-    // Additive Finix data sync layer — stores transfers/disputes/settlements
-    // into their own tables for future reporting/admin dashboard use. This
-    // is independent of and does not affect the onboarding status logic
-    // below. We always return 200 to Finix regardless of outcome here, so
-    // Finix will never retry a failure on our end (e.g. a transient DB
-    // connection blip) — a couple of quick retries plus a durable failure
-    // record (instead of just a log line that scrolls away) are the only
-    // safety net for that.
-    let syncSucceeded = false;
-    let lastSyncError: unknown;
-    for (let attempt = 1; attempt <= 3 && !syncSucceeded; attempt++) {
-      try {
-        await syncFinixDataFromWebhookEvent(entity, eventType, data, eventId, occurredAt);
-        syncSucceeded = true;
-      } catch (syncError) {
-        lastSyncError = syncError;
-        console.error(`Finix data sync (additive layer) failed, attempt ${attempt}/3:`, syncError);
-        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 300));
-      }
-    }
-    if (!syncSucceeded) {
-      // This archive write is the last line of defense — if the sync above
-      // failed because of a sustained connection issue (not just a blip),
-      // this write can hit the same issue and fail too, silently losing
-      // the event with no trace anywhere. A few retries here specifically
-      // guard against that "shouldn't retry, must, then can't even record
-      // it" case.
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          await prisma.finixRawEventArchive.upsert({
-            where: { finixEventId: eventId },
-            create: {
-              finixEventId: eventId,
-              entity,
-              eventType,
-              resourceId: data?.id ?? null,
-              finixMerchantId: data?.merchant ?? data?.linked_to ?? null,
-              payloadRedactedJson: redactFinixPayload(data ?? {}),
-              processingStatus: "FAILED",
-              errorMessage: lastSyncError instanceof Error ? lastSyncError.message : String(lastSyncError),
-            },
-            update: {
-              processingStatus: "FAILED",
-              errorMessage: lastSyncError instanceof Error ? lastSyncError.message : String(lastSyncError),
-            },
-          });
-          break;
-        } catch (archiveError) {
-          console.error(`Failed to record sync failure, attempt ${attempt}/3:`, archiveError);
-          if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 300));
-        }
-      }
-    }
-
-    try {
-      const app = await findOnboardingApplicationForFinixEvent(data);
-
-      if (!app) {
-        await prisma.finixWebhookEvent.update({
-          where: { id: webhookEvent.id },
-          data: { processedAt: new Date(), processingStatus: "COMPLETED" },
-        });
-
-        return NextResponse.json(
-          { message: "Webhook recorded (no matching onboarding app)" },
-          { status: 200 }
-        );
-      }
-
-      const contactEmail = app.contactEmail;
-      const orgName = app.legalBusinessName || app.organizationName;
-      const safeOrgName = orgName || "your organization";
-
-      const updateData: any = {
-        lastFinixEventId: eventId,
-        lastFinixEventType: eventType,
-        lastWebhookPayloadSummary: { type: eventType, entity, status: data?.status, state: data?.state, onboarding_state: data?.onboarding_state }
-      };
-
-      if (eventType === "merchant.created") {
-        const onboardingState = data?.onboarding_state;
-        if (onboardingState === "PROVISIONING") {
-          if (app.onboardingStatus !== "APPROVED" && app.onboardingStatus !== "REJECTED") {
-            updateData.onboardingStatus = "UNDER_REVIEW";
-            updateData.finixMerchantId = data.id;
-            updateData.lastStatusChangedAt = new Date();
-          }
-        }
-      } else if (eventType === "merchant.underwritten" || eventType === "merchant.updated") {
-        const onboardingState = data?.onboarding_state;
-        const status = data?.status;
-
-        if (onboardingState === "APPROVED" || status === "APPROVED") {
-          const wasAlreadyApproved = app.onboardingStatus === "APPROVED";
-          updateData.onboardingStatus = "APPROVED";
-          updateData.onboardingState = "APPROVED";
-          updateData.processingEnabled = data?.processing_enabled || false;
-          updateData.settlementEnabled = data?.settlement_enabled || false;
-          if (!wasAlreadyApproved) {
-            updateData.lastStatusChangedAt = new Date();
-            updateData.approvedAt = new Date();
-          }
-
-          await sendWebhookEmail(
-            app.id,
-            "APPROVED",
-            contactEmail,
-            "Your WGC Payments account has been approved",
-            "Your account has been approved",
-            "Approved",
-            "#10B981",
-            `<p>Hi ${safeOrgName},</p>
-             <p>Great news — your WGC Payments account has been approved.</p>
-             <p>Your merchant account is now approved for payment processing. You will receive a separate secure dashboard access email with instructions to log in and set or reset your password.</p>`
-          );
-
-          await sendWgcAdminEmail({
-            merchantName: safeOrgName,
-            contactEmail,
-            finixMerchantId: app.finixMerchantId || data.id,
-            finixIdentityId: app.finixIdentityId || undefined,
-            newStatus: "APPROVED",
-            whatHappened: "Finix approved the merchant onboarding application.",
-            actionNeeded: "None.",
-            adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications"
-          });
-
-          // Provision the Church row + church_admin User account, and the
-          // WGC platform-billing gate (activation token + email) — see
-          // provisionChurchAndBillingGate.ts. Never throws (alerts WGC
-          // admins by email instead) so a failure here never blocks the
-          // approval response back to Finix, and — unlike the previous
-          // console.error-only behavior — is never silently lost: a
-          // provisioning failure used to mean the merchant was approved in
-          // Finix but simply never appeared in the Merchants Directory,
-          // with nobody notified (2026-08-15 admin bug report). The same
-          // function is also exposed as a manual retry action from
-          // /admin/merchant-applications for any application already
-          // caught in that state.
-          await provisionChurchAndBillingGateOrAlert({
-            id: app.id,
-            organizationName: app.organizationName,
-            legalBusinessName: app.legalBusinessName,
-            contactEmail: app.contactEmail,
-            contactName: app.contactName,
-            finixMerchantId: app.finixMerchantId || data.id,
-            finixIdentityId: app.finixIdentityId,
-            finixApplicationId: app.finixApplicationId,
-          });
-        } else if (onboardingState === "UPDATE_REQUESTED") {
-          // Work out what Finix is actually asking for on EVERY delivery of
-          // this state, not just the first — previously this whole capture
-          // was nested inside the "first transition" guard below, so a
-          // second/later MERCHANT.UPDATED webhook (still onboarding_state
-          // UPDATE_REQUESTED, e.g. Finix refining or re-sending the
-          // requirement) was silently skipped entirely and the admin
-          // dashboard's "Required Info / Errors" column stayed blank even
-          // though Finix had told us something (2026-08-15 admin bug
-          // report).
-          //
-          // Confirmed against a real production UPDATE_REQUESTED delivery
-          // (Lighthouse Baptist Church, 2026-09-04): the Merchant webhook
-          // payload itself never carries the reason — `data.messages`,
-          // `data.verification?.messages`, and `data.outstanding_requirements`
-          // are all absent; `data.verification` is a bare ID string
-          // pointing at a *separate* Finix Verification resource. Per
-          // Finix's docs (docs.finix.com/guides/platform-payments/
-          // onboarding-sellers/seller-onboarding-update-requests), that
-          // Verification is the actual source of truth: it carries an
-          // `outcomes` array, each entry an `outcome_code` (e.g.
-          // "BANK_STATEMENT_ONE_MONTH_REQUESTED") plus `remediation_details`
-          // describing what to update. So fetch it and parse that first;
-          // the old merchant-payload guesses stay as a fallback in case a
-          // future delivery ever does carry something inline, or the fetch
-          // fails/returns no outcomes.
-          let requestedItemsStr = "Additional documentation is required to verify your business and identity.";
-          let requestedItemsResolved = false;
-          let verificationPayload: unknown = null;
-
-          const verificationId = typeof data?.verification === "string" ? data.verification : null;
-          if (verificationId) {
-            try {
-              verificationPayload = await finixClient.getVerification(verificationId);
-              const parsed = parseVerificationOutcomes(verificationPayload);
-              if (parsed) {
-                requestedItemsStr = parsed;
-                requestedItemsResolved = true;
-              }
-            } catch (err) {
-              // Never let a Finix Verification fetch failure block the
-              // webhook's own 200 response — falls through to the
-              // merchant-payload guesses, then the generic message.
-              console.error(`Failed to fetch Finix verification ${verificationId} for UPDATE_REQUESTED requirement details:`, err);
-            }
-          }
-
-          if (!requestedItemsResolved) {
-            const messagesSource = data?.messages ?? data?.verification?.messages ?? data?.outstanding_requirements ?? null;
-            if (messagesSource) {
-              try {
-                const msgs = Array.isArray(messagesSource) ? messagesSource : [messagesSource];
-                const items = msgs.map((m: any) => (typeof m === "object" ? (m.message || m.code || m.description || JSON.stringify(m)) : String(m)));
-                if (items.length > 0) {
-                  requestedItemsStr = items.map((i: string) => `• ${i}`).join("<br/>");
-                  requestedItemsResolved = true;
-                }
-              } catch (e) {
-                console.error("Failed to parse requested items:", e);
-              }
-            }
-          }
-
-          if (requestedItemsResolved) updateData.updateRequestedItems = requestedItemsStr;
-          // Always store the raw (redacted) source of truth — the fetched
-          // Verification when we got one, otherwise the Merchant payload —
-          // so the real requirement is recoverable from the admin UI even
-          // when the outcome_code parsing above doesn't match Finix's
-          // actual shape for a given failure type.
-          updateData.updateRequestedCodes = redactFinixPayload((verificationPayload ?? data ?? {}) as object);
-
-          if (app.onboardingStatus !== "MORE_INFORMATION_REQUIRED" && app.onboardingStatus !== "APPROVED") {
-            updateData.onboardingStatus = "MORE_INFORMATION_REQUIRED";
-            updateData.onboardingState = "UPDATE_REQUESTED";
-            updateData.lastStatusChangedAt = new Date();
-            updateData.updateRequestedAt = new Date();
-
-            const rawToken = crypto.randomBytes(32).toString("hex");
-            const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-
-            const expiresAt = new Date();
-            expiresAt.setDate(expiresAt.getDate() + 7);
-
-            updateData.updateTokenHash = tokenHash;
-            updateData.updateTokenExpiresAt = expiresAt;
-
-            const secureLink = `https://www.wgcpayments.com/onboarding/update/${rawToken}`;
-
-            await sendWebhookEmail(
-              app.id,
-              "MORE_INFORMATION_REQUIRED",
-              contactEmail,
-              "Additional information needed for your WGC Payments account",
-              "Additional information is required",
-              "Action Required",
-              "#F59E0B",
-              `<p>We need additional information to continue reviewing your WGC Payments account for <strong>${safeOrgName}</strong>.</p>
-               <p><strong>Requested items:</strong><br/>${requestedItemsStr}</p>
-               <p>Please use the secure link below to submit the requested information.</p>
-               <p><a href="${secureLink}">Submit Required Information</a></p>`
-            );
-
-            await sendWgcAdminEmail({
-              merchantName: safeOrgName,
-              contactEmail,
-              finixMerchantId: app.finixMerchantId || data.id,
-              newStatus: "MORE_INFORMATION_REQUIRED",
-              whatHappened: "Finix requested additional information or documents for the merchant.",
-              actionNeeded: "Merchant has been sent a secure upload link.",
-              adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications"
-            });
-          }
-        } else if (onboardingState === "REJECTED" || status === "REJECTED" || status === "FAILED") {
-          const wasAlreadyRejected = app.onboardingStatus === "REJECTED";
-          updateData.onboardingStatus = "REJECTED";
-          updateData.onboardingState = "REJECTED";
-          if (!wasAlreadyRejected) {
-            updateData.lastStatusChangedAt = new Date();
-            updateData.rejectedAt = new Date();
-          }
-
-          await sendWebhookEmail(
-            app.id,
-            "REJECTED",
-            contactEmail,
-            "Update on your WGC Payments application",
-            "Update on your application",
-            "Not Approved",
-            "#EF4444",
-            `<p>Thank you for your interest in WGC Payments.</p><p>After review, we are unable to approve the onboarding application for <strong>${safeOrgName}</strong> at this time.</p><p>If you believe this was a mistake or would like more information, please contact WGC Payments Support.</p>`
-          );
-
-          await sendWgcAdminEmail({
-            merchantName: safeOrgName,
-            contactEmail,
-            finixMerchantId: app.finixMerchantId || data.id,
-            newStatus: "REJECTED",
-            whatHappened: "Finix rejected the merchant onboarding application.",
-            actionNeeded: "Review rejection reason in Finix. Contact merchant if needed.",
-            adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications"
-          });
-        }
-      } else if (eventType === "verification.created") {
-        const state = data?.state;
-        if (state === "PENDING") {
-          updateData.finixVerificationId = data.id;
-          updateData.verificationState = "PENDING";
-          if (app.onboardingStatus !== "APPROVED" && app.onboardingStatus !== "REJECTED") {
-            updateData.onboardingStatus = "UNDER_REVIEW";
-          }
-        }
-      } else if (eventType === "verification.updated") {
-        const state = data?.state;
-        updateData.verificationState = state;
-
-        if (state === "SUCCEEDED") {
-          if (app.onboardingStatus === "UNDER_REVIEW") {
-            updateData.onboardingStatus = "UNDER_REVIEW";
-          }
-        } else if (state === "FAILED") {
-          // Save but don't transition merchant status to failed immediately, rely on merchant.updated
-        }
-      }
-
-      await prisma.onboardingApplication.update({
-        where: { id: app.id },
-        data: updateData
-      });
-
-      await prisma.finixWebhookEvent.update({
-        where: { id: webhookEvent.id },
-        data: { processedAt: new Date(), processingStatus: "COMPLETED" },
-      });
-
-      return NextResponse.json({ success: true });
-    } catch (processError: any) {
-      await prisma.finixWebhookEvent.update({
-        where: { id: webhookEvent.id },
-        data: { processingStatus: "ERROR", errorMessage: processError.message },
-      });
-      
-      // Send admin alert for failed webhook processing
-      await sendWgcAdminEmail({
-        merchantName: "System Alert",
-        contactEmail: "N/A",
-        newStatus: "WEBHOOK_FAILED",
-        whatHappened: `Failed to process webhook event: ${eventType} (${eventId})`,
-        actionNeeded: `Check logs. Error: ${processError.message}`,
-        adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications"
-      });
-
-      throw processError;
-    }
+    return NextResponse.json({ message: "Webhook accepted" }, { status: 200 });
   } catch (error) {
     console.error("Webhook error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

@@ -25,6 +25,7 @@ export const JOB_TYPES = [
   "INVOICE_RECEIPT",
   "SETUP_LINK_CONFIRMATION",
   "ANALYTICS_RECORD",
+  "PROCESS_FINIX_WEBHOOK",
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
@@ -43,6 +44,10 @@ const BACKOFF_POLICIES: Record<JobType, number[]> = {
   INVOICE_RECEIPT: [30, 120, 600, 1800, 3600, 3600, 3600],
   SETUP_LINK_CONFIRMATION: [30, 120, 600, 1800, 3600, 3600, 3600],
   ANALYTICS_RECORD: [30, 120, 600, 1800],
+  // Same tail as the other Finix-integration jobs — this handler can call
+  // Finix's Verification API and can retry Payment/onboarding processing;
+  // a sustained Finix outage shouldn't be hammered every 30s for hours.
+  PROCESS_FINIX_WEBHOOK: [30, 120, 600, 1800, 3600, 7200, 21600],
 };
 
 function backoffDelaySeconds(jobType: JobType, attempts: number): number {

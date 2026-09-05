@@ -155,6 +155,35 @@ async function handleSetupLinkConfirmation(job: BackgroundJob): Promise<void> {
   }
 }
 
+/**
+ * Stage 2 Flow 3 fast-ack split: the webhook ingress route (POST
+ * src/app/api/webhooks/finix/route.ts) now only authenticates, validates
+ * minimally, and durably persists the FinixWebhookEvent row + this job in
+ * one transaction before returning 200 to Finix. All the actual business
+ * processing (WGC billing routing, additive transfer/dispute sync,
+ * onboarding-application status transitions/emails) happens here, off the
+ * request path, via processFinixWebhookEvent — imported lazily so this
+ * module doesn't pull in next/server types at load time.
+ *
+ * Idempotency: processFinixWebhookEvent itself short-circuits if the event
+ * is already FinixWebhookEvent.processingStatus === "COMPLETED" (handles a
+ * BackgroundJob lease reclaim after a worker died AFTER the business logic
+ * finished but BEFORE this job itself got marked COMPLETED — see that
+ * function's own doc comment for the full reasoning). A missing
+ * FinixWebhookEvent row (should be impossible — it's created in the same
+ * transaction as this job) throws rather than silently succeeding, so a
+ * data-integrity bug here is never masked as a completed job.
+ */
+async function handleProcessFinixWebhook(job: BackgroundJob): Promise<void> {
+  const { webhookEventId } = job.payloadJson as { webhookEventId: string };
+  const webhookEvent = await prisma.finixWebhookEvent.findUnique({ where: { id: webhookEventId } });
+  if (!webhookEvent) {
+    throw new Error(`PROCESS_FINIX_WEBHOOK: FinixWebhookEvent ${webhookEventId} not found`);
+  }
+  const { processFinixWebhookEvent } = await import("@/app/api/webhooks/finix/route");
+  await processFinixWebhookEvent(webhookEvent);
+}
+
 export const JOB_HANDLERS: Partial<Record<JobType, JobHandler>> = {
   SEND_RECEIPT: handleSendReceipt,
   QUICKBOOKS_PAYMENT: handleQuickBooksPayment,
@@ -162,6 +191,7 @@ export const JOB_HANDLERS: Partial<Record<JobType, JobHandler>> = {
   SEND_PLAIN_EMAIL: handleSendPlainEmail,
   INVOICE_RECEIPT: handleInvoiceReceipt,
   SETUP_LINK_CONFIRMATION: handleSetupLinkConfirmation,
+  PROCESS_FINIX_WEBHOOK: handleProcessFinixWebhook,
   // APLOS_PAYMENT, PRINTFUL_ORDER, ANALYTICS_RECORD: not yet implemented —
   // PRINTFUL_ORDER deliberately waits for the Task 9 payment/fulfillment-
   // status separation.
