@@ -1170,6 +1170,11 @@ model PaymentAttempt {
   failureMessage    String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+
+  // Stage 2 Task 8: the reconciliation sweep's stale-attempt scan filters
+  // exactly on (status, updatedAt) — without this, that query table-scans
+  // as the table grows (see reconcileStalePaymentAttempts).
+  @@index([status, updatedAt])
 }
 
 // =========================================================================
@@ -3801,6 +3806,10 @@ model InvoicePaymentAttempt {
 
   @@index([invoiceId])
   @@index([churchId])
+  // Stage 2 Task 8: the invoice-payment reconciliation sweep's stale-
+  // attempt scan filters on (status, updatedAt) — same rationale as
+  // PaymentAttempt's identical index.
+  @@index([status, updatedAt])
 }
 
 /// A confirmed movement of money against an invoice — either a real Finix

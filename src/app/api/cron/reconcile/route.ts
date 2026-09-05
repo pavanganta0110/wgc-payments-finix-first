@@ -3,8 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { alertCronMisconfiguration } from "@/lib/cron/alertCronMisconfiguration";
 import { syncSettlementById, syncSettlements } from "@/lib/finix/sync/syncSettlements";
 import { syncFinixDataFromWebhookEvent } from "@/app/api/webhooks/finix/route";
-import { finixClient } from "@/lib/finix/client";
-import { sendWgcAdminEmail } from "@/lib/email";
+import { reconcileStalePaymentAttempts } from "@/lib/reconciliation/paymentReconciliationSweep";
 
 /**
  * Periodic reconciliation for two known gaps that webhooks alone can't
@@ -124,62 +123,16 @@ export async function GET(req: Request) {
   // charge) before writing the local Payment/FinixTransfer record. If that
   // local write fails after Finix already succeeded, nothing else in the
   // codebase ever discovers it (the existing transfer reconciliation only
-  // re-checks transfers that already HAVE a local row). This sweep is the
-  // backstop: it never auto-creates financial records (too easy to get fee
-  // splits/attribution/receipts wrong from a cron) — it only detects the
-  // gap and alerts a human via email, and separately closes out attempts
-  // that were genuinely abandoned (donor never completed checkout).
-  const STUCK_ALERT_MARKER = "ORPHANED_CHARGE_ALERTED";
-  const stuckAttempts = await prisma.paymentAttempt.findMany({
-    where: {
-      status: "PROCESSING",
-      updatedAt: { lte: new Date(Date.now() - 15 * 60 * 1000) },
-      NOT: { failureMessage: { startsWith: STUCK_ALERT_MARKER } },
-    },
-    take: 100,
-  });
-
-  let orphanedChargesFound = 0;
-  let abandonedAttemptsClosed = 0;
-  let stuckSweepErrors = 0;
-  for (const attempt of stuckAttempts) {
-    try {
-      const transfer = await finixClient.findTransferByIdempotencyId(attempt.idempotencyId);
-      if (transfer) {
-        const existingPayment = await prisma.payment.findFirst({ where: { finixTransferId: transfer.id } });
-        if (!existingPayment) {
-          orphanedChargesFound++;
-          const church = await prisma.church.findUnique({ where: { id: attempt.churchId } });
-          await sendWgcAdminEmail({
-            merchantName: church?.name || attempt.churchId,
-            contactEmail: church?.primaryContactEmail || "unknown",
-            finixMerchantId: church?.finixMerchantId || undefined,
-            newStatus: "ORPHANED_CHARGE",
-            whatHappened: `A Finix transfer (${transfer.id}, state ${transfer.state}, amount ${attempt.totalCents} cents) succeeded but no matching WGC Payment record exists. PaymentAttempt ${attempt.id} (clientAttemptId ${attempt.clientAttemptId}) is stuck in PROCESSING.`,
-            actionNeeded: "Manually verify the Finix transfer and create the corresponding Payment/receipt record, or refund the transfer if it should not have succeeded.",
-            adminDashboardLink: `${process.env.NEXT_PUBLIC_APP_URL || "https://www.wgcpayments.com"}/admin/merchants`,
-            customSubject: `[Action Needed] Orphaned Finix charge for ${church?.name || attempt.churchId}`,
-          });
-          await prisma.paymentAttempt.update({
-            where: { id: attempt.id },
-            data: { failureMessage: `${STUCK_ALERT_MARKER}: transfer ${transfer.id} has no local Payment record` },
-          });
-        }
-      } else if (attempt.updatedAt.getTime() < Date.now() - 60 * 60 * 1000) {
-        // No Finix transfer ever showed up for this attempt after an hour —
-        // the donor abandoned checkout before a charge was made. Close it
-        // out so it stops appearing "stuck" (never touches Finix or money).
-        await prisma.paymentAttempt.update({
-          where: { id: attempt.id },
-          data: { status: "FAILED", failureMessage: "Abandoned — no matching Finix transfer found after 1 hour" },
-        });
-        abandonedAttemptsClosed++;
-      }
-    } catch (err) {
-      console.error(`Reconcile: stuck-attempt sweep failed for PaymentAttempt ${attempt.id}:`, err);
-      stuckSweepErrors++;
-    }
-  }
+  // re-checks transfers that already HAVE a local row).
+  //
+  // Stage 2 Task 8: this used to be inlined here and only ever alerted a
+  // human — now delegated to reconcileStalePaymentAttempts (src/lib/
+  // reconciliation/paymentReconciliationSweep.ts), which auto-repairs the
+  // gap via the same Stage 1 recoverOrphanedOneTimePayment the webhook
+  // uses (dedupeKey/unique-constraint-safe), and still alerts a human only
+  // for a genuine, unexpected failure. Kept as a call from this existing
+  // scheduled route rather than duplicated logic living in two places.
+  const stuckAttemptSweep = await reconcileStalePaymentAttempts();
 
   return NextResponse.json({
     settlementsChecked: openSettlements.length,
@@ -192,9 +145,6 @@ export async function GET(req: Request) {
     failedEventsFound: failedEvents.length,
     eventsRetried,
     eventsStillFailing,
-    stuckAttemptsChecked: stuckAttempts.length,
-    orphanedChargesFound,
-    abandonedAttemptsClosed,
-    stuckSweepErrors,
+    stuckAttemptSweep,
   });
 }

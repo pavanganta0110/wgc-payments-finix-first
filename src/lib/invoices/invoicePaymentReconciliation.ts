@@ -4,6 +4,7 @@ import { finixClient } from "@/lib/finix/client";
 import { calculateInvoiceBalance } from "./invoiceMoney";
 import { computeDerivedInvoiceStatus, type InvoiceStatus } from "./invoiceStatus";
 import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
+import { enqueueBackgroundJobInTransaction } from "@/lib/jobs/backgroundJobs";
 
 /**
  * Applies a Finix transfer's current state onto its matching InvoicePayment
@@ -153,19 +154,41 @@ async function recoverOrphanedInvoicePayment(
   const grossAmountCents = ctx.amountCents ?? attempt.amountCents;
   let invoicePayment;
   try {
-    invoicePayment = await prisma.invoicePayment.create({
-      data: {
-        invoiceId: attempt.invoiceId,
-        churchId: ctx.churchId,
-        source: "FINIX",
-        method: attempt.method || ctx.finixMethod,
-        grossAmountCents,
-        netAmountCents: grossAmountCents,
-        totalChargedCents: ctx.amountCents ?? attempt.amountCents,
-        status,
-        finixTransferId,
-        invoicePaymentAttemptId: attempt.id,
-      },
+    // Stage 2 Task 8: the InvoicePayment row and its required
+    // INVOICE_RECEIPT job commit in one transaction — previously this
+    // orphan path never sent a receipt for a recovered invoice payment at
+    // all (the normal, non-orphan path in applyInvoicePaymentTransferState
+    // only sends one for ACH, and even then only via a direct,
+    // non-durable call). Using the existing INVOICE_RECEIPT job here
+    // (already wired in jobHandlers.ts since Flow 5) closes that gap for
+    // every payment method a reconciler recovers, not just ACH, and makes
+    // it dedupeKey-safe against a concurrent normal-path delivery for the
+    // same transfer.
+    invoicePayment = await prisma.$transaction(async (tx) => {
+      const created = await tx.invoicePayment.create({
+        data: {
+          invoiceId: attempt.invoiceId,
+          churchId: ctx.churchId,
+          source: "FINIX",
+          method: attempt.method || ctx.finixMethod,
+          grossAmountCents,
+          netAmountCents: grossAmountCents,
+          totalChargedCents: ctx.amountCents ?? attempt.amountCents,
+          status,
+          finixTransferId,
+          invoicePaymentAttemptId: attempt.id,
+        },
+      });
+      if (status === "SUCCEEDED") {
+        await enqueueBackgroundJobInTransaction(tx, {
+          jobType: "INVOICE_RECEIPT",
+          entityType: "InvoicePayment",
+          entityId: created.id,
+          dedupeKey: `INVOICE_RECEIPT:invoicePayment:${created.id}`,
+          payload: { invoiceId: attempt.invoiceId, invoicePaymentId: created.id },
+        });
+      }
+      return created;
     });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {

@@ -46,6 +46,18 @@ function transferData(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+// Real-sandbox-Postgres tests share a pooler with pool_size:15 and (per
+// this session's own findings) sometimes real, non-instant contention from
+// other concurrent traffic — vitest's 5s/10s defaults are tuned for pure
+// mocked tests, not 100-way real-DB concurrency against a shared pool.
+// Confirmed 2026-09-05: every test below is logically correct (each one
+// has independently passed against real Postgres), but Test A (100
+// concurrent deliveries), B, and D previously failed ONLY on vitest's
+// default timeout, not on an assertion — see the Task 8 checkpoint report
+// for the full run that established this.
+const REALDB_TEST_TIMEOUT_MS = 60_000;
+const REALDB_HOOK_TIMEOUT_MS = 30_000;
+
 describe("Recurring-charge webhook — real sandbox Postgres ordering + idempotency (Stage 2 Flow 3, Step 10)", () => {
   beforeEach(async () => {
     await cleanup();
@@ -69,8 +81,8 @@ describe("Recurring-charge webhook — real sandbox Postgres ordering + idempote
         donorCoversFee: false,
       },
     });
-  });
-  afterEach(cleanup);
+  }, REALDB_HOOK_TIMEOUT_MS);
+  afterEach(cleanup, REALDB_HOOK_TIMEOUT_MS);
 
   it("Test A — the same webhook event delivered 100 times concurrently collapses to one Payment and one logical set of jobs", async () => {
     const { syncFinixDataFromWebhookEvent } = await import("../route");
@@ -99,7 +111,7 @@ describe("Recurring-charge webhook — real sandbox Postgres ordering + idempote
     const qbJobs = jobs.filter((j) => j.jobType === "QUICKBOOKS_PAYMENT");
     expect(receiptJobs).toHaveLength(1);
     expect(qbJobs).toHaveLength(1);
-  });
+  }, REALDB_TEST_TIMEOUT_MS);
 
   it("Test B — normal ordering (created then updated) ends in the correct final state", async () => {
     const { syncFinixDataFromWebhookEvent } = await import("../route");
@@ -112,7 +124,7 @@ describe("Recurring-charge webhook — real sandbox Postgres ordering + idempote
     expect(payment?.status).toBe("SUCCEEDED");
     const transfer = await prisma.finixTransfer.findUnique({ where: { finixTransferId: data.id } });
     expect(transfer?.state).toBe("SUCCEEDED");
-  });
+  }, REALDB_TEST_TIMEOUT_MS);
 
   it("Test C — reverse ordering (updated arrives before created) ends in the same correct final state", async () => {
     const { syncFinixDataFromWebhookEvent } = await import("../route");
@@ -145,7 +157,7 @@ describe("Recurring-charge webhook — real sandbox Postgres ordering + idempote
 
     const payment = await prisma.payment.findFirst({ where: { finixTransferId: data.id } });
     expect(payment?.status).toBe("SUCCEEDED");
-  });
+  }, REALDB_TEST_TIMEOUT_MS);
 
   it("Test E — created and updated processed concurrently still yield exactly one Payment in the correct final state", async () => {
     const { syncFinixDataFromWebhookEvent } = await import("../route");
@@ -230,18 +242,78 @@ describe("Recurring-charge webhook — real sandbox Postgres ordering + idempote
     expect(jobs.filter((j) => j.jobType === "QUICKBOOKS_PAYMENT").length).toBeLessThanOrEqual(1);
   });
 
-  // Test G (checkout + webhook + reconciler race) is intentionally NOT
-  // implemented here.
-  //
-  // It explicitly requires Task 8's payment-reconciliation worker,
-  // which does not exist yet (Task 8 is the next major piece of work
-  // after Flow 3, per the standing plan). Per explicit instruction: "If
-  // the reconciler does not exist yet, create the test fixture/interface
-  // needed now and complete the full test after Task 8 reconciliation is
-  // implemented. Do not fabricate a PASS before that exists." — no test
-  // fixture is created here yet because the reconciler's real interface
-  // (what it will actually call to attempt recovery) isn't defined until
-  // Task 8 design happens; inventing one now risks a fixture that doesn't
-  // match the real implementation. Recorded as BLOCKED UNTIL RECONCILER,
-  // not skipped silently.
+  it("Test G — checkout + webhook + reconciler all attempt to create/recover the same successful transfer simultaneously: still exactly one Payment, one SEND_RECEIPT, at most one QUICKBOOKS_PAYMENT", async () => {
+    // Stage 2 Task 8 unlocks this: the reconciler side now genuinely
+    // exists (src/lib/finix/sync/paymentReconciliation.ts's
+    // recoverOrphanedOneTimePayment, orchestrated on a schedule by
+    // src/lib/reconciliation/paymentReconciliationSweep.ts). WHAT'S REAL
+    // vs MOCKED, same convention as Test F: real Postgres, the real
+    // Payment.finixTransferId unique constraint, the real webhook sync
+    // path, and the real reconciler repair function — invoked directly
+    // (not through its cron-scheduled sweep wrapper, since the sweep's own
+    // job is candidate SELECTION, not the repair itself; this test is
+    // about the repair function racing the other two writers, which is
+    // identical whether it's invoked by the sweep or here).
+    const { syncFinixDataFromWebhookEvent } = await import("../route");
+    const { enqueueBackgroundJobInTransaction } = await import("@/lib/jobs/backgroundJobs");
+    const { recoverOrphanedOneTimePayment } = await import("@/lib/finix/sync/paymentReconciliation");
+    const data = transferData({ state: "SUCCEEDED" });
+
+    async function checkoutSideCreate() {
+      try {
+        return await prisma.$transaction(async (tx) => {
+          const payment = await tx.payment.create({
+            data: {
+              churchId: CHURCH_ID,
+              finixTransferId: data.id,
+              amountCents: 5000,
+              donationAmountCents: 5000,
+              paymentMethodType: "PAYMENT_CARD",
+              status: "SUCCEEDED",
+              idempotencyId: `checkout-race-g-${data.id}`,
+            },
+          });
+          await enqueueBackgroundJobInTransaction(tx, {
+            jobType: "SEND_RECEIPT",
+            entityType: "Payment",
+            entityId: payment.id,
+            dedupeKey: `SEND_RECEIPT:payment:${payment.id}:version:1`,
+            payload: { paymentId: payment.id, churchId: CHURCH_ID },
+          });
+          return payment;
+        });
+      } catch {
+        const existing = await prisma.payment.findUnique({ where: { finixTransferId: data.id } });
+        if (existing) return existing;
+        throw new Error("checkout side lost the race but found no existing Payment");
+      }
+    }
+
+    async function reconcilerSideRecover() {
+      return recoverOrphanedOneTimePayment({
+        finixTransferId: data.id,
+        churchId: CHURCH_ID,
+        amountCents: 5000,
+        state: "SUCCEEDED",
+        tags: {},
+        finixBuyerIdentityId: null,
+        finixPaymentInstrumentId: null,
+        idempotencyId: null, // no matching PaymentAttempt in this fixture — same as a genuinely orphaned recovery
+      });
+    }
+
+    await Promise.all([
+      checkoutSideCreate(),
+      syncFinixDataFromWebhookEvent("TRANSFER", "transfer.updated", data, "evt-g-1", new Date()),
+      reconcilerSideRecover(),
+    ]);
+
+    const payments = await prisma.payment.findMany({ where: { finixTransferId: data.id } });
+    expect(payments).toHaveLength(1);
+    expect(payments[0].status).toBe("SUCCEEDED");
+
+    const jobs = await prisma.backgroundJob.findMany({ where: { entityId: payments[0].id } });
+    expect(jobs.filter((j) => j.jobType === "SEND_RECEIPT")).toHaveLength(1);
+    expect(jobs.filter((j) => j.jobType === "QUICKBOOKS_PAYMENT").length).toBeLessThanOrEqual(1);
+  });
 });

@@ -4,6 +4,7 @@ import { finixClient } from "@/lib/finix/client";
 import { redactFinixPayload } from "@/lib/finix/redact";
 import { syncFeesForTransfer } from "@/lib/finix/sync/syncFees";
 import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
+import { enqueueBackgroundJobInTransaction } from "@/lib/jobs/backgroundJobs";
 
 /**
  * Webhooks must not be the only synchronization method for payment state —
@@ -81,19 +82,37 @@ export async function reconcilePendingTransfer(finixTransferId: string): Promise
     if (changed) {
       const priorPayment = await prisma.payment.findFirst({ where: { finixTransferId } });
       if (priorPayment && priorPayment.status !== remoteState) {
-        await prisma.payment.updateMany({
-          where: { finixTransferId },
-          data: { status: remoteState },
-        });
-
-        if (priorPayment.status !== "SUCCEEDED" && remoteState === "SUCCEEDED") {
-          try {
-            const { sendDonationReceipt } = await import("@/lib/giving/generateReceipt");
-            await sendDonationReceipt(priorPayment.id, priorPayment.churchId);
-          } catch (err) {
-            console.error("Failed to send reconciled donation receipt:", err);
+        const transitioningToSucceeded = priorPayment.status !== "SUCCEEDED" && remoteState === "SUCCEEDED";
+        // Stage 2 Task 8: Payment status + its required downstream jobs
+        // commit in one transaction — same transactional-outbox pattern
+        // Flow 3 already applied to the webhook's own Payment-transition
+        // branch, so whichever of {webhook, reconciler} actually flips this
+        // row is the only one whose dedupeKey-guarded enqueue succeeds; the
+        // other's is a no-op via BackgroundJob.dedupeKey's unique
+        // constraint. Previously this only sent a receipt directly
+        // (fire-and-forget, no QuickBooks sync at all from this path) —
+        // QUICKBOOKS_PAYMENT is added here to match every other
+        // transition-to-SUCCEEDED path in the codebase (the same class of
+        // gap Flow 3 fixed for the recurring-charge webhook).
+        await prisma.$transaction(async (tx) => {
+          await tx.payment.updateMany({ where: { finixTransferId }, data: { status: remoteState } });
+          if (transitioningToSucceeded) {
+            await enqueueBackgroundJobInTransaction(tx, {
+              jobType: "SEND_RECEIPT",
+              entityType: "Payment",
+              entityId: priorPayment.id,
+              dedupeKey: `SEND_RECEIPT:payment:${priorPayment.id}:version:1`,
+              payload: { paymentId: priorPayment.id, churchId: priorPayment.churchId },
+            });
+            await enqueueBackgroundJobInTransaction(tx, {
+              jobType: "QUICKBOOKS_PAYMENT",
+              entityType: "Payment",
+              entityId: priorPayment.id,
+              dedupeKey: `QUICKBOOKS_PAYMENT:payment:${priorPayment.id}`,
+              payload: { paymentId: priorPayment.id },
+            });
           }
-        }
+        });
       }
 
       // Fee reconciliation is triggered separately from settlement
@@ -223,7 +242,35 @@ export async function recoverOrphanedOneTimePayment(params: {
 
   let payment;
   try {
-    payment = await prisma.payment.create({ data: createData });
+    // Stage 2 Task 8: the Payment row and its required downstream jobs
+    // commit in one transaction — this is the SAME function the webhook,
+    // the reconciliation sweep, and (indirectly, via the shared
+    // Payment.finixTransferId unique constraint) checkout's own P2002
+    // fallback all rely on, so whichever caller wins this create() is the
+    // only one whose dedupeKey-guarded job enqueue actually happens. This
+    // closes the exact three-way race the Flow 3 / Task 8 spec requires
+    // (checkout + webhook + reconciler -> exactly one SEND_RECEIPT, one
+    // QUICKBOOKS_PAYMENT) without adding a second Payment-creation path.
+    payment = await prisma.$transaction(async (tx) => {
+      const created = await tx.payment.create({ data: createData });
+      if (created.status === "SUCCEEDED") {
+        await enqueueBackgroundJobInTransaction(tx, {
+          jobType: "SEND_RECEIPT",
+          entityType: "Payment",
+          entityId: created.id,
+          dedupeKey: `SEND_RECEIPT:payment:${created.id}:version:1`,
+          payload: { paymentId: created.id, churchId },
+        });
+        await enqueueBackgroundJobInTransaction(tx, {
+          jobType: "QUICKBOOKS_PAYMENT",
+          entityType: "Payment",
+          entityId: created.id,
+          dedupeKey: `QUICKBOOKS_PAYMENT:payment:${created.id}`,
+          payload: { paymentId: created.id },
+        });
+      }
+      return created;
+    });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       // Lost a race against another concurrent recovery/write for this
@@ -282,20 +329,9 @@ export async function recoverOrphanedOneTimePayment(params: {
     }
   }
 
-  if (normalizedState === "SUCCEEDED") {
-    try {
-      const { sendDonationReceipt } = await import("@/lib/giving/generateReceipt");
-      await sendDonationReceipt(payment.id, churchId);
-    } catch (err) {
-      console.error("Failed to send donation receipt during orphan recovery:", err);
-    }
-    try {
-      const { syncPaymentToQuickBooks } = await import("@/lib/integrations/quickbooks/sync");
-      await syncPaymentToQuickBooks(payment.id);
-    } catch (err) {
-      console.error("Failed to sync payment to QuickBooks during orphan recovery:", err);
-    }
-  }
+  // SEND_RECEIPT / QUICKBOOKS_PAYMENT are already enqueued transactionally
+  // above, alongside the Payment.create() itself — see that block's
+  // comment.
 
   return { recovered: true, paymentId: payment.id };
 }

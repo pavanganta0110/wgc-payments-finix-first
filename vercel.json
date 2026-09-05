@@ -24,6 +24,18 @@
     {
       "path": "/api/cron/resync-monthly-transfer-fees",
       "schedule": "0 18 16 * *"
+    },
+    {
+      "path": "/api/cron/reconcile-payments",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-invoice-payments",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-refunds",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

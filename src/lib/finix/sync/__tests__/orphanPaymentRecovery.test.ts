@@ -1,16 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Prisma } from "@prisma/client";
 
-vi.mock("@/lib/prisma", () => ({
-  prisma: {
-    paymentAttempt: { findUnique: vi.fn(), update: vi.fn() },
-    givingLink: { findFirst: vi.fn(), update: vi.fn() },
-    payment: { create: vi.fn(), findUnique: vi.fn() },
-  },
-}));
-vi.mock("@/lib/giving/generateReceipt", () => ({ sendDonationReceipt: vi.fn() }));
-vi.mock("@/lib/integrations/quickbooks/sync", () => ({ syncPaymentToQuickBooks: vi.fn() }));
-
+const mockPrismaObj: Record<string, unknown> = {
+  paymentAttempt: { findUnique: vi.fn(), update: vi.fn() },
+  givingLink: { findFirst: vi.fn(), update: vi.fn() },
+  payment: { create: vi.fn(), findUnique: vi.fn() },
+  backgroundJob: { create: vi.fn().mockResolvedValue({ id: "job-1" }) },
+  // Stage 2 Task 8: Payment.create() + its required job enqueues now
+  // commit inside one transaction — this mock runs the callback against
+  // the SAME mock object, mirroring the pattern already used by every
+  // other transactional-outbox test in this repo (e.g.
+  // recurringPaymentConcurrency.test.ts).
+  $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(mockPrismaObj)),
+};
+vi.mock("@/lib/prisma", () => ({ prisma: mockPrismaObj }));
 // P2002 needs a real PrismaClientKnownRequestError instance — its own
 // constructor requires a Prisma-internal `clientVersion` meta shape, so
 // this mirrors the exact pattern the codebase already uses elsewhere for
