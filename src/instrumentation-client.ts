@@ -1,0 +1,23 @@
+import posthog from "posthog-js";
+
+// PostHog — Session Replay, Web Analytics, and Product Analytics from one
+// install. Next.js auto-loads this file (src/instrumentation-client.ts) on
+// the client before hydration; no provider/wrapper component is required.
+//
+// capture_pageview: "history_change" tracks App Router client-side
+// navigations automatically (pushState/replaceState/popstate) without
+// needing a separate usePathname/useSearchParams listener component.
+//
+// Requires NEXT_PUBLIC_POSTHOG_KEY to be set — if it's missing, posthog-js
+// itself is a no-op rather than throwing, so a misconfigured/unset key
+// never breaks the app; it just silently doesn't send events.
+if (process.env.NEXT_PUBLIC_POSTHOG_KEY) {
+  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
+    api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com",
+    ui_host: "https://us.posthog.com",
+    capture_pageview: "history_change",
+    capture_pageleave: true,
+    capture_exceptions: true,
+    person_profiles: "identified_only",
+  });
+}
