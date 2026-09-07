@@ -102,7 +102,23 @@ export async function provisionChurchAccount(app: {
 
     const existingUser = await tx.user.findUnique({ where: { email: app.contactEmail } });
 
-    if (existingUser && (existingUser.passwordHash || existingUser.lastLoginAt)) {
+    // Confirmed in production (2026-09-05): two Finix events for the same
+    // merchant landing seconds apart (not milliseconds) each pass the
+    // advisory-lock window above cleanly — the lock is transaction-scoped
+    // and releases as soon as the FIRST call's transaction commits, well
+    // before that call's own email even sends. The second call then sees
+    // an existingUser with no passwordHash/lastLoginAt yet (the merchant
+    // hasn't set a password), so the old condition treated it as "never
+    // invited" and issued a SECOND token + SECOND email. A still-valid,
+    // not-yet-expired setPasswordTokenHash means an invite was already
+    // durably issued — that's enough to skip an automatic re-send here.
+    // The admin "Resend" action (a separate route/table entry) is
+    // unaffected and remains the deliberate way to force a new send.
+    const hasValidPendingInvite = Boolean(
+      existingUser?.setPasswordTokenHash && existingUser?.setPasswordTokenExpiresAt && existingUser.setPasswordTokenExpiresAt > new Date()
+    );
+
+    if (existingUser && (existingUser.passwordHash || existingUser.lastLoginAt || hasValidPendingInvite)) {
       const churchIdChanged = existingUser.churchId !== church.id;
       const needsNameBackfill = !existingUser.name;
       if (churchIdChanged || needsNameBackfill) {

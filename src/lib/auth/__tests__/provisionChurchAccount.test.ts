@@ -191,6 +191,48 @@ describe("provisionChurchAccount", () => {
     expect(mockPrisma.user.update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: { churchId: "church-1", name: "Merchant Person" } });
   });
 
+  it("never re-sends when a still-valid, unexpired invite was already issued — the actual production bug: two Finix events for the same merchant landing seconds (not milliseconds) apart, past the advisory lock's transaction-scoped window, each saw no passwordHash/lastLoginAt and sent a second DASHBOARD_ACCESS email", async () => {
+    const notExpired = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: "user-1",
+      email: "merchant@example.com",
+      churchId: "church-1",
+      name: "Merchant Person",
+      passwordHash: null,
+      lastLoginAt: null,
+      setPasswordTokenHash: "already-issued-hash",
+      setPasswordTokenExpiresAt: notExpired,
+    });
+    const { provisionChurchAccount } = await load();
+    const result = await provisionChurchAccount(baseApp());
+
+    expect(mockSendWgcEmail).not.toHaveBeenCalled();
+    expect(mockPrisma.user.create).not.toHaveBeenCalled();
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    expect(result.emailSent).toBe(false);
+  });
+
+  it("still retries once a previously-issued invite has actually expired", async () => {
+    const expired = new Date(Date.now() - 60 * 1000);
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: "user-1",
+      email: "merchant@example.com",
+      churchId: "church-1",
+      name: "Merchant Person",
+      passwordHash: null,
+      lastLoginAt: null,
+      setPasswordTokenHash: "stale-hash",
+      setPasswordTokenExpiresAt: expired,
+    });
+    mockPrisma.user.update.mockResolvedValue({ id: "user-1", email: "merchant@example.com", churchId: "church-1" });
+
+    const { provisionChurchAccount } = await load();
+    const result = await provisionChurchAccount(baseApp());
+
+    expect(mockSendWgcEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "merchant@example.com" }));
+    expect(result.emailSent).toBe(true);
+  });
+
   it("skips sending entirely when a concurrent call already holds the advisory lock — the exact bug seen in production: two different Finix webhook events for the same merchant landing milliseconds apart both sent the DASHBOARD_ACCESS email", async () => {
     mockPrisma.$queryRaw.mockResolvedValueOnce([{ locked: false }]);
     const { provisionChurchAccount } = await load();

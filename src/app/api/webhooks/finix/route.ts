@@ -1558,7 +1558,8 @@ export async function processFinixWebhookEvent(webhookEvent: FinixWebhookEvent):
           newStatus: "APPROVED",
           whatHappened: "Finix approved the merchant onboarding application.",
           actionNeeded: "None.",
-          adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications"
+          adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications",
+          onboardingApplicationId: app.id
         });
 
         // Provision the Church row + church_admin User account, and the
@@ -1692,7 +1693,8 @@ export async function processFinixWebhookEvent(webhookEvent: FinixWebhookEvent):
             newStatus: "MORE_INFORMATION_REQUIRED",
             whatHappened: "Finix requested additional information or documents for the merchant.",
             actionNeeded: "Merchant has been sent a secure upload link.",
-            adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications"
+            adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications",
+            onboardingApplicationId: app.id
           });
         }
       } else if (onboardingState === "REJECTED" || status === "REJECTED" || status === "FAILED") {
@@ -1722,7 +1724,8 @@ export async function processFinixWebhookEvent(webhookEvent: FinixWebhookEvent):
           newStatus: "REJECTED",
           whatHappened: "Finix rejected the merchant onboarding application.",
           actionNeeded: "Review rejection reason in Finix. Contact merchant if needed.",
-          adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications"
+          adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications",
+          onboardingApplicationId: app.id
         });
       }
     } else if (eventType === "verification.created") {
