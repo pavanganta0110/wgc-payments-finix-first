@@ -40,7 +40,15 @@ const securityHeaders = [
       // marketing pages (see src/components/common/MetaPixel.tsx).
       // tag.simpli.fi: Simpli.fi's site-retargeting pixel (see
       // src/components/common/SimplifiPixel.tsx).
-      `script-src 'self' 'unsafe-inline'${scriptSrcEval} https://js.finix.com https://pay.google.com https://applepay.cdn-apple.com https://cdn.sift.com https://www.google.com https://www.gstatic.com https://connect.facebook.net https://tag.simpli.fi`,
+      // *.posthog.com: PostHog (src/instrumentation-client.ts) loads its
+      // core bundle plus lazy-loaded extensions (session replay, exception
+      // autocapture) from asset subdomains that rotate over time — PostHog's
+      // own docs specifically call for a wildcard here rather than pinning
+      // exact subdomains. Confirmed necessary the hard way: without this,
+      // the script tag still renders and the integration LOOKS complete,
+      // but the browser silently blocks every request and zero events ever
+      // arrive (posthog-js never throws or logs a CSP violation itself).
+      `script-src 'self' 'unsafe-inline'${scriptSrcEval} https://js.finix.com https://pay.google.com https://applepay.cdn-apple.com https://cdn.sift.com https://www.google.com https://www.gstatic.com https://connect.facebook.net https://tag.simpli.fi https://*.posthog.com`,
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: https:",
@@ -50,7 +58,13 @@ const securityHeaders = [
       // connect.facebook.net / www.facebook.com: the Meta Pixel's own beacon
       // calls (fbq track/trackCustom) and its noscript <img> fallback.
       // tag.simpli.fi: Simpli.fi's own tracking beacon calls.
-      "connect-src 'self' https://finix.live-payments-api.com https://finix.sandbox-payments-api.com https://finix.qa-payments-api.com https://pay.google.com https://cdn.sift.com https://connect.facebook.net https://www.facebook.com https://tag.simpli.fi",
+      // *.posthog.com: event capture, feature flags, and session replay
+      // ingestion — same wildcard rationale as script-src above.
+      "connect-src 'self' https://finix.live-payments-api.com https://finix.sandbox-payments-api.com https://finix.qa-payments-api.com https://pay.google.com https://cdn.sift.com https://connect.facebook.net https://www.facebook.com https://tag.simpli.fi https://*.posthog.com",
+      // Session replay records via a Web Worker loaded from a blob: URL —
+      // without this, worker-src falls back to script-src (no blob:/data:
+      // allowance there), so recording silently never starts.
+      "worker-src 'self' blob: data:",
       // Google Pay's payment sheet renders inside an iframe from pay.google.com.
       // js.finix.com: the Finix card-tokenization form itself is mounted as
       // an iframe (application/index.html) — adding an explicit frame-src
@@ -124,12 +138,16 @@ const nextConfig: NextConfig = {
               // shared via a helper since these two blocks already diverge
               // on X-Frame-Options/frame-ancestors for the embed use case.
               // cdn.sift.com: Finix's own fraud-detection SDK, required by finix.js.
-              `script-src 'self' 'unsafe-inline'${scriptSrcEval} https://js.finix.com https://pay.google.com https://applepay.cdn-apple.com https://cdn.sift.com`,
+              // *.posthog.com: src/instrumentation-client.ts runs on every
+              // page including this one — same rationale as the main CSP
+              // block above.
+              `script-src 'self' 'unsafe-inline'${scriptSrcEval} https://js.finix.com https://pay.google.com https://applepay.cdn-apple.com https://cdn.sift.com https://*.posthog.com`,
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: https:",
               "media-src 'self' https: http:",
-              "connect-src 'self' https://finix.live-payments-api.com https://finix.sandbox-payments-api.com https://finix.qa-payments-api.com https://pay.google.com https://cdn.sift.com",
+              "connect-src 'self' https://finix.live-payments-api.com https://finix.sandbox-payments-api.com https://finix.qa-payments-api.com https://pay.google.com https://cdn.sift.com https://*.posthog.com",
+              "worker-src 'self' blob: data:",
               "frame-src 'self' https://pay.google.com https://js.finix.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.tiktok.com https://www.instagram.com https://www.facebook.com",
               "frame-ancestors *",
             ].join("; "),
