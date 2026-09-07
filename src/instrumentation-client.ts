@@ -15,6 +15,11 @@ if (process.env.NEXT_PUBLIC_POSTHOG_KEY) {
   posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
     api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com",
     ui_host: "https://us.posthog.com",
+    // Config-snapshot default per PostHog's current docs — pins the
+    // behavior of every option we don't set explicitly below to this
+    // dated snapshot, so a future posthog-js update changing its own
+    // defaults can't silently change our behavior underneath us.
+    defaults: "2026-05-30",
     capture_pageview: "history_change",
     capture_pageleave: true,
     capture_exceptions: true,
