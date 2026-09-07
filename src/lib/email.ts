@@ -303,6 +303,10 @@ interface WgcAdminEmailOptions {
   actionNeeded: string;
   adminDashboardLink: string;
   customSubject?: string;
+  /** Links this alert to the OnboardingApplication in the admin Email Logs
+   * view, when the caller has one — omitted for alerts that aren't about a
+   * specific application (e.g. a generic system/orphaned-charge alert). */
+  onboardingApplicationId?: string;
 }
 
 export async function sendWgcAdminEmail(options: WgcAdminEmailOptions) {
@@ -317,7 +321,8 @@ export async function sendWgcAdminEmail(options: WgcAdminEmailOptions) {
     whatHappened,
     actionNeeded,
     adminDashboardLink,
-    customSubject
+    customSubject,
+    onboardingApplicationId,
   } = options;
 
   const adminEmail = process.env.SUPPORT_EMAIL || "support@wgcpayments.com";
@@ -342,14 +347,47 @@ export async function sendWgcAdminEmail(options: WgcAdminEmailOptions) {
     </div>
   `;
 
-  return await sendWgcEmail({
+  const subject = customSubject || `[WGC Admin] Merchant Status Update: ${merchantName} - ${newStatus}`;
+  const fullBodyHtml = bodyHtml + `<p><a href="${adminDashboardLink}">View in Admin Dashboard</a></p>`;
+
+  const result = await sendWgcEmail({
     to: adminEmail,
-    subject: customSubject || `[WGC Admin] Merchant Status Update: ${merchantName} - ${newStatus}`,
+    subject,
     title: "Merchant Application Update",
     badgeText: newStatus,
     badgeColor: statusBadgeColor,
-    bodyHtml: bodyHtml + `<p><a href="${adminDashboardLink}">View in Admin Dashboard</a></p>`,
+    bodyHtml: fullBodyHtml,
   });
+
+  // Previously unlogged anywhere (2026-09-05 report: "not seeing the
+  // emails that WGC admin got") — every one of these alerts (approval,
+  // rejection, more-info-required, webhook failures, orphaned-charge
+  // escalations) went out via Resend with zero record in the admin Email
+  // Logs page, which only ever reads EmailLog. Logged the same
+  // unconditional success-or-failure way as the DASHBOARD_ACCESS send in
+  // provisionChurchAccount.ts. Prefixed with WGC_ADMIN_ so it's never
+  // confused in the type filter with the merchant-facing email of the
+  // same underlying event (sendWebhookEmail logs its own separate row for
+  // that, to the merchant's address, under the bare status name).
+  try {
+    await prisma.emailLog.create({
+      data: {
+        onboardingApplicationId: onboardingApplicationId ?? null,
+        type: `WGC_ADMIN_${newStatus}`,
+        to: adminEmail,
+        subject,
+        status: result.success ? "SENT" : "ERROR",
+        sentAt: result.success ? new Date() : null,
+        error: result.success ? null : String(result.error ?? "unknown error"),
+        bodyHtml: fullBodyHtml,
+      },
+    });
+  } catch (err) {
+    // Logging must never break the actual send/return path.
+    console.error("Failed to write EmailLog for WGC admin alert:", err);
+  }
+
+  return result;
 }
 
 export interface WgcAdminOnboardingNotificationOptions {
