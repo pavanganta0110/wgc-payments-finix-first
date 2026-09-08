@@ -108,7 +108,7 @@ export default function PricingPage() {
         <section className="py-32 bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <ScrollFade>
-              <div className="grid lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+              <div className="grid lg:grid-cols-2 xl:grid-cols-4 gap-8 max-w-7xl mx-auto">
                 {/* Card Processing */}
                 <div className="bg-white rounded-[2.5rem] border border-wgc-navy-100 p-12 relative overflow-hidden group hover:shadow-2xl hover:-translate-y-2 transition-all duration-500">
                   <div className="text-[10px] font-black text-wgc-gold-600 uppercase tracking-[0.3em] mb-8 font-mono">Standard Processing</div>
@@ -144,6 +144,18 @@ export default function PricingPage() {
                   </div>
                   <p className="text-[11px] font-bold text-wgc-gold-500/60 mb-10 uppercase tracking-widest">Per active merchant</p>
                   <div className="w-12 h-1 bg-wgc-gold-500 rounded-full group-hover:w-full transition-all duration-700"></div>
+                </div>
+
+                {/* Recurring Giving */}
+                <div className="bg-white rounded-[2.5rem] border border-wgc-navy-100 p-12 relative overflow-hidden group hover:shadow-2xl hover:-translate-y-2 transition-all duration-500">
+                  <div className="text-[10px] font-black text-wgc-navy-400 uppercase tracking-[0.3em] mb-8 font-mono">At Cost</div>
+                  <h3 className="text-2xl font-bold text-wgc-navy-900 mb-4 tracking-tight">Recurring giving</h3>
+                  <p className="text-sm font-medium text-wgc-navy-500 mb-10 leading-relaxed opacity-70">Passed through at our cost — no markup on recurring gifts.</p>
+                  <div className="flex items-baseline gap-2 mb-2">
+                    <span className="text-6xl font-bold text-wgc-navy-950 tracking-tighter">0.1%</span>
+                  </div>
+                  <p className="text-[11px] font-bold text-wgc-navy-400 mb-10 uppercase tracking-widest">Added per recurring charge</p>
+                  <div className="w-12 h-1 bg-wgc-navy-900 rounded-full group-hover:w-full transition-all duration-700"></div>
                 </div>
               </div>
             </ScrollFade>
