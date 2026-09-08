@@ -13,6 +13,19 @@ interface QueueEntry {
   [key: string]: unknown;
 }
 
+// Matches JS Date.getDay() — 0=Sunday..6=Saturday — and the cron job's own
+// weekday computation (America/Chicago), so "Monday" here means Monday for
+// the business, not whatever UTC day the cron happens to fire on.
+const WEEKDAYS = [
+  { value: 0, label: "Sun" },
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+];
+
 /**
  * WGC-super-admin-only settlement queue control: view a merchant's Finix
  * settlement_queue_mode, switch it on/off, and release queued entries
@@ -25,9 +38,11 @@ export default function SettlementQueuePanel({ churchId, canManage }: { churchId
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<string | null>(null);
   const [entries, setEntries] = useState<QueueEntry[]>([]);
+  const [autoReleaseWeekdays, setAutoReleaseWeekdays] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -38,6 +53,7 @@ export default function SettlementQueuePanel({ churchId, canManage }: { churchId
       if (!res.ok) throw new Error(data.error || "Failed to load settlement queue");
       setMode(data.settlementQueueMode);
       setEntries(data.entries || []);
+      setAutoReleaseWeekdays(data.autoReleaseWeekdays || []);
       setSelected(new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load settlement queue");
@@ -99,6 +115,33 @@ export default function SettlementQueuePanel({ churchId, canManage }: { churchId
     });
   };
 
+  const saveSchedule = async (nextWeekdays: number[]) => {
+    setSavingSchedule(true);
+    const previous = autoReleaseWeekdays;
+    setAutoReleaseWeekdays(nextWeekdays); // optimistic — feels instant on a 7-button toggle
+    try {
+      const res = await fetch(`/api/admin/merchants/${churchId}/settlement-queue/auto-release-schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekdays: nextWeekdays }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update auto-release schedule");
+    } catch (err) {
+      setAutoReleaseWeekdays(previous);
+      toast.error(err instanceof Error ? err.message : "Failed to update auto-release schedule");
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
+  const toggleWeekday = (day: number) => {
+    const next = autoReleaseWeekdays.includes(day)
+      ? autoReleaseWeekdays.filter((d) => d !== day)
+      : [...autoReleaseWeekdays, day].sort((a, b) => a - b);
+    saveSchedule(next);
+  };
+
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8">
       <div className="flex items-center justify-between mb-2">
@@ -148,6 +191,34 @@ export default function SettlementQueuePanel({ churchId, canManage }: { churchId
 
           {mode === "MANUAL" && (
             <>
+              <div className="mb-6 pb-6 border-b border-gray-100">
+                <p className="text-xs font-semibold text-gray-700 mb-1">Auto-release schedule</p>
+                <p className="text-xs text-gray-500 mb-3">
+                  On the days selected, every entry that&apos;s already past its ready-to-settle date gets released
+                  automatically — pick one day for a weekly release, two for twice a week.
+                  {!canManage && " (view only)"}
+                </p>
+                <div className="flex gap-1.5">
+                  {WEEKDAYS.map((day) => {
+                    const active = autoReleaseWeekdays.includes(day.value);
+                    return (
+                      <button
+                        key={day.value}
+                        onClick={() => canManage && toggleWeekday(day.value)}
+                        disabled={!canManage || savingSchedule}
+                        className={`w-11 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${
+                          active
+                            ? "bg-gray-900 text-white"
+                            : "bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100"
+                        } ${!canManage ? "cursor-default" : ""}`}
+                      >
+                        {day.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {entries.length === 0 ? (
                 <p className="text-sm text-gray-500">No entries currently waiting to be released.</p>
               ) : (

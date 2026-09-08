@@ -312,6 +312,14 @@ model Church {
   finixMerchantId               String?
   finixIdentityId               String?
   finixApplicationId            String?
+  // Auto-release cadence for this merchant's Settlement Queue (see
+  // /admin/merchants/[churchId]/settlements — SettlementQueuePanel).
+  // Weekday numbers matching JS Date.getDay() (0=Sunday..6=Saturday); e.g.
+  // [1] releases once a week (every Monday), [1,4] releases twice a week
+  // (Monday and Thursday). Empty/default = no auto-release, manual only.
+  // Only meaningful while the merchant's settlement_queue_mode is MANUAL —
+  // see /api/cron/release-settlement-queue.
+  settlementAutoReleaseWeekdays  Int[]     @default([])
   // WGC platform-billing gate, checked on every dashboard request (denormalized
   // here for a fast session-level check rather than joining WgcSubscription on
   // every request). Null = grandfathered/no gate (organizations that existed

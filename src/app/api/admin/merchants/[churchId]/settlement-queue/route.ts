@@ -16,7 +16,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ churchId
   }
 
   const { churchId } = await params;
-  const church = await prisma.church.findUnique({ where: { id: churchId }, select: { finixMerchantId: true } });
+  const church = await prisma.church.findUnique({
+    where: { id: churchId },
+    select: { finixMerchantId: true, settlementAutoReleaseWeekdays: true },
+  });
   if (!church?.finixMerchantId) {
     return NextResponse.json({ error: "This organization has no Finix merchant on file." }, { status: 404 });
   }
@@ -36,5 +39,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ churchId
     entries = result._embedded?.settlement_queue_entries ?? [];
   }
 
-  return NextResponse.json({ settlementQueueMode, entries });
+  return NextResponse.json({
+    settlementQueueMode,
+    entries,
+    autoReleaseWeekdays: church.settlementAutoReleaseWeekdays,
+  });
 }
