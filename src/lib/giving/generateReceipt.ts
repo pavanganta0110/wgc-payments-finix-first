@@ -64,8 +64,15 @@ export async function buildDonationReceiptPdfProps(
   const settings = resolveReceiptSettings(church);
   const orgName = church.statementSenderName || church.name;
 
-  const isAnonymousDisplay = donor?.anonymousPreference || payment.isAnonymous;
-  const donorName = isAnonymousDisplay ? "Anonymous Donor" : formatPersonName(donor?.name || "Donor");
+  // anonymousPreference / Payment.isAnonymous mean "don't show my name
+  // publicly" (donor walls, staff-facing top-donor lists) — they must
+  // never apply here. A receipt is a private tax document sent only to
+  // the donor themselves; blanking their own name on their own copy
+  // doesn't protect anyone's privacy, it just looks like a broken receipt
+  // (2026-09-07 report: a real donor's receipt showed "Anonymous Donor"
+  // instead of their name). Always show the real donor identity on the
+  // document itself.
+  const donorName = formatPersonName(donor?.name || "Donor");
 
   const last4 = instrument?.cardLast4 || instrument?.bankLast4 || null;
   const paymentMethodLabel = `${describeInstrumentType(payment.paymentMethodType)}${last4 ? ` •••• ${last4}` : ""}`;
@@ -87,7 +94,7 @@ export async function buildDonationReceiptPdfProps(
     organizationWebsite: settings.showWebsite ? church.website || null : null,
     organizationTaxId: settings.showTaxId ? church.taxId || null : null,
     donorName,
-    donorEmail: isAnonymousDisplay ? null : donor?.email || null,
+    donorEmail: donor?.email || null,
     donorAddress,
     receiptNumber: snapshot.receiptNumber,
     transactionReference: settings.showDonationReference ? payment.finixTransferId || payment.id : payment.id,

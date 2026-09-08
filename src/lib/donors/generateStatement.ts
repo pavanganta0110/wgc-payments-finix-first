@@ -41,11 +41,13 @@ export async function generateYearEndStatement(
 
   const calc = await computeYearEndStatement(donorId, churchId, taxYear);
 
-  const donorName = donor.anonymousPreference ? "Anonymous Donor" : formatPersonName(donor.name);
+  // anonymousPreference means "don't show my name publicly" — it must
+  // never blank a donor's own name on their own private tax statement
+  // (same fix as generateReceipt.ts, 2026-09-07 report). Always show the
+  // real name here.
+  const donorName = formatPersonName(donor.name);
   const missingFields: string[] = [];
-  if (donorName === "—" || donor.anonymousPreference) {
-    if (!donor.anonymousPreference) missingFields.push("name");
-  }
+  if (donorName === "—") missingFields.push("name");
   if (!donor.email || !isValidEmail(donor.email)) missingFields.push("email");
 
   const status: "NEEDS_REVIEW" | "READY" = missingFields.length > 0 ? "NEEDS_REVIEW" : "READY";
@@ -228,7 +230,7 @@ export async function sendYearEndStatementEmail(statementId: string, churchId: s
 
   const church = await prisma.church.findUnique({ where: { id: churchId } });
   const pdf = await renderStatementPdf(statementId, churchId);
-  const donorName = donor.anonymousPreference ? "Anonymous Donor" : formatPersonName(donor.name);
+  const donorName = formatPersonName(donor.name);
   const orgName = church?.statementSenderName || church?.name || statement.organizationNameSnapshot || "Organization";
 
   const subject = church?.statementSubjectTemplate
