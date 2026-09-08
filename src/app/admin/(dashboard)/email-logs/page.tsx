@@ -46,6 +46,8 @@ export default function EmailLogsPage() {
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [viewingLog, setViewingLog] = useState<EmailLogEntry | null>(null);
+  const [ccOpenForId, setCcOpenForId] = useState<string | null>(null);
+  const [ccByLogId, setCcByLogId] = useState<Record<string, string>>({});
 
   const load = useCallback(() => {
     setLoading(true);
@@ -72,7 +74,11 @@ export default function EmailLogsPage() {
     setResendingId(id);
     setBanner(null);
     try {
-      const res = await fetch(`/api/admin/email-logs/${id}/resend`, { method: 'POST' });
+      const res = await fetch(`/api/admin/email-logs/${id}/resend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ additionalRecipients: ccByLogId[id] || '' }),
+      });
       const data = await res.json();
       if (res.ok) {
         setBanner({ kind: 'success', text: 'Email resent successfully.' });
@@ -176,15 +182,33 @@ export default function EmailLogsPage() {
                       </button>
                     )}
                     {isResendable(log.type) && (
-                      <button
-                        onClick={() => resend(log.id)}
-                        disabled={resendingId === log.id}
-                        className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                      >
-                        {resendingId === log.id ? 'Resending…' : 'Resend'}
-                      </button>
+                      <>
+                        <button
+                          onClick={() => setCcOpenForId(ccOpenForId === log.id ? null : log.id)}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
+                        >
+                          {ccOpenForId === log.id ? 'Cancel' : '+ Also send to others'}
+                        </button>
+                        <button
+                          onClick={() => resend(log.id)}
+                          disabled={resendingId === log.id}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {resendingId === log.id ? 'Resending…' : 'Resend'}
+                        </button>
+                      </>
                     )}
                   </div>
+                  {ccOpenForId === log.id && (
+                    <input
+                      type="text"
+                      autoFocus
+                      value={ccByLogId[log.id] || ''}
+                      onChange={(e) => setCcByLogId((prev) => ({ ...prev, [log.id]: e.target.value }))}
+                      placeholder="also send to: name@example.com, name2@example.com"
+                      className="w-64 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700"
+                    />
+                  )}
                 </div>
               </div>
             </div>

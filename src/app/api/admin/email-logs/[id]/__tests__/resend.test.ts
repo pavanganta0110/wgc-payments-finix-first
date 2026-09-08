@@ -32,8 +32,11 @@ async function load() {
   return import("../resend/route");
 }
 
-function postReq() {
-  return new Request("http://x/api/admin/email-logs/log-1/resend", { method: "POST" });
+function postReq(body?: unknown) {
+  return new Request("http://x/api/admin/email-logs/log-1/resend", {
+    method: "POST",
+    ...(body !== undefined ? { body: JSON.stringify(body), headers: { "Content-Type": "application/json" } } : {}),
+  });
 }
 
 const params = () => ({ params: Promise.resolve({ id: "log-1" }) });
@@ -130,5 +133,34 @@ describe("POST /api/admin/email-logs/[id]/resend — onboarding status emails", 
     const { POST } = await load();
     const res = await POST(postReq(), params());
     expect(res.status).toBe(404);
+  });
+
+  it("passes parsed additionalRecipients through as cc on the underlying send", async () => {
+    mockPrisma.emailLog.findUnique.mockResolvedValue({ id: "log-1", type: "APPROVED", onboardingApplicationId: "app-1" });
+    mockPrisma.onboardingApplication.findUnique.mockResolvedValue({
+      id: "app-1",
+      contactEmail: "contact@example.com",
+      organizationName: "Grace Church",
+      onboardingStatus: "APPROVED",
+    });
+    const { POST } = await load();
+    await POST(postReq({ additionalRecipients: "spouse@example.com, Bookkeeper@Example.com" }), params());
+
+    const call = mockSendWgcEmail.mock.calls[0][0];
+    expect(call.cc).toEqual(["spouse@example.com", "bookkeeper@example.com"]);
+  });
+
+  it("resends fine with no cc at all when no body is sent — unchanged prior behavior", async () => {
+    mockPrisma.emailLog.findUnique.mockResolvedValue({ id: "log-1", type: "APPROVED", onboardingApplicationId: "app-1" });
+    mockPrisma.onboardingApplication.findUnique.mockResolvedValue({
+      id: "app-1",
+      contactEmail: "contact@example.com",
+      organizationName: "Grace Church",
+      onboardingStatus: "APPROVED",
+    });
+    const { POST } = await load();
+    const res = await POST(postReq(), params());
+    expect(res.status).toBe(200);
+    expect(mockSendWgcEmail.mock.calls[0][0].cc).toEqual([]);
   });
 });

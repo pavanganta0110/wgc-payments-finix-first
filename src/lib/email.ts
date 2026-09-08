@@ -22,6 +22,11 @@ interface WgcEmailOptions {
   badgeColor?: string; // e.g. "#C99A2E" or "#10B981"
   bodyHtml: string;
   attachments?: { filename: string; content: Buffer }[];
+  /** Extra recipients who get a copy alongside the primary `to` address —
+   * e.g. a donor's receipt also CC'd to a spouse or bookkeeper. Validated
+   * and capped by the caller (see resend routes); passed straight through
+   * to Resend's own `cc` field. */
+  cc?: string[];
 
   // When present, sendWgcEmail writes an OrgEmailLog row after the send
   // attempt (success or failure) — this is the ONLY place that decides
@@ -54,6 +59,35 @@ interface WgcEmailOptions {
     // same logical email.
     isResend?: boolean;
   };
+}
+
+const MAX_ADDITIONAL_RECIPIENTS = 5;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Shared parsing for the "also send this to other people" input on receipt/
+ * email resends (merchant + admin Email Logs) — accepts a raw comma/
+ * semicolon/newline-separated string (as typed by a user) or an array
+ * (already-split), trims, lowercases, drops anything that isn't a
+ * plausible email address, de-dupes, and caps the count so a resend can
+ * never fan out to an unbounded list. Never throws — an all-invalid input
+ * just resolves to an empty list rather than blocking the primary send.
+ */
+export function parseAdditionalRecipients(raw: unknown): string[] {
+  const candidates: string[] = Array.isArray(raw)
+    ? raw
+    : typeof raw === "string"
+      ? raw.split(/[,;\n]/)
+      : [];
+
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const email = candidate.trim().toLowerCase();
+    if (!email || !EMAIL_PATTERN.test(email)) continue;
+    seen.add(email);
+    if (seen.size >= MAX_ADDITIONAL_RECIPIENTS) break;
+  }
+  return Array.from(seen);
 }
 
 const WGC_LOGO_URL = "https://www.wgcpayments.com/wgc-logo.png";
@@ -175,6 +209,7 @@ support@wgcpayments.com
       html,
       text,
       ...(options.attachments ? { attachments: options.attachments } : {}),
+      ...(options.cc && options.cc.length > 0 ? { cc: options.cc } : {}),
     });
 
     if (response.error) {
