@@ -311,6 +311,54 @@ export class FinixClient {
     return this.fetchApi(`/merchants/${merchantId}`);
   }
 
+  /**
+   * Sets fields on a Merchant — today used only for `settlement_queue_mode`
+   * ("MANUAL" | "UNSET"). Per Finix's Settlement Queue docs, this call only
+   * takes effect once Finix support has enabled the Settlement Queue
+   * feature at the Application level for this account; until then it may
+   * error or silently no-op. Mirrors updateIdentity's PUT convention.
+   */
+  async updateMerchant(merchantId: string, payload: Record<string, unknown>) {
+    return this.fetchApi(`/merchants/${merchantId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  // ==========================================
+  // Settlement Queue
+  // ==========================================
+
+  /**
+   * Lists Settlement Queue Entries. Finix's docs confirm an `entity_id`
+   * filter (the specific Transfer/Fee/Refund the entry holds); a `merchant`
+   * filter is NOT confirmed against a real response — it follows the same
+   * `?merchant=` convention listSettlements() already uses, but if it's
+   * ignored, this falls back to returning every entry on the Application.
+   * Verify against a real sandbox response before trusting `merchant=` to
+   * actually scope the result.
+   */
+  async listSettlementQueueEntries(params: { merchantId?: string; entityId?: string } = {}) {
+    const query = new URLSearchParams();
+    if (params.merchantId) query.set("merchant", params.merchantId);
+    if (params.entityId) query.set("entity_id", params.entityId);
+    const qs = query.toString();
+    return this.fetchApi(`/settlement_queue_entries${qs ? `?${qs}` : ""}`);
+  }
+
+  /**
+   * Releases one or more Settlement Queue Entries so their transactions
+   * move into a Settlement. Finix rejects releasing an entry before its
+   * own `ready_to_settle_at` date with "Unable to Release Entries." —
+   * callers should surface that message rather than a generic failure.
+   */
+  async releaseSettlementQueueEntries(ids: string[]) {
+    return this.fetchApi("/settlement_queue_entries", {
+      method: "PUT",
+      body: JSON.stringify({ ids, action: "RELEASE" }),
+    });
+  }
+
   // ==========================================
   // Fee Profiles / Merchant Profiles (Pricing)
   // ==========================================
