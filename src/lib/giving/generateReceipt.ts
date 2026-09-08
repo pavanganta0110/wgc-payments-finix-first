@@ -108,7 +108,12 @@ export async function buildDonationReceiptPdfProps(
   return { props, donorEmail: donor?.email || null, donorName, church };
 }
 
-export async function sendDonationReceipt(paymentId: string, churchId: string, actorUserId: string | null = null) {
+export async function sendDonationReceipt(
+  paymentId: string,
+  churchId: string,
+  actorUserId: string | null = null,
+  additionalRecipients: string[] = []
+) {
   const payment = await prisma.payment.findFirst({ where: { id: paymentId, churchId } });
   if (!payment) throw new Error("Payment not found");
 
@@ -209,6 +214,7 @@ export async function sendDonationReceipt(paymentId: string, churchId: string, a
 
   const result = await sendWgcEmail({
     to: donorEmail,
+    cc: additionalRecipients,
     subject,
     title: "Thank You for Your Gift",
     badgeText: "Receipt",

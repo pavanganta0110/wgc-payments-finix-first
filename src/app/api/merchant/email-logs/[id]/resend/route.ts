@@ -9,7 +9,7 @@ import { sendExternalDonationReceiptEmail } from "@/lib/donations/sendExternalDo
 import { sendYearEndStatementEmail } from "@/lib/donors/generateStatement";
 import { sendInvoiceEmail } from "@/lib/invoices/invoiceEmails";
 import { ensureInvoicePublicToken, InvoicePublicTokenAlreadyExistsError, regenerateInvoicePublicToken } from "@/lib/invoices/invoicePublicToken";
-import { sendWgcEmail } from "@/lib/email";
+import { sendWgcEmail, parseAdditionalRecipients } from "@/lib/email";
 import { generateSetupLinkToken } from "@/lib/subscriptions/setupLinkToken";
 import { frequencyLabel } from "@/lib/subscriptions/subscriptionStatus";
 import { formatCents } from "@/lib/format";
@@ -47,14 +47,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return toSafeErrorResponse("This email cannot be resent (no related record).", 400);
   }
 
+  // Optional "also send this to other people" list — currently only
+  // honored for the two receipt categories below. A malformed/empty body
+  // is fine (no additional recipients, same as before this existed).
+  let additionalRecipients: string[] = [];
+  try {
+    const body = await req.json();
+    additionalRecipients = parseAdditionalRecipients(body?.additionalRecipients);
+  } catch {
+    // No JSON body sent — resend with no extra recipients, as before.
+  }
+
   try {
     switch (log.category) {
       case "DONATION_RECEIPT":
-        await sendDonationReceipt(log.relatedEntityId, auth.churchId, auth.userId);
+        await sendDonationReceipt(log.relatedEntityId, auth.churchId, auth.userId, additionalRecipients);
         break;
 
       case "EXTERNAL_DONATION_RECEIPT":
-        await sendExternalDonationReceiptEmail(log.relatedEntityId, auth.churchId, auth.userId);
+        await sendExternalDonationReceiptEmail(log.relatedEntityId, auth.churchId, auth.userId, additionalRecipients);
         break;
 
       case "ANNUAL_STATEMENT":
