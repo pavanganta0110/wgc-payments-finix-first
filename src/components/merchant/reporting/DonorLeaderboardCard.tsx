@@ -3,27 +3,13 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { LeaderboardCard } from "@/components/ui/leaderboard-card";
 import type { TopDonorRow } from "@/lib/donors/donorAnalytics";
-
-export const LEADERBOARD_RUN_OPTIONS = [
-  { id: "this_week", label: "This Week" },
-  { id: "mtd", label: "This Month" },
-] as const;
-
-export type LeaderboardRangeId = (typeof LEADERBOARD_RUN_OPTIONS)[number]["id"];
-
-function isLeaderboardRangeId(value: string | undefined): value is LeaderboardRangeId {
-  return LEADERBOARD_RUN_OPTIONS.some((o) => o.id === value);
-}
+import { LEADERBOARD_RUN_OPTIONS, type LeaderboardRangeId } from "@/lib/donors/leaderboardRange";
 
 // Reads/writes ?leaderboardRange=this_week|mtd — same searchParams-driven
 // server re-fetch pattern TopDonorsCard already uses for its metric toggle
 // (donors/page.tsx), rather than a client-side fetch/API route: the range
 // switch triggers a full server re-render of the parent page with fresh
 // loadTopDonors() data.
-export function parseLeaderboardRange(value: string | undefined): LeaderboardRangeId {
-  return isLeaderboardRangeId(value) ? value : "this_week";
-}
-
 export default function DonorLeaderboardCard({
   rows,
   range,

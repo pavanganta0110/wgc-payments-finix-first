@@ -6,8 +6,9 @@ import { hasPermission } from "@/lib/auth/permissions";
 import { isAuthError } from "@/lib/auth/errors";
 import { RANGE_PRESETS } from "@/lib/dateRangePresets";
 import { loadTopDonors } from "@/lib/donors/donorAnalytics";
+import { parseLeaderboardRange } from "@/lib/donors/leaderboardRange";
 import ReportExplorer from "@/components/merchant/reporting/ReportExplorer";
-import DonorLeaderboardCard, { parseLeaderboardRange } from "@/components/merchant/reporting/DonorLeaderboardCard";
+import DonorLeaderboardCard from "@/components/merchant/reporting/DonorLeaderboardCard";
 
 export default async function DonorReportPage({
   searchParams,
