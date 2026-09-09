@@ -55,12 +55,19 @@ const securityHeaders = [
       "media-src 'self' https: http:",
       // pay.google.com: Google Pay's client makes XHR calls to its own
       // origin during isReadyToPay/loadPaymentData.
+      // google.com (bare, no pay. subdomain): reproduced live on the /g/[slug]
+      // page in mobile viewport — Google Pay's own SDK also connects to
+      // https://google.com/pay directly (not just pay.google.com), and that
+      // connection was being silently blocked. Plausible contributor to
+      // donors on mobile hitting "the secure payment form is not ready
+      // yet" (not fully confirmed as the sole cause, but a real, verified
+      // CSP violation worth closing regardless).
       // connect.facebook.net / www.facebook.com: the Meta Pixel's own beacon
       // calls (fbq track/trackCustom) and its noscript <img> fallback.
       // tag.simpli.fi: Simpli.fi's own tracking beacon calls.
       // *.posthog.com: event capture, feature flags, and session replay
       // ingestion — same wildcard rationale as script-src above.
-      "connect-src 'self' https://finix.live-payments-api.com https://finix.sandbox-payments-api.com https://finix.qa-payments-api.com https://pay.google.com https://cdn.sift.com https://connect.facebook.net https://www.facebook.com https://tag.simpli.fi https://*.posthog.com",
+      "connect-src 'self' https://finix.live-payments-api.com https://finix.sandbox-payments-api.com https://finix.qa-payments-api.com https://pay.google.com https://google.com https://cdn.sift.com https://connect.facebook.net https://www.facebook.com https://tag.simpli.fi https://*.posthog.com",
       // Session replay records via a Web Worker loaded from a blob: URL —
       // without this, worker-src falls back to script-src (no blob:/data:
       // allowance there), so recording silently never starts.
@@ -146,7 +153,9 @@ const nextConfig: NextConfig = {
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: https:",
               "media-src 'self' https: http:",
-              "connect-src 'self' https://finix.live-payments-api.com https://finix.sandbox-payments-api.com https://finix.qa-payments-api.com https://pay.google.com https://cdn.sift.com https://*.posthog.com",
+              // google.com (bare, no pay. subdomain): kept in sync with the
+              // main CSP block's connect-src above — see that comment.
+              "connect-src 'self' https://finix.live-payments-api.com https://finix.sandbox-payments-api.com https://finix.qa-payments-api.com https://pay.google.com https://google.com https://cdn.sift.com https://*.posthog.com",
               "worker-src 'self' blob: data:",
               "frame-src 'self' https://pay.google.com https://js.finix.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.tiktok.com https://www.instagram.com https://www.facebook.com",
               "frame-ancestors *",
