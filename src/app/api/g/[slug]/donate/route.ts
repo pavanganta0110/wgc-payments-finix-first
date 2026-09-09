@@ -7,7 +7,7 @@ import { resolveWgcTransferFeeStrategy } from "@/lib/giving/serverFeeStrategy";
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import { sendReceiptEmail } from "@/lib/giving/sendReceiptEmail";
-import { sendDonationReceipt } from "@/lib/giving/generateReceipt";
+import { sendDonationReceipt, notifyMerchantOfNewDonation } from "@/lib/giving/generateReceipt";
 import { syncPaymentToQuickBooks } from "@/lib/integrations/quickbooks/sync";
 import { normalizeUSPhone, isValidEmail } from "@/lib/validation";
 import { isGivingLinkUsable } from "@/lib/givingLinks/status";
@@ -828,6 +828,18 @@ async function handleDonate(req: Request, slug: string) {
         await sendDonationReceipt(newPayment.id, church.id);
       } catch (err) {
         console.error("Failed to send donation receipt:", err);
+      }
+    }
+
+    // Independent of receiptSettings.sendAutomatically (that setting is
+    // about the donor's own receipt) — gated only by the org's own
+    // DONATION_RECEIVED notification preference, same as every other
+    // seller-facing event.
+    if (succeeded) {
+      try {
+        await notifyMerchantOfNewDonation(newPayment.id, church.id);
+      } catch (err) {
+        console.error("Failed to notify merchant of new donation:", err);
       }
     }
 

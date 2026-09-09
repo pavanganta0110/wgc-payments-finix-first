@@ -390,6 +390,12 @@ export async function syncFinixDataFromWebhookEvent(
             console.error("Failed to send async donation receipt:", err);
           }
           try {
+            const { notifyMerchantOfNewDonation } = await import("@/lib/giving/generateReceipt");
+            await notifyMerchantOfNewDonation(priorPayment.id, churchId);
+          } catch (err) {
+            console.error("Failed to notify merchant of new donation (async):", err);
+          }
+          try {
             await syncPaymentToQuickBooks(priorPayment.id);
           } catch (err) {
             console.error("Failed to sync payment to QuickBooks:", err);

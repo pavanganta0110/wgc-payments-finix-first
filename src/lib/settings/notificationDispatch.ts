@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sendWgcEmail } from "@/lib/email";
-import { DEFAULT_NOTIFICATION_PREFERENCE } from "@/lib/settings/notificationEvents";
+import { NOTIFICATION_EVENTS, resolveNotificationDefault } from "@/lib/settings/notificationEvents";
 
 /**
  * Sends a real event email only if the organization hasn't disabled it and
@@ -29,7 +29,8 @@ export async function notifyEvent(params: {
     ]);
     if (!church) return;
 
-    const emailEnabled = preference ? preference.emailEnabled : DEFAULT_NOTIFICATION_PREFERENCE.emailEnabled;
+    const eventDef = NOTIFICATION_EVENTS.find((e) => e.key === params.eventKey);
+    const emailEnabled = preference ? preference.emailEnabled : resolveNotificationDefault(eventDef ?? {}).emailEnabled;
     if (!emailEnabled) return;
 
     const to = church.supportEmail || church.financeEmail || church.primaryContactEmail;

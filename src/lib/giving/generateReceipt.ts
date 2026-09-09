@@ -9,6 +9,7 @@ import { generateReceiptNumber } from "@/lib/giving/receiptNumber";
 import { computeRecordedContributionAmountCents } from "@/lib/giving/goodsServices";
 import { describeInstrumentType } from "@/lib/givingLinks/attempts";
 import { logDashboardAction } from "@/lib/dashboardAudit";
+import { notifyEvent } from "@/lib/settings/notificationDispatch";
 import { DonationReceiptPdf, type DonationReceiptPdfProps } from "@/lib/giving/pdf/DonationReceiptPdf";
 
 /**
@@ -240,4 +241,51 @@ export async function sendDonationReceipt(
 
   if (!result.success) throw new Error("Failed to send donation receipt");
   return { receiptNumber, recipientEmail: donorEmail, version: nextVersion };
+}
+
+/**
+ * Sent to the church/seller when a donation completes — the merchant-facing
+ * counterpart to sendDonationReceipt (which goes to the donor). Routes
+ * through notifyEvent so it respects the org's own NotificationPreference
+ * for DONATION_RECEIVED (opt-in by default — see that event's own comment
+ * in notificationEvents.ts for why) and the same recipient priority
+ * (supportEmail -> financeEmail -> primaryContactEmail) as every other
+ * seller-facing notification.
+ *
+ * Call this from the same place(s) sendDonationReceipt is called for a
+ * genuinely new success — the synchronous /api/g/[slug]/donate success path
+ * and the async Finix webhook's PENDING->SUCCEEDED transition — never from
+ * a resend or reconciliation backfill, so an org is only ever notified once
+ * per real donation.
+ */
+export async function notifyMerchantOfNewDonation(paymentId: string, churchId: string) {
+  const payment = await prisma.payment.findFirst({ where: { id: paymentId, churchId } });
+  if (!payment) return;
+
+  const donor = payment.donorId ? await prisma.donor.findUnique({ where: { id: payment.donorId } }) : null;
+  // Matches the anonymous-donor convention already used for staff-facing
+  // surfaces (donor walls, top-donor lists) — see buildDonationReceiptPdfProps's
+  // own comment above for why the donor's *own* receipt is the one place
+  // this never applies.
+  const donorName = payment.isAnonymous ? "An anonymous donor" : formatPersonName(donor?.name || "A donor");
+  const amountCents = payment.donationAmountCents ?? payment.amountCents;
+
+  await notifyEvent({
+    churchId,
+    eventKey: "DONATION_RECEIVED",
+    subject: `New donation received: ${formatCents(amountCents)}`,
+    title: "New donation received",
+    badgeText: "New Donation",
+    badgeColor: "#16A34A",
+    bodyHtml: `
+      <p>${donorName} gave <strong>${formatCents(amountCents)}</strong>${payment.fundName ? ` to <strong>${payment.fundName}</strong>` : ""}.</p>
+      <table style="width:100%;text-align:left;border-collapse:collapse;margin-top:16px;font-size:14px;">
+        <tr><td style="padding:8px 0;border-bottom:1px solid #E2E8F0;"><strong>Amount:</strong></td><td style="padding:8px 0;border-bottom:1px solid #E2E8F0;">${formatCents(amountCents)}</td></tr>
+        <tr><td style="padding:8px 0;border-bottom:1px solid #E2E8F0;"><strong>Donor:</strong></td><td style="padding:8px 0;border-bottom:1px solid #E2E8F0;">${donorName}</td></tr>
+        ${payment.fundName ? `<tr><td style="padding:8px 0;"><strong>Fund:</strong></td><td style="padding:8px 0;">${payment.fundName}</td></tr>` : ""}
+      </table>
+    `,
+  });
+
+  await logDashboardAction({ churchId, action: "donation.merchant_notified", entityType: "payment", entityId: paymentId });
 }
