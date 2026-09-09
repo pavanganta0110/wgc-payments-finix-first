@@ -539,6 +539,20 @@ export async function syncFinixDataFromWebhookEvent(
                 } catch (err) {
                   console.error("Failed to sync payment to QuickBooks:", err);
                 }
+                // Same gap as the QuickBooks sync above: a recurring charge
+                // created already-SUCCEEDED (never PENDING first) never hit
+                // the priorPayment status-transition block elsewhere in this
+                // handler, so it got neither a donor receipt nor a merchant
+                // notification. Both are idempotent-safe to add here (this
+                // payment didn't exist before this exact webhook call, so
+                // there's no way this fires twice for it).
+                try {
+                  const { sendDonationReceipt, notifyMerchantOfNewDonation } = await import("@/lib/giving/generateReceipt");
+                  await sendDonationReceipt(newRecurringPayment.id, churchId);
+                  await notifyMerchantOfNewDonation(newRecurringPayment.id, churchId);
+                } catch (err) {
+                  console.error("Failed to send receipt/notify merchant for recurring charge:", err);
+                }
               }
             }
           }

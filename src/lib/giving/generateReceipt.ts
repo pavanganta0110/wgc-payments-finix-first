@@ -258,7 +258,7 @@ export async function sendDonationReceipt(
  * a resend or reconciliation backfill, so an org is only ever notified once
  * per real donation.
  */
-export async function notifyMerchantOfNewDonation(paymentId: string, churchId: string, actorUserId: string | null = null) {
+export async function notifyMerchantOfNewDonation(paymentId: string, churchId: string) {
   const payment = await prisma.payment.findFirst({ where: { id: paymentId, churchId } });
   if (!payment) return;
 
@@ -273,11 +273,18 @@ export async function notifyMerchantOfNewDonation(paymentId: string, churchId: s
   await notifyEvent({
     churchId,
     eventKey: "DONATION_RECEIVED",
-    // actorUserId is set only when a logged-in staff member entered this
-    // donation themselves (Take Payment) — routes the email to that
-    // specific person instead of the org owner, per notifyEvent's own
-    // recipient-priority comment.
-    recipientUserId: actorUserId,
+    // Payment.attributedUserId is already the single source of truth for
+    // "who this donation's activity belongs to" — the giving link's own
+    // ownerUserId (self-service, on either the hosted /g/[slug] page or
+    // the embedded widget — both create the Payment through the same
+    // donate route), the staff member who ran Take Payment, or a
+    // recurring charge's inherited subscription attribution (see
+    // resolvePaymentAttributionFromGivingLink / resolveRecurringPaymentAttribution
+    // in attributionSnapshot.ts). Reusing it here — rather than each
+    // caller re-deriving or passing its own actor — means this
+    // notification is correctly attributed on every donation path
+    // automatically, with nothing new to wire up when a new one is added.
+    recipientUserId: payment.attributedUserId,
     subject: `New donation received: ${formatCents(amountCents)}`,
     title: "New donation received",
     badgeText: "New Donation",

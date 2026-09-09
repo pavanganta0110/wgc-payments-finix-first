@@ -348,10 +348,11 @@ export async function POST(req: Request) {
         console.error("Failed to send donation receipt:", err);
       }
       try {
-        // Notifies the staff member who actually took this payment, not
-        // the org owner — see notifyMerchantOfNewDonation/notifyEvent's
-        // own comments for why.
-        await notifyMerchantOfNewDonation(newPayment.id, church.id, auth.userId);
+        // Notifies whoever this payment is attributed to — auth.userId
+        // (the staff member running Take Payment) was already snapshotted
+        // onto newPayment.attributedUserId above, which
+        // notifyMerchantOfNewDonation reads directly.
+        await notifyMerchantOfNewDonation(newPayment.id, church.id);
       } catch (err) {
         console.error("Failed to notify merchant of new donation:", err);
       }
