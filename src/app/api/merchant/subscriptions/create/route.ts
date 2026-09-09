@@ -10,6 +10,7 @@ import { resolvePaymentAttributionFromGivingLink } from "@/lib/auth/attributionS
 import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { isAuthError } from "@/lib/auth/errors";
 import { assertNonprofitApproved } from "@/lib/onboarding/nonprofitVerificationGuard";
+import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
 
 const TERMS_VERSION = "2026-01-recurring-admin-v1";
 
@@ -173,8 +174,15 @@ export async function POST(req: Request) {
     },
   });
 
+  let finixConfirmed = false;
   try {
     const donorName = donor.anonymousPreference ? "Anonymous Donor" : formatPersonName(donor.name);
+    // Stable across a retry that reuses this same idempotencyKey — the
+    // existingAction check above already stops a COMPLETED/PENDING replay
+    // from reaching this line at all; this is Finix-side defense in depth
+    // for the same intent, and specifically what makes the "FAILED — fall
+    // through and retry" path below safe even if Finix actually received
+    // the original request.
     const finixSubscription = await finixClient.createSubscription({
       amount: amountCents,
       currency: "USD",
@@ -182,12 +190,17 @@ export async function POST(req: Request) {
       linked_to: church.finixMerchantId,
       linked_type: "MERCHANT",
       buyer_details: { identity_id: instrument.finixIdentityId, instrument_id: instrument.finixPaymentInstrumentId },
+      idempotency_id: idempotencyKey,
       tags: { source: "wgc_admin_created", churchId, donorId },
     });
     if (!finixSubscription?.id) throw new Error("Failed to create subscription");
+    // From here, a failure must never be reported as retryable — see the
+    // catch block below.
+    finixConfirmed = true;
 
-    const record = await prisma.finixSubscription.create({
-      data: {
+    const record = await prisma.finixSubscription.upsert({
+      where: { finixSubscriptionId: finixSubscription.id },
+      create: {
         finixSubscriptionId: finixSubscription.id,
         churchId,
         donorId,
@@ -212,6 +225,7 @@ export async function POST(req: Request) {
         installmentsTotal: isPledge && installmentsTotal != null ? installmentsTotal : null,
         installmentsCompleted: isPledge ? 0 : null,
       },
+      update: { state: finixSubscription.state ?? undefined, lastSyncedAt: new Date() },
     });
 
     const recurringTermsSnapshot = {
@@ -279,6 +293,22 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ subscription: resultPayload });
   } catch (err: any) {
+    if (finixConfirmed) {
+      // Finix already created a real subscription — marking this FAILED
+      // would let a retry with the same idempotencyKey fall through and
+      // create a SECOND one (see the "FAILED — fall through and retry"
+      // comment above). Leave it PENDING and surface uncertainty instead.
+      logPaymentSafetyEvent("PAYMENT_STATUS_UNCERTAIN", {
+        churchId,
+        source: "checkout",
+        route: "/api/merchant/subscriptions/create",
+        detail: `Finix confirmed subscription but a later write failed — SubscriptionAction ${idempotencyKey} left PENDING for reconciliation`,
+      });
+      return NextResponse.json(
+        { error: "We’re confirming this subscription. Please do not submit it again.", code: "PAYMENT_STATUS_UNCERTAIN" },
+        { status: 503 }
+      );
+    }
     await prisma.subscriptionAction.update({
       where: { idempotencyKey },
       data: { state: "FAILED", failureReason: err.message || "Failed to create subscription" },

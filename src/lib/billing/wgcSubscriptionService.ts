@@ -10,16 +10,33 @@ import { logBillingAuditEvent } from "@/lib/billing/billingAudit";
  * WGC's own platform billing — never called from any donation/invoice
  * path.
  *
- * Duplicate-activation protection: WgcSubscription.organizationId is
- * @unique, so `upsert` here is an atomic "create the row if it doesn't
- * exist, otherwise return the existing one" — two concurrent activation
- * clicks (or a retried request) race on the same DB unique constraint, not
- * on application logic, so at most one row can ever exist per organization.
- * If that row already has a finixSubscriptionId, this function returns it
- * as-is without calling Finix again ("reuse the existing subscription when
- * creation previously succeeded" / "reconcile an uncertain timeout with
- * Finix before retrying" — see reconcileIncompleteSubscription below for
- * the timeout-recovery path).
+ * Duplicate-activation protection, two independent layers:
+ * 1. WgcSubscription.organizationId is @unique, so `upsert` here is an
+ *    atomic "create the row if it doesn't exist, otherwise return the
+ *    existing one" — two concurrent activation clicks (or a retried
+ *    request) race on the same DB unique constraint, not on application
+ *    logic, so at most one row can ever exist per organization. If that
+ *    row already has finixSubscriptionId set, this function returns it
+ *    as-is without calling Finix again.
+ * 2. idempotencyId sent to Finix is derived from that same row's own id
+ *    (stable once claimed by #1), so even a retry that reaches Finix again
+ *    before finixSubscriptionId is durably saved locally (the crash window
+ *    between Finix confirming and the write completing) is, per Finix's
+ *    documented idempotency behavior, expected to return the SAME
+ *    subscription rather than create a second one — unconfirmed against a
+ *    live sandbox from this environment; the finixSubscriptionId-saving
+ *    write immediately after the create call is the layer that does not
+ *    depend on Finix honoring this, since it durably records the result
+ *    before anything else and a write failure there throws rather than
+ *    reporting success (see the try/catch immediately after the Finix
+ *    call below).
+ *
+ * There is currently no scheduled job that independently re-checks a
+ * WgcSubscription stuck at status INCOMPLETE with no finixSubscriptionId
+ * (meaning the Finix call itself failed or was never confirmed) — that
+ * case surfaces as a thrown WgcSubscriptionError with a
+ * "subscription.creation_failed" audit log entry, and a manual/UI-driven
+ * retry is expected. A true reconciliation worker belongs in Stage 2/3.
  *
  * TRIAL FIELDS — confirmed against a real Finix sandbox POST /subscriptions
  * call (2026-08-06), not guessed: trial_details lives inside
@@ -144,6 +161,16 @@ export async function activateWgcSubscription(input: ActivateSubscriptionInput):
     chargeType: "WGC_PLATFORM_SUBSCRIPTION",
   });
 
+  // Stable across a retry landing here for the same row (the upsert claim
+  // above is already what makes that "same row," so this is Finix-side
+  // defense in depth) — previously absent entirely, meaning a crash
+  // between Finix confirming and the write below completing had NO
+  // protection against calling Finix a second time on retry (the early
+  // `if (row.finixSubscriptionId)` guard above only helps once that field
+  // is actually saved — see the finixSubscriptionId-first write pattern
+  // below for how that gap is closed).
+  const idempotencyId = buildIdempotencyKey(input.organizationId, "wgc-subscription-activate", row.id);
+
   let finixSubscription: any; // eslint-disable-line @typescript-eslint/no-explicit-any -- untyped Finix API response, matches finix/client.ts convention
   try {
     finixSubscription = await finixClient.createSubscription({
@@ -153,6 +180,7 @@ export async function activateWgcSubscription(input: ActivateSubscriptionInput):
       linked_to: merchantStatus.merchantId,
       linked_type: "MERCHANT",
       buyer_details: { identity_id: input.billingIdentityId, instrument_id: input.billingPaymentInstrumentId },
+      idempotency_id: idempotencyId,
       subscription_details: {
         collection_method: "BILL_AUTOMATICALLY",
         ...(isPromotional && entitlement
@@ -201,12 +229,63 @@ export async function activateWgcSubscription(input: ActivateSubscriptionInput):
   const finixState: string = finixSubscription?.state || "ACTIVE";
   const newStatus = isTrialPhase ? "TRIALING" : finixState === "CANCELED" ? "CANCELED" : "ACTIVE";
 
+  if (!finixSubscription?.id) {
+    // Finix returned a response with no usable id — cannot even take the
+    // critical write below. Treated the same as a call failure: nothing
+    // was durably recorded, so a retry with the SAME idempotencyId is safe.
+    await logBillingAuditEvent({
+      organizationId: input.organizationId,
+      actorUserId: input.actorUserId,
+      actorEmail: input.actorEmail,
+      action: "subscription.creation_failed",
+      entityType: "WgcSubscription",
+      entityId: row.id,
+      internalReason: "Finix createSubscription returned no subscription id",
+    });
+    throw new WgcSubscriptionError("Could not create the WGC platform subscription with Finix — no subscription id returned.");
+  }
+
+  // CRITICAL, minimal, immediate write — separated from the enrichment
+  // transaction below on purpose. Finix has now confirmed a real
+  // subscription; the single most important thing WGC can do before
+  // anything else is durably record finixSubscriptionId, because that's
+  // the field the early "already exists" guard at the top of this
+  // function checks. If this write itself fails (DB down, connection
+  // lost), the caller sees a thrown error and — same as every other
+  // PAYMENT_STATUS_UNCERTAIN case in this codebase — must not be told
+  // "try again" as if nothing happened; a human/reconciliation job needs
+  // to check Finix for organizationId's real subscription state before
+  // any retry.
+  try {
+    await prisma.wgcSubscription.update({
+      where: { id: row.id },
+      data: { finixSubscriptionId: finixSubscription.id, status: newStatus, lastSyncedAt: new Date() },
+    });
+  } catch (writeError) {
+    console.error(`Failed to record confirmed WGC subscription ${finixSubscription.id} for org ${input.organizationId}:`, writeError);
+    await logBillingAuditEvent({
+      organizationId: input.organizationId,
+      actorUserId: input.actorUserId,
+      actorEmail: input.actorEmail,
+      action: "subscription.creation_failed",
+      entityType: "WgcSubscription",
+      entityId: row.id,
+      internalReason: `Finix confirmed subscription ${finixSubscription.id} but the local write failed — requires manual reconciliation, do not retry activation.`,
+    });
+    throw new WgcSubscriptionError(
+      "Your subscription was created but we’re still confirming it on our side. Please contact support before trying again — do not submit this again."
+    );
+  }
+
+  // Everything from here on is enrichment, not the core money-safety fact
+  // (already durably saved above) — a failure in this transaction leaves
+  // billingAccount/church/entitlement mildly stale, never re-chargeable,
+  // since finixSubscriptionId is already set and the top-of-function guard
+  // will catch any retry before it reaches Finix again.
   const updated = await prisma.$transaction(async (tx) => {
     const updatedRow = await tx.wgcSubscription.update({
       where: { id: row.id },
       data: {
-        finixSubscriptionId: finixSubscription?.id ?? null,
-        status: newStatus,
         trialStartsAt,
         trialEndsAt,
         firstChargeAt,
@@ -233,7 +312,7 @@ export async function activateWgcSubscription(input: ActivateSubscriptionInput):
           startsAt: trialStartsAt,
           endsAt: trialEndsAt,
           firstPaidBillingDate: firstChargeAt,
-          finixSubscriptionId: finixSubscription?.id ?? null,
+          finixSubscriptionId: finixSubscription.id,
         },
       });
     }

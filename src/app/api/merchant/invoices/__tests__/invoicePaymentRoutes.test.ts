@@ -13,7 +13,17 @@ const mockPrisma = {
   invoice: { findFirst: vi.fn(), update: vi.fn() },
   invoicePayment: { findMany: vi.fn(), create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   invoiceActivity: { create: vi.fn() },
-  finixRefundOrReversal: { upsert: vi.fn() },
+  finixRefundOrReversal: { upsert: vi.fn(), findMany: vi.fn() },
+  // The refund route now claims its RefundRequest via the SAME shared
+  // claimRefundRequestWithBalanceLock() the transactions/payments refund
+  // route uses (see cold-review defect #3 / refundRequestClaim.ts) — that
+  // function locks and re-reads FinixTransfer/refunds/bankReturns/pending
+  // RefundRequests inside its own $transaction, so this mock needs those
+  // too, not just refundRequest.create/update/findUnique.
+  refundRequest: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
+  finixTransfer: { findFirst: vi.fn() },
+  bankReturn: { findMany: vi.fn() },
+  $queryRaw: vi.fn(),
   $transaction: vi.fn(),
 };
 vi.mock("@/lib/prisma", () => ({ prisma: mockPrisma }));
@@ -60,6 +70,20 @@ beforeEach(() => {
     }
     return Promise.all(fn as Promise<unknown>[]);
   });
+  // Default: a fresh RefundRequest claim succeeds (the common case for
+  // every existing test below, none of which are specifically testing
+  // double-click/duplicate-claim behavior — that's covered separately in
+  // the transactions/payments refund route's own test file and in this
+  // file's own concurrency describe block below).
+  mockPrisma.refundRequest.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+    id: "refund-req-test",
+    ...data,
+  }));
+  mockPrisma.$queryRaw.mockResolvedValue([{ id: "finix-transfer-row-1" }]);
+  mockPrisma.finixTransfer.findFirst.mockResolvedValue({ finixTransferId: "TR123", churchId: "church-a", type: "TRANSFER", state: "SUCCEEDED", amountCents: 5000, finixMerchantId: "MU1" });
+  mockPrisma.finixRefundOrReversal.findMany.mockResolvedValue([]);
+  mockPrisma.bankReturn.findMany.mockResolvedValue([]);
+  mockPrisma.refundRequest.findMany.mockResolvedValue([]);
 });
 
 describe("POST /api/merchant/invoices/[invoiceId]/record-offline-payment", () => {
@@ -193,6 +217,11 @@ describe("POST /api/merchant/invoices/[invoiceId]/payments/[paymentId]/refund", 
     expect(res.status).toBe(200);
     expect(data.pending).toBe(true);
     expect(mockFinixClient.createTransferReversal).toHaveBeenCalledWith("TR123", expect.objectContaining({ refund_amount: 5000 }));
+    // PRIORITY 7/reconciliation: the outgoing reversal must carry
+    // tags.refundRequestId set to the persisted claim's real id — this is
+    // what refundReconciliation.ts's reconcileRefundRequest() later
+    // matches a stale claim against, never amount/timing/donor.
+    expect(mockFinixClient.createTransferReversal).toHaveBeenCalledWith("TR123", expect.objectContaining({ tags: expect.objectContaining({ refundRequestId: "refund-req-test" }) }));
     // The webhook applies refundedCents once Finix confirms — this route
     // itself must not touch invoicePayment.update on the FINIX path.
     expect(mockPrisma.invoicePayment.update).not.toHaveBeenCalled();

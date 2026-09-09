@@ -10,6 +10,7 @@ import { resolveWgcTransferFeeStrategy } from "@/lib/giving/serverFeeStrategy";
 import { FEE_CALCULATION_VERSION } from "@/lib/giving/feeCalculator";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
 import type { WgcAddress } from "./types";
+import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
 
 /**
  * The ONLY place donation + merchandise + shipping + tax combine into one
@@ -83,6 +84,31 @@ export class CheckoutValidationError extends Error {
   }
 }
 
+/**
+ * Thrown whenever the outcome of a charge is genuinely unknown — an
+ * ambiguous/timeout error from Finix's createTransfer call, or a Finix
+ * success followed by a local write failure. Distinct from
+ * CheckoutValidationError (a definite decline/validation failure, where
+ * "no charge was made" is actually true) specifically so the API route can
+ * respond with PAYMENT_STATUS_UNCERTAIN instead of a message that could
+ * read as "safe to try again" — see cold-review defect #2.
+ */
+export class CheckoutUncertainError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CheckoutUncertainError";
+  }
+}
+
+// Same ambiguous/timeout detection errorNormalizer.ts's
+// toSafePaymentErrorResponse uses for the donation flow — kept in sync
+// deliberately rather than imported, since this file throws (library
+// function) rather than returning a NextResponse.
+function isAmbiguousProcessorError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return msg.includes("timeout") || msg.includes("timed out") || msg.includes("abort") || msg.includes("econnreset") || msg.includes("network");
+}
+
 export async function processCombinedCheckout(input: CheckoutInput) {
   const church = await prisma.church.findUnique({ where: { id: input.churchId } });
   if (!church?.finixMerchantId) throw new CheckoutValidationError("This organization is not currently approved to accept payments.");
@@ -102,7 +128,13 @@ export async function processCombinedCheckout(input: CheckoutInput) {
 
   // Idempotency: a retried submission with the same clientAttemptId returns
   // the original result rather than double-charging (spec item 37, mirrors
-  // PaymentAttempt.clientAttemptId elsewhere in this codebase).
+  // PaymentAttempt.clientAttemptId elsewhere in this codebase). Only a
+  // SUCCEEDED row is safe to hand back as-is — the caller (the API route)
+  // reads paymentStatus off whatever this function returns to decide what
+  // to tell the browser, so a PENDING/UNCERTAIN row must keep reading as
+  // "still resolving, do not retry" and a FAILED row must keep reading as
+  // "genuinely failed" rather than both being silently reported as success
+  // once nothing here throws.
   const existingCheckout = await prisma.wgcCheckout.findUnique({ where: { clientAttemptId: input.clientAttemptId } });
   if (existingCheckout) return existingCheckout;
 
@@ -263,19 +295,76 @@ export async function processCombinedCheckout(input: CheckoutInput) {
     transferPayload.supplemental_fee = feeStrategy.supplementalFeeCents;
   }
 
+  // Persistent-intent claim, taken BEFORE the Finix call — the earlier
+  // existingCheckout check (top of this function) only ever caught a THIRD
+  // request arriving after a full prior success, because the old code only
+  // ever created this row at the very end. A second request racing the
+  // first all the way through pricing/identity/instrument resolution would
+  // previously have reached createTransfer independently and charged the
+  // card twice. clientAttemptId is @unique, so the loser of this race gets
+  // P2002 here instead of ever calling Finix.
+  let checkoutClaim;
+  try {
+    checkoutClaim = await prisma.wgcCheckout.create({
+      data: {
+        churchId: input.churchId,
+        donorId: donorRecord.id,
+        givingPageId: link.id,
+        donationAmount: input.donationAmountCents,
+        merchandiseAmount: pricedCart.subtotal,
+        shippingAmount,
+        taxAmount,
+        processingFeeAmount: feeStrategy.supplementalFeeCents,
+        grandTotal,
+        paymentStatus: "PENDING",
+        clientAttemptId: input.clientAttemptId,
+      },
+    });
+  } catch (err) {
+    if (err instanceof Object && "code" in err && (err as { code?: string }).code === "P2002") {
+      const raced = await prisma.wgcCheckout.findUnique({ where: { clientAttemptId: input.clientAttemptId } });
+      if (raced) return raced; // another concurrent request already owns this intent
+    }
+    throw err;
+  }
+
   let transfer;
   try {
     transfer = await finixClient.createTransfer(transferPayload as any);
   } catch (err: any) {
+    if (isAmbiguousProcessorError(err)) {
+      // A timeout/network/abort error from createTransfer means WGC does
+      // NOT know whether Finix actually processed the charge — the HTTP
+      // response was lost, not necessarily the charge itself. Marking this
+      // FAILED here (the old behavior) would let a genuinely new
+      // clientAttemptId charge the donor again on retry while the first
+      // charge might still land. Leave the claim UNCERTAIN — same
+      // clientAttemptId, same claim row — so a retry with this id returns
+      // here again via the existingCheckout check above instead of ever
+      // reaching Finix a second time.
+      await prisma.wgcCheckout.update({ where: { id: checkoutClaim.id }, data: { paymentStatus: "UNCERTAIN" } }).catch(() => {});
+      logPaymentSafetyEvent("PAYMENT_STATUS_UNCERTAIN", { churchId: input.churchId, source: "checkout", route: "merchandise_checkout", detail: "ambiguous/timeout error on createTransfer" });
+      throw new CheckoutUncertainError("We're confirming your payment. Please do not submit this order again.");
+    }
+    // A definite (non-ambiguous) rejection from Finix — genuinely no
+    // charge occurred, safe to mark this claim FAILED (a fresh
+    // clientAttemptId, i.e. a genuinely new donor action, is required to
+    // try again; this row is never reused for a retry).
+    await prisma.wgcCheckout.update({ where: { id: checkoutClaim.id }, data: { paymentStatus: "FAILED" } }).catch(() => {});
     // Payment-failure rule: nothing else is created (spec item 35).
     throw new CheckoutValidationError(err?.message || "We couldn't complete your payment. No charge was made.");
   }
 
   const succeeded = (transfer.state || "").toUpperCase() === "SUCCEEDED" || (transfer.state || "").toUpperCase() === "PENDING";
   if (!succeeded) {
+    await prisma.wgcCheckout.update({ where: { id: checkoutClaim.id }, data: { paymentStatus: "FAILED", finixTransferId: transfer.id } }).catch(() => {});
     throw new CheckoutValidationError("Payment was not successful. No order was created.");
   }
 
+  // Finix has now confirmed the charge — every write from here on must
+  // never be allowed to make this function throw a plain error that a
+  // caller could read as "no charge was made." See the try/catch around
+  // the Payment write below.
   // Was missing entirely on this checkout path — the real Finix transfer
   // above always carried the correct grandTotal, but nothing synced a
   // local FinixTransfer row afterward (unlike /api/g/[slug]/donate), so
@@ -304,7 +393,9 @@ export async function processCombinedCheckout(input: CheckoutInput) {
   // --- Payment record for the donation portion ONLY (never the grand total) ---
   let paymentId: string | null = null;
   if (input.donationAmountCents > 0) {
-    const payment = await prisma.payment.create({
+    let payment;
+    try {
+      payment = await prisma.payment.create({
       data: {
         churchId: input.churchId,
         donorId: donorRecord.id,
@@ -345,7 +436,36 @@ export async function processCombinedCheckout(input: CheckoutInput) {
         fixedFeeCents: feeStrategy.fixedFeeCents,
         feeCalculationVersion: FEE_CALCULATION_VERSION,
       },
-    });
+      });
+    } catch (writeError) {
+      if (writeError instanceof Object && "code" in writeError && (writeError as { code?: string }).code === "P2002") {
+        // Payment.finixTransferId is unique — a concurrent writer (webhook
+        // orphan recovery, or a raced retry) already recorded this exact
+        // transfer. Expected "one wins" outcome: pick it up rather than
+        // erroring or double-creating a MerchandiseOrder/receipt below.
+        const existing = await prisma.payment.findUnique({ where: { finixTransferId: transfer.id } });
+        if (!existing) throw writeError;
+        logPaymentSafetyEvent("PAYMENT_DUPLICATE_PREVENTED", {
+          churchId: input.churchId,
+          finixTransferId: transfer.id,
+          source: "checkout",
+          route: "merchandise_checkout",
+          detail: "P2002 on Payment.finixTransferId in combined merchandise+donation checkout",
+        });
+        payment = existing;
+      } else {
+        console.error("Post-charge Payment write failed after Finix confirmed the transfer (merchandise checkout):", writeError);
+        // Finix genuinely succeeded — do NOT mark this SUCCEEDED (nothing
+        // downstream, e.g. the merchandise order, ever got created), and
+        // do NOT mark it FAILED either (that would license a fresh
+        // clientAttemptId to charge again while this charge already went
+        // through). UNCERTAIN keeps the SAME claim in place so a retry
+        // with this id short-circuits at the existingCheckout check above.
+        await prisma.wgcCheckout.update({ where: { id: checkoutClaim.id }, data: { paymentStatus: "UNCERTAIN", finixTransferId: transfer.id } }).catch(() => {});
+        logPaymentSafetyEvent("PAYMENT_STATUS_UNCERTAIN", { churchId: input.churchId, finixTransferId: transfer.id, source: "checkout", route: "merchandise_checkout" });
+        throw new CheckoutUncertainError("We're confirming your payment. Please do not submit this order again.");
+      }
+    }
     paymentId = payment.id;
     await sendDonationReceipt(payment.id, church.id).catch((err) => console.error("Failed to send donation receipt for combined checkout:", err));
   }
@@ -394,22 +514,16 @@ export async function processCombinedCheckout(input: CheckoutInput) {
     },
   });
 
-  const checkout = await prisma.wgcCheckout.create({
+  // Updates the claim taken before the Finix call (not a second row) —
+  // that claim is what actually guarantees this whole function only ever
+  // runs to completion once per clientAttemptId.
+  const checkout = await prisma.wgcCheckout.update({
+    where: { id: checkoutClaim.id },
     data: {
-      churchId: input.churchId,
-      donorId: donorRecord.id,
-      givingPageId: link.id,
-      donationAmount: input.donationAmountCents,
-      merchandiseAmount: pricedCart.subtotal,
-      shippingAmount,
-      taxAmount,
-      processingFeeAmount: feeStrategy.supplementalFeeCents,
-      grandTotal,
       finixTransferId: transfer.id,
       paymentStatus: "SUCCEEDED",
       paymentId,
       merchandiseOrderId: merchandiseOrder?.id ?? null,
-      clientAttemptId: input.clientAttemptId,
     },
   });
 

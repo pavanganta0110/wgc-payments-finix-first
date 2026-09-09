@@ -20,16 +20,12 @@ import { loginAsAdmin } from "./fixtures/auth";
  * POST /api/admin/billing/promotions (a real, working endpoint) instead of
  * through that broken tab — flagged again in the completion report.
  *
- * ANOTHER ENVIRONMENT NOTE found while authoring this spec: in THIS
- * sandbox's Playwright/Chromium, every page's client bundle fails to
- * hydrate (console: "eval() is not supported in this environment" — Next
- * dev-mode source maps use eval(), which this particular sandboxed browser
- * blocks outright), so the UI-driven pricing-version test below (button
- * clicks, form state) could not be verified end-to-end here. It is written
- * against the real component (see PricingTab in admin/(dashboard)/
- * billing/page.tsx) and is expected to pass in a normal browser; the
- * server-side-validation test right after it (API-level, no browser
- * interactivity needed) WAS verified live and passes.
+ * The UI-driven pricing-version test below (button clicks, form state)
+ * needs next.config.ts's allowedDevOrigins to include Playwright's
+ * 127.0.0.1 baseURL — without it, Next's dev server 403s every client JS
+ * chunk and no client-side code runs at all. See next.config.ts's own
+ * comment on that setting for the full story (previously misdiagnosed as
+ * an eval()-blocking sandbox limitation).
  */
 test.describe("Admin pricing and promotion controls", () => {
   let createdPricingVersionId: string | null = null;

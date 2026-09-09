@@ -14,7 +14,14 @@ export function checkRefundEligibility(
   transfer: FinixTransfer,
   refunds: FinixRefundOrReversal[],
   bankReturns: BankReturn[],
-  churchId: string
+  churchId: string,
+  // Sum of amountCents for any OTHER RefundRequest already claimed
+  // (status PENDING) against this same transfer but not yet resolved with
+  // Finix — reserving this the moment a request is claimed (not only once
+  // it succeeds) is what stops two different, concurrently-claimed refund
+  // intents from both being allowed to spend the same remaining balance.
+  // See refund/route.ts's locked transaction for how this is computed.
+  reservedPendingCents = 0
 ): RefundEligibility {
   // 1. Organization owns the payment
   if (transfer.churchId !== churchId) {
@@ -45,7 +52,7 @@ export function checkRefundEligibility(
     .filter((r) => r.state === "SUCCEEDED" || r.state === "PENDING")
     .reduce((sum, r) => sum + (r.amountCents ?? 0), 0);
   
-  const remainingCents = (transfer.amountCents ?? 0) - totalRefundedCents;
+  const remainingCents = (transfer.amountCents ?? 0) - totalRefundedCents - reservedPendingCents;
 
   // 6. Check if payment is not fully refunded or balance is zero
   if (remainingCents <= 0) {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { processCombinedCheckout, CheckoutValidationError } from "@/lib/integrations/printful/checkoutService";
+import { processCombinedCheckout, CheckoutValidationError, CheckoutUncertainError } from "@/lib/integrations/printful/checkoutService";
 import { toSafeMerchandiseErrorMessage } from "@/lib/integrations/printful/errors";
 
 /**
@@ -71,6 +71,22 @@ export async function POST(req: Request) {
       coverFees: Boolean(coverFees),
     });
 
+    // processCombinedCheckout can return an existing row (the idempotency
+    // fast-path, or a P2002-losing concurrent request recovering the
+    // winner's row) without throwing at all — its paymentStatus must be
+    // translated the same way a freshly-thrown outcome would be, so a
+    // caller can never read a still-PENDING/UNCERTAIN or a FAILED prior
+    // attempt as a completed success.
+    if (checkout.paymentStatus === "FAILED") {
+      return NextResponse.json({ success: false, code: "PAYMENT_FAILED", error: "This order was not completed. No charge was made.", retryable: true }, { status: 402 });
+    }
+    if (checkout.paymentStatus === "PENDING" || checkout.paymentStatus === "UNCERTAIN") {
+      return NextResponse.json(
+        { success: false, code: "PAYMENT_STATUS_UNCERTAIN", error: "We're confirming your payment. Please do not submit this order again.", retryable: false },
+        { status: 503 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       checkoutId: checkout.id,
@@ -84,8 +100,11 @@ export async function POST(req: Request) {
       merchandiseOrderId: checkout.merchandiseOrderId,
     });
   } catch (err) {
+    if (err instanceof CheckoutUncertainError) {
+      return NextResponse.json({ success: false, code: "PAYMENT_STATUS_UNCERTAIN", error: err.message, retryable: false }, { status: 503 });
+    }
     console.error("Merchandise checkout failed:", err);
     const message = err instanceof CheckoutValidationError ? err.message : toSafeMerchandiseErrorMessage(err);
-    return NextResponse.json({ success: false, error: message }, { status: 402 });
+    return NextResponse.json({ success: false, code: "PAYMENT_FAILED", error: message, retryable: true }, { status: 402 });
   }
 }

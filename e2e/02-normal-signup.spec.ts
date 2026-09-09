@@ -64,17 +64,13 @@ test.describe("Normal $10/month signup journey", () => {
     await prisma.user.update({ where: { id: owner!.id }, data: { passwordHash: await hashPassword(testPassword) } });
 
     // Logging in via the API directly (rather than clicking the login
-    // form's submit button) — see spec 01's comment on this sandbox's
-    // browser blocking eval(), which breaks client-component hydration.
+    // form's submit button) — same pattern as every other API-driven step
+    // in this spec, exercising the real, trusted endpoint the login form
+    // itself submits to.
     await loginAsMerchant(context.request, owner!.email, testPassword);
 
     const rawActivationToken = await createBillingActivationToken(church!.id);
 
-    // KNOWN APP BUG — see spec 01's matching comment: the activation page
-    // calls requireMerchantSession() without allowRestrictedAccess=true,
-    // so it 500s for exactly the APPROVED_BILLING_REQUIRED orgs it exists
-    // to serve. Confirmed live; flagged in the completion report.
-    test.fail(true, "src/app/activate-subscription/[token]/page.tsx calls requireMerchantSession() without allowRestrictedAccess=true — throws for APPROVED_BILLING_REQUIRED orgs");
     await page.goto(`/activate-subscription/${rawActivationToken}`);
     await expect(page.getByText(orgName)).toBeVisible();
     // Standard plan pricing — $10/month, no promotional framing.

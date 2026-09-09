@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSubscriptionPermissions } from "@/lib/subscriptions/subscriptionPermissions";
 import { resolveSubscriptionDisplayStatus } from "@/lib/subscriptions/subscriptionStatus";
-import { recreateSubscriptionWithChange } from "@/lib/subscriptions/subscriptionRecreate";
+import { recreateSubscriptionWithChange, SubscriptionFinixConfirmedError } from "@/lib/subscriptions/subscriptionRecreate";
+import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
 import { logDashboardAction } from "@/lib/dashboardAudit";
 import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { isAuthError } from "@/lib/auth/errors";
@@ -72,6 +73,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ subscri
       actorUserId: auth.userId!,
       oldSubscription: subscription,
       newAmountCents,
+      idempotencyKey,
     });
 
     const resultPayload = { id: newSubscription.id, finixSubscriptionId: newSubscription.finixSubscriptionId, amountCents: newSubscription.amountCents };
@@ -95,6 +97,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ subscri
 
     return NextResponse.json({ subscription: resultPayload });
   } catch (err: any) {
+    if (err instanceof SubscriptionFinixConfirmedError) {
+      // Finix already confirmed the replacement — marking this FAILED
+      // would let a retry with the same idempotencyKey fall through and
+      // call Finix a third time. Leave PENDING and surface uncertainty.
+      logPaymentSafetyEvent("PAYMENT_STATUS_UNCERTAIN", {
+        churchId,
+        source: "checkout",
+        route: `/api/merchant/subscriptions/${subscriptionId}/update-amount`,
+        detail: `Finix confirmed replacement subscription ${err.finixSubscriptionId} but a later write failed — SubscriptionAction ${idempotencyKey} left PENDING`,
+      });
+      return NextResponse.json(
+        { error: "We’re confirming this update. Please do not submit it again.", code: "PAYMENT_STATUS_UNCERTAIN" },
+        { status: 503 }
+      );
+    }
     await prisma.subscriptionAction.update({
       where: { idempotencyKey },
       data: { state: "FAILED", failureReason: err.message || "Failed to update amount" },

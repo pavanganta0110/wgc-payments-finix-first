@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
+import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
 import { finixClient } from "@/lib/finix/client";
 import { resolveInvoicePublicToken } from "@/lib/invoices/invoicePublicToken";
 import { checkInvoicePaymentRateLimit } from "@/lib/invoices/invoicePublicRateLimit";
@@ -351,6 +353,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     : status;
 
   let createdPaymentId: string | null = null;
+  let duplicateExisting: { id: string; status: string; finixTransferId: string | null } | null = null;
+  try {
   await prisma.$transaction(async (tx) => {
     await tx.invoicePaymentAttempt.update({
       where: { id: attempt.id },
@@ -430,8 +434,43 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       update: { state: transfer.state ?? undefined, lastSyncedAt: new Date() },
     });
   });
+  } catch (writeError: unknown) {
+    if (writeError instanceof Prisma.PrismaClientKnownRequestError && writeError.code === "P2002") {
+      // InvoicePayment.finixTransferId is unique — a concurrent writer
+      // (a raced retry, or a webhook-driven reconciliation) already
+      // recorded this exact transfer. Expected "one wins" outcome: pick up
+      // the winner's row rather than erroring, and never re-derive/re-apply
+      // the invoice balance here — the winning transaction already did
+      // that atomically.
+      const existing = await prisma.invoicePayment.findUnique({ where: { finixTransferId: transfer.id } });
+      if (existing) {
+        logPaymentSafetyEvent("PAYMENT_DUPLICATE_PREVENTED", {
+          churchId: invoice.churchId,
+          finixTransferId: transfer.id,
+          source: "checkout",
+          route: "/api/invoice/[token]/pay",
+          detail: "P2002 on InvoicePayment.finixTransferId — a concurrent writer already recorded this transfer",
+        });
+        duplicateExisting = { id: existing.id, status: existing.status, finixTransferId: existing.finixTransferId };
+        createdPaymentId = existing.id;
+      } else {
+        logPaymentSafetyEvent("PAYMENT_STATUS_UNCERTAIN", { churchId: invoice.churchId, finixTransferId: transfer.id, source: "checkout", route: "/api/invoice/[token]/pay" });
+        return NextResponse.json(
+          { success: false, code: "PAYMENT_STATUS_UNCERTAIN", message: "We’re confirming your payment. Please do not submit it again.", reference: null, retryable: false, transferId: transfer.id },
+          { status: 503 }
+        );
+      }
+    } else {
+      console.error("Post-charge database write failed after Finix confirmed the invoice transfer:", writeError);
+      logPaymentSafetyEvent("PAYMENT_STATUS_UNCERTAIN", { churchId: invoice.churchId, finixTransferId: transfer.id, source: "checkout", route: "/api/invoice/[token]/pay" });
+      return NextResponse.json(
+        { success: false, code: "PAYMENT_STATUS_UNCERTAIN", message: "We’re confirming your payment. Please do not submit it again.", reference: null, retryable: false, transferId: transfer.id },
+        { status: 503 }
+      );
+    }
+  }
 
-  if (paymentStatus === "SUCCEEDED") {
+  if (paymentStatus === "SUCCEEDED" && !duplicateExisting) {
     await logDashboardAction({
       churchId: invoice.churchId,
       action: "invoice.payment_received",
@@ -448,7 +487,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   return NextResponse.json({
     success: true,
     transferId: transfer.id,
-    state: paymentStatus,
+    // A raced duplicate reflects the WINNING write's real recorded status,
+    // never the locally-computed paymentStatus from this losing attempt.
+    state: duplicateExisting ? (duplicateExisting as { status: string }).status : paymentStatus,
     amountCents,
     feeContributionCents,
     totalCents,
@@ -457,5 +498,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     paidAt: paymentStatus === "SUCCEEDED" ? now.toISOString() : null,
     invoiceNumber: invoice.invoiceNumber,
     status: derivedStatus,
+    ...(duplicateExisting ? { duplicate: true } : {}),
   });
 }

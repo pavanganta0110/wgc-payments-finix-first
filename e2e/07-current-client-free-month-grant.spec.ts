@@ -45,16 +45,13 @@ test.describe("Current-client free-month grant", () => {
     const auditEntries = await prisma.wgcBillingAuditLog.findMany({ where: { organizationId: church.id } });
     expect(auditEntries.some((e) => e.action === "promotion.granted_current_client")).toBe(true);
 
-    // NOTE: the admin Organizations table is populated by a client-side
-    // useEffect fetch. In THIS sandbox's Playwright/Chromium, every page's
-    // client bundle fails to hydrate (console: "eval() is not supported in
-    // this environment" — Next dev-mode source maps use eval(), which this
-    // particular sandboxed browser blocks outright), so that useEffect
-    // never runs and the table stays empty here — a constraint of this
-    // environment's browser automation, not a bug in the app or this test
-    // (see the completion report; the DB/audit-log assertions above are
-    // unaffected and already confirm the grant). Expected to pass in a
-    // normal browser.
+    // The admin Organizations table is populated by a client-side useEffect
+    // fetch — needs next.config.ts's allowedDevOrigins to include
+    // Playwright's 127.0.0.1 baseURL, or Next's dev server 403s every
+    // client JS chunk and no client-side code ever runs at all (the real
+    // root cause of a whole class of earlier E2E failures across this
+    // suite, previously misdiagnosed as an eval()-blocking sandbox
+    // limitation — see next.config.ts's own comment on that setting).
     // Reflects on the org's row in the admin Billing & Subscriptions ->
     // Organizations view — the merchant-facing subscription page only
     // renders the promotional banner while the subscription itself is

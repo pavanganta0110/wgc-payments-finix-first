@@ -20,6 +20,7 @@ import { describeAchReturnReason } from "@/lib/finix/achReturnReasonCodes";
 import { calculateWgcFeeAmounts } from "@/lib/giving/feeCalculator";
 import { upsertComplianceFormFromFinix } from "@/lib/finix/sync/complianceForms";
 import { syncPaymentToQuickBooks } from "@/lib/integrations/quickbooks/sync";
+import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
 import { deriveFundingSpeedFromOperationKey } from "@/lib/depositColumns";
 import { isSettlementTerminalStatus } from "@/lib/finix/settlementStatus";
 import type { InvoiceStatus } from "@/lib/invoices/invoiceStatus";
@@ -395,6 +396,25 @@ export async function syncFinixDataFromWebhookEvent(
             console.error("Failed to sync payment to QuickBooks:", err);
           }
         }
+      } else if (!priorPayment && !data.subscription) {
+        // No Payment row exists for this one-time transfer at all — the
+        // synchronous checkout path either crashed before writing it, or
+        // this transfer was created directly against Finix outside WGC's
+        // own checkout flow entirely. Either way, Finix has confirmed a
+        // real charge WGC has no record of; reconstruct it now rather than
+        // leaving it to a human-monitored alert. Recurring/subscription
+        // transfers have their own equivalent recovery further below.
+        const { recoverOrphanedOneTimePayment } = await import("@/lib/finix/sync/paymentReconciliation");
+        await recoverOrphanedOneTimePayment({
+          finixTransferId: data.id,
+          churchId,
+          amountCents: data.amount,
+          state: data.state,
+          tags,
+          finixBuyerIdentityId: data.merchant_identity ?? null,
+          finixPaymentInstrumentId: data.source ?? null,
+          idempotencyId: data.idempotency_id ?? null,
+        });
       }
     }
 
@@ -409,7 +429,12 @@ export async function syncFinixDataFromWebhookEvent(
     // a payment or send a duplicate receipt.
     if (churchId && data.id && applyState && source === "wgc_invoice_payment") {
       const { applyInvoicePaymentTransferState } = await import("@/lib/invoices/invoicePaymentReconciliation");
-      await applyInvoicePaymentTransferState(data.id, data.state);
+      await applyInvoicePaymentTransferState(data.id, data.state, {
+        churchId,
+        amountCents: data.amount ?? null,
+        idempotencyId: data.idempotency_id ?? null,
+        finixMethod: data.payment_type === "bank_account" ? "ACH" : "CARD",
+      });
     }
 
     // Non-blocking: pull the buyer's payment instrument (+ linked donor
@@ -492,35 +517,61 @@ export async function syncFinixDataFromWebhookEvent(
               const merchantExpectedNetCents = (donationAmountCents + feeCoveredCents) - feeRes.expectedFeeCents;
 
               const donorId = sub.donorId || instrument?.donorId || null;
-              const newRecurringPayment = await prisma.payment.create({
-                data: {
-                  churchId,
-                  donorId,
-                  givingLinkId: sub.givingLinkId || null,
-                  // Team-access Checkpoint 3: inherited directly from the
-                  // subscription's own snapshotted attribution — never
-                  // re-read from the giving link here, so a link
-                  // reassignment after the subscription was created doesn't
-                  // change attribution for this or any other recurring
-                  // charge on this subscription.
-                  attributedUserId: resolveRecurringPaymentAttribution(sub),
-                  finixTransferId: data.id,
-                  finixBuyerIdentityId: sub.finixBuyerIdentityId || data.merchant_identity || null,
-                  finixPaymentInstrumentId: data.source || null,
-                  amountCents: data.amount ?? (donationAmountCents + (donorCoversFee ? feeCoveredCents : 0)),
-                  donationAmountCents,
-                  feeCoveredCents,
-                  paymentMethodType: (instrument?.paymentMethodType === "bank" || data.payment_type === "bank_account") ? "BANK_ACCOUNT" : "PAYMENT_CARD",
-                  status: (data.state || "PENDING").toUpperCase(),
-                  donorCoversFee,
-                  cardBrand: cardBrandStr,
-                  percentageBps,
-                  fixedFeeCents,
-                  feeCalculationVersion: "v1",
-                  merchantExpectedNetCents,
-                  finixSubscriptionId: sub.finixSubscriptionId,
-                },
-              });
+              let newRecurringPayment;
+              try {
+                newRecurringPayment = await prisma.payment.create({
+                  data: {
+                    churchId,
+                    donorId,
+                    givingLinkId: sub.givingLinkId || null,
+                    // Team-access Checkpoint 3: inherited directly from the
+                    // subscription's own snapshotted attribution — never
+                    // re-read from the giving link here, so a link
+                    // reassignment after the subscription was created doesn't
+                    // change attribution for this or any other recurring
+                    // charge on this subscription.
+                    attributedUserId: resolveRecurringPaymentAttribution(sub),
+                    finixTransferId: data.id,
+                    finixBuyerIdentityId: sub.finixBuyerIdentityId || data.merchant_identity || null,
+                    finixPaymentInstrumentId: data.source || null,
+                    amountCents: data.amount ?? (donationAmountCents + (donorCoversFee ? feeCoveredCents : 0)),
+                    donationAmountCents,
+                    feeCoveredCents,
+                    paymentMethodType: (instrument?.paymentMethodType === "bank" || data.payment_type === "bank_account") ? "BANK_ACCOUNT" : "PAYMENT_CARD",
+                    status: (data.state || "PENDING").toUpperCase(),
+                    donorCoversFee,
+                    cardBrand: cardBrandStr,
+                    percentageBps,
+                    fixedFeeCents,
+                    feeCalculationVersion: "v1",
+                    merchantExpectedNetCents,
+                    finixSubscriptionId: sub.finixSubscriptionId,
+                  },
+                });
+              } catch (createErr) {
+                if (createErr instanceof Prisma.PrismaClientKnownRequestError && createErr.code === "P2002") {
+                  // Payment.finixTransferId is unique — a concurrent
+                  // delivery of transfer.created/transfer.updated for this
+                  // same recurring charge already created this row. Expected
+                  // "one wins" outcome, not a failure: pick up the winner's
+                  // row so QuickBooks sync below still runs exactly once
+                  // against the real record, and log it as prevented rather
+                  // than letting it fall into the generic catch below as an
+                  // undifferentiated error.
+                  const existing = await prisma.payment.findUnique({ where: { finixTransferId: data.id } });
+                  logPaymentSafetyEvent("PAYMENT_DUPLICATE_PREVENTED", {
+                    churchId,
+                    finixTransferId: data.id,
+                    source: "webhook",
+                    route: "/api/webhooks/finix",
+                    detail: "P2002 on Payment.finixTransferId — concurrent transfer.created/transfer.updated delivery for the same recurring charge",
+                  });
+                  if (!existing) throw createErr;
+                  newRecurringPayment = existing;
+                } else {
+                  throw createErr;
+                }
+              }
 
               // Covers the case where this recurring charge's Payment is
               // created already SUCCEEDED (rather than PENDING-then-updated,

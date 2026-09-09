@@ -59,7 +59,12 @@ export type ResultState =
   | { step: "processing" }
   | { step: "success"; totalCents: number; feeCoveredCents: number; donationAmountCents: number; transferId?: string; recurring?: boolean; frequency?: string }
   | { step: "pending"; totalCents: number; transferId?: string }
-  | { step: "failed"; error: string };
+  | { step: "failed"; error: string }
+  // Finix confirmed the charge but WGC couldn't confirm it was recorded —
+  // see PAYMENT_STATUS_UNCERTAIN in donate/route.ts. Never offer a retry
+  // button here: submitting again would be a second real charge attempt.
+  // Resolved only by polling /payment-attempt/[clientAttemptId] below.
+  | { step: "uncertain" };
 
 export default function GivingLinkForm({
   slug,
@@ -259,6 +264,19 @@ export default function GivingLinkForm({
   const googlePayButtonRef = useRef<HTMLDivElement>(null);
   const applePayButtonRef = useRef<HTMLElement>(null);
   const [attemptId, setAttemptId] = useState("");
+  // sessionStorage is ONE layer of the idempotency guarantee, not the
+  // guarantee itself — the actual protection is server-side (PaymentAttempt's
+  // unique clientAttemptId/idempotencyId columns, see donate/route.ts). What
+  // this buys specifically: a donor who refreshes mid-submission, reopens the
+  // tab, or has their POST silently retried by the browser keeps the SAME
+  // clientAttemptId, so the server-side guard actually has something to
+  // catch — without this, a refresh previously generated a brand-new UUID
+  // every time (useEffect below used to just call crypto.randomUUID() on
+  // every mount), which meant a refresh after an ambiguous/slow response
+  // could reach the server as what looks like a genuinely new payment
+  // intent. Scoped per giving-link slug so two different giving pages open
+  // in the same tab/session never share an attempt id.
+  const attemptStorageKey = `wgc_attempt_id:${slug}`;
 
   // Donor Information now sits above the wallet buttons (Apple Pay/Google
   // Pay) so a donor can't reach a wallet sheet without WGC first having
@@ -301,8 +319,92 @@ export default function GivingLinkForm({
   }
 
   useEffect(() => {
-    setAttemptId(crypto.randomUUID());
+    try {
+      const stored = sessionStorage.getItem(attemptStorageKey);
+      if (stored) {
+        setAttemptId(stored);
+        return;
+      }
+    } catch {
+      // sessionStorage unavailable (private browsing, etc.) — fall through
+      // to an in-memory-only id. Server-side protection still holds for
+      // double-clicks within this page load; only cross-refresh recovery
+      // is lost.
+    }
+    const fresh = crypto.randomUUID();
+    setAttemptId(fresh);
+    try {
+      sessionStorage.setItem(attemptStorageKey, fresh);
+    } catch {
+      // Same fallback as above.
+    }
+    // Deliberately mount-only (slug is stable for the component's
+    // lifetime) — rotation for a genuinely NEW donation is explicit, via
+    // rotateAttemptId() below, never implicit on a dependency change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Called only when the donor is starting a deliberately NEW donation —
+  // after a definitive success or failure, never while an outcome is still
+  // "uncertain" (that state must keep polling under the SAME attempt id so
+  // it can find out what actually happened, not create a second one).
+  function rotateAttemptId() {
+    const fresh = crypto.randomUUID();
+    setAttemptId(fresh);
+    try {
+      sessionStorage.setItem(attemptStorageKey, fresh);
+    } catch {
+      // Non-fatal — see the mount effect's comment above.
+    }
+  }
+
+  // Resolves an "uncertain" outcome by polling the read-only status
+  // endpoint — never initiates a new payment itself. Backs off 2s, 4s,
+  // 6s, 8s, then holds at 10s; gives up showing "confirming" after ~2
+  // minutes and falls back to a message pointing the donor to their
+  // email/bank statement rather than guessing at an outcome.
+  useEffect(() => {
+    if (result.step !== "uncertain" || !attemptId) return;
+    let cancelled = false;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout>;
+
+    async function poll() {
+      attempts += 1;
+      try {
+        const res = await fetch(`/api/g/${slug}/payment-attempt/${attemptId}`);
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (data?.status === "SUCCEEDED") {
+          setResult({ step: "success", totalCents: 0, feeCoveredCents: 0, donationAmountCents: 0, transferId: data.transferId });
+          return;
+        }
+        if (data?.status === "FAILED") {
+          setResult({ step: "failed", error: "This payment was not completed. Please try again." });
+          return;
+        }
+      } catch {
+        // Network hiccup while polling — treated the same as "still
+        // processing," just try again on the next interval.
+      }
+      if (cancelled) return;
+      if (attempts >= 20) {
+        // ~2 minutes of polling with no resolution — stop looping, but
+        // stay in the uncertain step rather than guessing; the donor can
+        // check their email/bank statement, and the webhook/reconciliation
+        // safety net resolves the actual record independently of this tab.
+        return;
+      }
+      const delayMs = Math.min(2000 + attempts * 2000, 10000);
+      timer = setTimeout(poll, delayMs);
+    }
+
+    timer = setTimeout(poll, 2000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [result.step, attemptId, slug]);
 
   // Apple Pay / Google Pay always ride card-network rails, so their fee
   // uses the card rate regardless of which manual-entry tab (card/bank)
@@ -380,6 +482,15 @@ export default function GivingLinkForm({
       });
       const data = await res.json().catch(() => null);
       walletLog(`${method}: /donate response`, { status: res.status, ok: res.ok, success: data?.success, code: data?.code });
+
+      if (data?.code === "PAYMENT_STATUS_UNCERTAIN") {
+        // Finix may have already charged the card — never say "try again"
+        // or offer a retry here. Keep the SAME attemptId and let the
+        // polling effect below find out what actually happened.
+        setWalletProcessing(null);
+        setResult({ step: "uncertain" });
+        return { success: false };
+      }
 
       if (!res.ok || !data?.success) {
         setWalletProcessing(null);
@@ -840,6 +951,15 @@ export default function GivingLinkForm({
 
           const data = await res.json().catch(() => null);
 
+          if (data?.code === "PAYMENT_STATUS_UNCERTAIN") {
+            // Finix may have already charged the card — never say "failed"
+            // or offer a retry here. Keep the SAME attemptId and let the
+            // polling effect below find out what actually happened.
+            setSubmitting(false);
+            setResult({ step: "uncertain" });
+            return;
+          }
+
           if (!res.ok || !data?.success) {
             setSubmitting(false);
             const errMsg = data?.message || (typeof data?.error === 'string' ? data.error : data?.error?.message) || "Payment failed. Please try again.";
@@ -921,7 +1041,14 @@ export default function GivingLinkForm({
         {thankYouMessage && <p className="text-sm" style={{ color: light.bodyTextColor }}>{thankYouMessage}</p>}
         {result.transferId && <p className="text-xs text-slate-300 font-mono">{result.transferId}</p>}
         <button
-          onClick={() => setResult({ step: "form" })}
+          onClick={() => {
+            // A new donation must never reuse the just-completed/failed
+            // attempt's id — otherwise the server-side idempotency guard
+            // would treat this genuinely new gift as a duplicate of the
+            // last one and refuse to charge it.
+            rotateAttemptId();
+            setResult({ step: "form" });
+          }}
           className="mt-2 px-5 py-2 rounded-xl text-sm font-semibold"
           style={{ backgroundColor: light.buttonBackground, color: light.buttonText }}
         >
@@ -971,6 +1098,21 @@ export default function GivingLinkForm({
     );
   }
 
+  if (result.step === "uncertain") {
+    return (
+      <div className="text-center space-y-4 py-4">
+        <Clock className="w-12 h-12 mx-auto text-amber-500 animate-pulse" />
+        <h2 className="text-lg font-bold" style={{ color: light.headingColor }}>
+          Confirming your donation…
+        </h2>
+        <p className="text-sm" style={{ color: light.bodyTextColor }}>
+          Please don’t close this page or submit another payment — we’re confirming the result with your bank
+          or card issuer now.
+        </p>
+      </div>
+    );
+  }
+
   if (result.step === "failed") {
     return (
       <div className="text-center space-y-4 py-4">
@@ -980,7 +1122,14 @@ export default function GivingLinkForm({
         </h2>
         <p className="text-sm text-red-600">{result.error}</p>
         <button
-          onClick={() => setResult({ step: "form" })}
+          onClick={() => {
+            // A new donation must never reuse the just-completed/failed
+            // attempt's id — otherwise the server-side idempotency guard
+            // would treat this genuinely new gift as a duplicate of the
+            // last one and refuse to charge it.
+            rotateAttemptId();
+            setResult({ step: "form" });
+          }}
           className="mt-2 px-5 py-2 rounded-xl text-sm font-semibold"
           style={{ backgroundColor: light.buttonBackground, color: light.buttonText }}
         >

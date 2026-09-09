@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
 import { redactFinixPayload } from "@/lib/finix/redact";
@@ -9,6 +10,8 @@ import { requirePermission } from "@/lib/auth/permissions";
 import { isAuthError, ForbiddenError } from "@/lib/auth/errors";
 import { calculateInvoiceBalance } from "@/lib/invoices/invoiceMoney";
 import { computeDerivedInvoiceStatus, type InvoiceStatus } from "@/lib/invoices/invoiceStatus";
+import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
+import { claimRefundRequestWithBalanceLock, RefundNotFoundError, RefundIneligibleError, RefundAmountError } from "@/lib/payments/refundRequestClaim";
 
 /**
  * Refunds a single InvoicePayment — for a FINIX-sourced payment this calls
@@ -63,30 +66,129 @@ export async function POST(req: Request, { params }: { params: Promise<{ invoice
     if (!payment.finixTransferId) {
       return toSafeErrorResponse("This payment could not be matched to a processor transfer.", 400);
     }
+
+    // Same ONE-REFUND-INTENT -> AT-MOST-ONE-REVERSAL guarantee as
+    // /transactions/payments/[transferId]/refund/route.ts — both routes
+    // now call the exact same claimRefundRequestWithBalanceLock() (see
+    // that module's doc comment). This closes the concurrency gap the
+    // earlier version of this route had: refundableCents was previously
+    // read with a plain, unlocked query and never accounted for another
+    // PENDING RefundRequest against the same transfer, so two concurrent
+    // partial refunds could together exceed the real refundable balance
+    // (cold-review defect #3). The shared function re-derives the
+    // authoritative remaining balance from FinixTransfer under a row lock,
+    // which is the same transfer this InvoicePayment's finixTransferId
+    // points at, so it also can't be over-refunded by an overlapping claim
+    // made through the OTHER refund route. clientRefundId falls back to a
+    // value derived from (payment, amount) when the caller doesn't supply
+    // one, so an accidental repeat of the identical request collapses to
+    // the same claim, while a genuinely different amount (a real second
+    // partial refund) is correctly treated as new.
+    const clientRefundId =
+      typeof body.clientRefundId === "string" && body.clientRefundId.trim() ? body.clientRefundId.trim() : `invoice-payment:${payment.id}:${requestedCents}`;
+
+    let claim;
+    try {
+      claim = await claimRefundRequestWithBalanceLock({
+        finixTransferId: payment.finixTransferId!,
+        churchId: auth.churchId,
+        clientRefundId,
+        requestedAmountCents: requestedCents,
+        requestedByUserId: auth.userId,
+        requestedByEmail: auth.email,
+        reason: "Invoice payment refund",
+        originalPaymentId: null,
+      });
+    } catch (err) {
+      if (err instanceof RefundNotFoundError) return toSafeErrorResponse(err.message, 404);
+      if (err instanceof RefundIneligibleError) return toSafeErrorResponse(err.message, 400);
+      if (err instanceof RefundAmountError) return toSafeErrorResponse(err.message, 400);
+      return toSafeErrorResponse(err, 502, { action: "refundInvoicePayment", resourceId: payment.id });
+    }
+
+    if (!claim.isFreshClaim) {
+      if (claim.refundRequest.status === "SUCCEEDED" && claim.refundRequest.finixReversalId) {
+        logPaymentSafetyEvent("REFUND_DUPLICATE_PREVENTED", {
+          churchId: auth.churchId,
+          finixTransferId: payment.finixTransferId,
+          refundRequestId: claim.refundRequest.id,
+          finixReversalId: claim.refundRequest.finixReversalId,
+          source: "checkout",
+          route: `/api/merchant/invoices/${invoiceId}/payments/${paymentId}/refund`,
+          detail: "P2002 on RefundRequest[finixTransferId,clientRefundId] — replayed the already-completed reversal instead of calling Finix again",
+        });
+        return NextResponse.json({ success: true, pending: true, duplicate: true, reversalId: claim.refundRequest.finixReversalId });
+      }
+      if (claim.refundRequest.status === "FAILED") {
+        return toSafeErrorResponse(claim.refundRequest.failureMessage || "This refund could not be completed.", 400);
+      }
+      // Still PENDING and not ours — never fire Finix again blindly.
+      logPaymentSafetyEvent("REFUND_STATUS_UNCERTAIN", {
+        churchId: auth.churchId,
+        finixTransferId: payment.finixTransferId,
+        refundRequestId: claim.refundRequest.id,
+        source: "checkout",
+        route: `/api/merchant/invoices/${invoiceId}/payments/${paymentId}/refund`,
+        detail: "RefundRequest still PENDING from another request — refusing to call Finix again",
+      });
+      return NextResponse.json(
+        { success: false, code: "REFUND_STATUS_UNCERTAIN", message: "A refund for this payment is already being processed.", retryable: false },
+        { status: 409 }
+      );
+    }
+
     try {
       const reversal = await finixClient.createTransferReversal(payment.finixTransferId, {
         refund_amount: requestedCents,
-        tags: { source: "wgc_invoice_refund", churchId: auth.churchId, invoiceId, invoicePaymentId: payment.id },
+        idempotency_id: `refund:${claim.refundRequest.id}`,
+        tags: { source: "wgc_invoice_refund", churchId: auth.churchId, invoiceId, invoicePaymentId: payment.id, refundRequestId: claim.refundRequest.id },
       });
-      await prisma.finixRefundOrReversal.upsert({
-        where: { finixReversalId: reversal.id },
-        create: {
-          finixReversalId: reversal.id,
-          churchId: auth.churchId,
-          finixOriginalTransferId: payment.finixTransferId,
-          amountCents: reversal.amount ?? requestedCents,
-          currency: reversal.currency ?? invoice.currency,
-          state: reversal.state ?? "PENDING",
-          type: reversal.type ?? "REVERSAL",
-          subtype: reversal.subtype ?? null,
-          source: "wgc_invoice_refund",
-          rawJsonRedacted: redactFinixPayload(reversal),
-          createdAtFinix: reversal.created_at ? new Date(reversal.created_at) : new Date(),
-          lastSyncedAt: new Date(),
-        },
-        update: { state: reversal.state ?? undefined, rawJsonRedacted: redactFinixPayload(reversal), lastSyncedAt: new Date() },
-      });
+      await prisma.$transaction([
+        prisma.refundRequest.update({ where: { id: claim.refundRequest.id }, data: { status: "SUCCEEDED", finixReversalId: reversal.id } }),
+        prisma.finixRefundOrReversal.upsert({
+          where: { finixReversalId: reversal.id },
+          create: {
+            finixReversalId: reversal.id,
+            churchId: auth.churchId,
+            refundRequestId: claim.refundRequest.id,
+            finixOriginalTransferId: payment.finixTransferId,
+            amountCents: reversal.amount ?? requestedCents,
+            currency: reversal.currency ?? invoice.currency,
+            state: reversal.state ?? "PENDING",
+            type: reversal.type ?? "REVERSAL",
+            subtype: reversal.subtype ?? null,
+            source: "wgc_invoice_refund",
+            rawJsonRedacted: redactFinixPayload(reversal) as Prisma.InputJsonValue,
+            createdAtFinix: reversal.created_at ? new Date(reversal.created_at) : new Date(),
+            lastSyncedAt: new Date(),
+          },
+          update: { refundRequestId: claim.refundRequest.id, state: reversal.state ?? undefined, rawJsonRedacted: redactFinixPayload(reversal) as Prisma.InputJsonValue, lastSyncedAt: new Date() },
+        }),
+      ]);
     } catch (err) {
+      const ambiguous = err instanceof Error && /timeout|timed out|abort|econnreset|network/i.test(err.message);
+      await prisma.refundRequest
+        .update({
+          where: { id: claim.refundRequest.id },
+          data: ambiguous
+            ? { failureMessage: "Timed out or lost connection while confirming with the processor — status unknown." }
+            : { status: "FAILED", failureMessage: err instanceof Error ? err.message.slice(0, 500) : "Refund rejected by processor." },
+        })
+        .catch((updateErr) => console.error(`Failed to record invoice refund outcome for request ${claim.refundRequest.id}:`, updateErr));
+      if (ambiguous) {
+        logPaymentSafetyEvent("REFUND_STATUS_UNCERTAIN", {
+          churchId: auth.churchId,
+          finixTransferId: payment.finixTransferId,
+          refundRequestId: claim.refundRequest.id,
+          source: "checkout",
+          route: `/api/merchant/invoices/${invoiceId}/payments/${paymentId}/refund`,
+          detail: "Timeout/network error calling Finix's reversal endpoint — outcome unknown, left PENDING for reconciliation (Stage 2)",
+        });
+        return NextResponse.json(
+          { success: false, code: "REFUND_STATUS_UNCERTAIN", message: "We’re confirming this refund with the processor. Please do not retry.", retryable: false },
+          { status: 503 }
+        );
+      }
       return toSafeErrorResponse(err, 502, { action: "refundInvoicePayment", resourceId: payment.id });
     }
     // The webhook's reconcileInvoicePaymentReversal() will apply

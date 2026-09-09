@@ -10,6 +10,37 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Deliberately minimal — each covers only the fields the money-critical
+// checkout/refund code paths actually read, not Finix's full response
+// shape (fetchApi() itself stays untyped; retyping it fully is out of
+// scope here and would touch 20+ unrelated call sites). `[key: string]:
+// unknown` keeps these open to Finix's real (larger) payload without
+// re-introducing `any` at the one or two fields each path touches.
+export interface FinixTransferResponse {
+  id: string;
+  state?: string | null;
+  type?: string | null;
+  [key: string]: unknown;
+}
+
+export interface FinixSubscriptionResponse {
+  id: string;
+  state?: string | null;
+  next_billing_date?: string | null;
+  [key: string]: unknown;
+}
+
+export interface FinixReversalResponse {
+  id: string;
+  state?: string | null;
+  type?: string | null;
+  subtype?: string | null;
+  amount?: number | null;
+  currency?: string | null;
+  created_at?: string | null;
+  [key: string]: unknown;
+}
+
 export class FinixClient {
   private readonly baseUrl: string;
   private readonly authHeader: string;
@@ -404,7 +435,7 @@ export class FinixClient {
    * buyer session) — this throws rather than silently omitting it, so a
    * future checkout integration can't accidentally ship without it.
    */
-  async createTransfer(payload: { fraud_session_id?: string; idempotency_id?: string; [key: string]: any }) {
+  async createTransfer(payload: { fraud_session_id?: string; idempotency_id?: string; [key: string]: any }): Promise<FinixTransferResponse> {
     const body = {
       ...payload,
       idempotency_id: payload.idempotency_id ?? crypto.randomUUID(),
@@ -450,6 +481,17 @@ export class FinixClient {
   // 201 with no trial applied at all (confirmed: subscription came back
   // state="ACTIVE", subscription_details.trial_details=null). The field
   // shape is interval_type + interval_count, not trial_period_days.
+  // idempotency_id: WGC always supplies one (the same idempotencyId used
+  // for the sibling /transfers call on the same request, so a retried
+  // submission collapses to the same key). Whether Finix's /subscriptions
+  // endpoint actually honors it as a dedup key the way /transfers and
+  // /transfer_reversals do is UNCONFIRMED — it isn't cited by the same
+  // Finix docs used above for those two endpoints, and this client has no
+  // way to make a live sandbox call to verify it. The primary protection
+  // against a duplicate subscription is still WGC's own PaymentAttempt
+  // unique-constraint guard upstream of this call (see donate/route.ts) —
+  // this field is defense-in-depth, not the guarantee itself, until a
+  // human confirms the sandbox behavior (see PRIORITY 9 in the audit).
   async createSubscription(payload: {
     amount: number;
     currency: string;
@@ -463,13 +505,15 @@ export class FinixClient {
       discount_phase_details?: { amount: number; billing_interval_count: number };
     };
     tags?: Record<string, string>;
-  }) {
+    idempotency_id?: string;
+  }): Promise<FinixSubscriptionResponse> {
     return this.fetchApi("/subscriptions", {
       method: "POST",
       headers: { Accept: "application/json" },
       body: JSON.stringify({
         subscription_details: { collection_method: "BILL_AUTOMATICALLY" },
         ...payload,
+        idempotency_id: payload.idempotency_id ?? crypto.randomUUID(),
       })
     });
   }
@@ -499,7 +543,7 @@ export class FinixClient {
   async createTransferReversal(
     transferId: string,
     payload: { refund_amount?: number; idempotency_id?: string; tags?: Record<string, string> }
-  ) {
+  ): Promise<FinixReversalResponse> {
     return this.fetchApi(`/transfers/${transferId}/reversals`, {
       method: "POST",
       body: JSON.stringify({ idempotency_id: payload.idempotency_id ?? crypto.randomUUID(), ...payload })

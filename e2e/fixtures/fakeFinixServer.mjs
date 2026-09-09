@@ -82,6 +82,19 @@ const server = http.createServer(async (req, res) => {
   // POST /payment_instruments — bank instrument (onboarding) or tokenized
   // card/bank instrument (billing activation).
   if (method === "POST" && pathname === "/payment_instruments") {
+    // e2e/helpers/walletAdapter.ts's "fail" behavior sends this exact,
+    // known-synthetic third_party_token — a real Apple/Google Pay token no
+    // automation tool can produce, so Finix would genuinely reject it.
+    // "success"-behavior tests send the SAME literal token value but
+    // always intercept the network response before it reaches this real
+    // server (see that file's comment), so rejecting this marker
+    // unconditionally can never break a real success-path test — only
+    // "fail"-behavior tests ever let a request actually arrive here.
+    if (body.third_party_token === "E2E_FAKE_APPLE_PAY_TOKEN" || body.third_party_token === "E2E_FAKE_GOOGLE_PAY_TOKEN") {
+      return send(res, 400, {
+        _embedded: { errors: [{ code: "INVALID_TOKEN", message: "The provided wallet token could not be verified with the token issuer.", failure_message: "Could not verify wallet token." }] },
+      });
+    }
     const isBank = body.type === "BANK_ACCOUNT" || body.account_type;
     return send(res, 201, {
       id: randomId("PI"),
@@ -122,6 +135,24 @@ const server = http.createServer(async (req, res) => {
   // DELETE /subscriptions/:id — cancelWgcSubscription().
   if (method === "DELETE" && /^\/subscriptions\/[^/]+$/.test(pathname)) {
     return send(res, 200, { id: pathname.split("/").pop(), state: "CANCELED" });
+  }
+
+  // POST /transfers — createTransfer(). Real callers reaching this fake
+  // server for a one-time charge (donate, invoice pay, merchandise
+  // checkout) need a genuine SUCCEEDED state, not the harmless catch-all
+  // below (which omits `state` entirely — every caller's own success check
+  // reads `state`, so an unhandled transfer previously always looked like
+  // a failed charge to real, non-network-mocked E2E flows).
+  if (method === "POST" && pathname === "/transfers") {
+    return send(res, 201, {
+      id: randomId("TR"),
+      state: "SUCCEEDED",
+      type: body.type || "DEBIT",
+      amount: body.amount,
+      currency: body.currency || "USD",
+      merchant: body.merchant,
+      source: body.source,
+    });
   }
 
   // Catch-all: return a harmless empty-ish success so any unanticipated

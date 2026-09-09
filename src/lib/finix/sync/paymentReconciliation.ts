@@ -1,7 +1,9 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
 import { redactFinixPayload } from "@/lib/finix/redact";
 import { syncFeesForTransfer } from "@/lib/finix/sync/syncFees";
+import { logPaymentSafetyEvent } from "@/lib/observability/paymentSafetyEvents";
 
 /**
  * Webhooks must not be the only synchronization method for payment state —
@@ -109,6 +111,193 @@ export async function reconcilePendingTransfer(finixTransferId: string): Promise
     console.error(`Transfer reconciliation failed for ${finixTransferId}:`, err);
     return { reconciled: false, changed: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+export interface OrphanRecoveryResult {
+  recovered: boolean;
+  paymentId?: string;
+  reason?: string;
+}
+
+/**
+ * The automatic repair for the one gap the synchronous checkout path can't
+ * close on its own: Finix confirms a one-time (non-subscription) transfer,
+ * then the local process dies before Payment is durably written (see
+ * donate/route.ts's post-charge write block and buildPaymentUncertainResponse).
+ * Called from the TRANSFER webhook handler whenever a transfer event arrives
+ * with no matching Payment row yet — this is the other half of that safety
+ * net, and the one reusable place this reconstruction logic lives (also
+ * intended for the future transfer-reconciliation cron, so there is exactly
+ * one repair function rather than duplicated logic in two places).
+ *
+ * Identity-matching invariant (verified, not just intended): the only two
+ * signals ever used to decide WHO this payment belongs to are (1) Finix's
+ * own merchant mapping — `churchId` is the caller's already-verified value
+ * (Church.finixMerchantId === data.merchant, resolved before this function
+ * is called, from an authenticated Finix webhook payload), and (2) Finix's
+ * own `idempotency_id` on the transfer, used to look up the exact
+ * PaymentAttempt WGC itself created for this charge — cross-checked against
+ * that same churchId before a single field of it is trusted. Tags, amount,
+ * and donor email are NEVER used to determine tenancy or match a payment to
+ * a person: tags supply only the fee-calculation snapshot (percentageBps,
+ * fixedFeeCents, cardBrand) plus a givingLinkId that itself gets
+ * independently re-verified against a real GivingLink row scoped to the
+ * same churchId before being trusted; amount is only ever written into the
+ * created Payment's own amount fields, never compared against anything to
+ * decide identity; donorId is populated exclusively from a matched
+ * PaymentAttempt and is left null (never guessed from an email/tag) when no
+ * such attempt is found.
+ */
+export async function recoverOrphanedOneTimePayment(params: {
+  finixTransferId: string;
+  churchId: string;
+  amountCents: number | null | undefined;
+  state: string | null | undefined;
+  tags: Record<string, string | undefined>;
+  finixBuyerIdentityId: string | null | undefined;
+  finixPaymentInstrumentId: string | null | undefined;
+  idempotencyId: string | null | undefined;
+}): Promise<OrphanRecoveryResult> {
+  const { finixTransferId, churchId, amountCents, state, tags, finixBuyerIdentityId, finixPaymentInstrumentId, idempotencyId } = params;
+
+  // Never reconstruct a Payment for a transfer that hasn't reached a
+  // meaningful state yet — a still-PENDING transfer will get a normal
+  // update once it terminates, same as the non-orphan path.
+  const normalizedState = (state || "").toUpperCase();
+  if (normalizedState !== "SUCCEEDED" && normalizedState !== "PENDING") {
+    return { recovered: false, reason: "not_yet_terminal" };
+  }
+
+  // Prefer the PaymentAttempt WGC itself created synchronously, matched by
+  // idempotencyId (== clientAttemptId at creation time) — this is trusted,
+  // first-party WGC data, cross-checked against churchId before use.
+  let attempt = idempotencyId ? await prisma.paymentAttempt.findUnique({ where: { idempotencyId } }) : null;
+  if (attempt && attempt.churchId !== churchId) {
+    // A mismatch here would mean either a genuine bug or a tampered
+    // idempotency key — never trust a cross-tenant attempt record.
+    attempt = null;
+  }
+
+  let givingLinkId: string | null = attempt?.givingLinkId ?? null;
+  const donorId: string | null = attempt?.donorId ?? null;
+  const fundId: string | null = attempt?.fundId ?? null;
+  const fundName: string | null = attempt?.fundName ?? null;
+
+  // Fallback only when no matching PaymentAttempt exists: the tag-sourced
+  // givingLinkId is re-verified against a real GivingLink row belonging to
+  // this exact churchId before being trusted for anything — tags are
+  // caller-suppliable at charge time, so they are corroborating evidence,
+  // never proof of tenancy on their own.
+  if (!givingLinkId && tags.givingLinkId) {
+    const link = await prisma.givingLink.findFirst({ where: { id: tags.givingLinkId, churchId }, select: { id: true } });
+    if (link) givingLinkId = link.id;
+  }
+
+  const donationAmountCents = tags.donation_amount_cents ? Number(tags.donation_amount_cents) : null;
+  const percentageBps = tags.fee_percentage_bps ? Number(tags.fee_percentage_bps) : null;
+  const fixedFeeCents = tags.fee_fixed_cents ? Number(tags.fee_fixed_cents) : null;
+  const cardBrand = tags.card_brand && tags.card_brand !== "NONE" ? tags.card_brand : null;
+  const feeCalculationVersion = tags.fee_calculation_version || null;
+
+  const createData: Prisma.PaymentUncheckedCreateInput = {
+    churchId,
+    donorId: donorId ?? undefined,
+    givingLinkId: givingLinkId ?? undefined,
+    paymentAttemptId: attempt?.id ?? undefined,
+    finixTransferId,
+    finixBuyerIdentityId: finixBuyerIdentityId ?? undefined,
+    finixPaymentInstrumentId: finixPaymentInstrumentId ?? undefined,
+    amountCents: amountCents ?? donationAmountCents ?? 0,
+    donationAmountCents: donationAmountCents ?? amountCents ?? undefined,
+    paymentMethodType: attempt?.paymentMethodType ?? "PAYMENT_CARD",
+    status: normalizedState,
+    cardBrand: cardBrand ?? undefined,
+    percentageBps: percentageBps ?? undefined,
+    fixedFeeCents: fixedFeeCents ?? undefined,
+    feeCalculationVersion: feeCalculationVersion ?? undefined,
+    fundId: fundId ?? undefined,
+    fundName: fundName ?? undefined,
+    isAnonymous: attempt?.isAnonymous ?? false,
+    note: attempt?.note ?? undefined,
+  };
+
+  let payment;
+  try {
+    payment = await prisma.payment.create({ data: createData });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      // Lost a race against another concurrent recovery/write for this
+      // exact transfer — Payment.finixTransferId is unique, so this is the
+      // expected outcome, not an error.
+      const existing = await prisma.payment.findUnique({ where: { finixTransferId } });
+      if (existing) {
+        logPaymentSafetyEvent("PAYMENT_DUPLICATE_PREVENTED", {
+          churchId,
+          finixTransferId,
+          paymentAttemptId: attempt?.id ?? null,
+          source: "orphan_recovery",
+          detail: "P2002 on Payment.finixTransferId — another writer (checkout or a concurrent recovery) already created this Payment",
+        });
+        return { recovered: true, paymentId: existing.id, reason: "raced_created_elsewhere" };
+      }
+    }
+    console.error(`Orphan payment recovery failed for transfer ${finixTransferId}:`, err);
+    return { recovered: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+
+  logPaymentSafetyEvent("ORPHAN_PAYMENT_RECOVERED", {
+    finixTransferId,
+    churchId,
+    paymentAttemptId: attempt?.id ?? null,
+    source: "webhook",
+    detail: `matchedByPaymentAttempt=${Boolean(attempt)} state=${normalizedState}`,
+  });
+
+  if (attempt) {
+    await prisma.paymentAttempt.update({
+      where: { id: attempt.id },
+      data: { status: normalizedState, finixTransferId },
+    }).catch((err) => console.error("Failed to update PaymentAttempt after orphan recovery:", err));
+  }
+
+  // Giving-link counters: the synchronous checkout path never reached its
+  // own increment (it returned PAYMENT_STATUS_UNCERTAIN before getting
+  // there) — this is the only writer of these counters for this payment,
+  // so incrementing here is correct, not a double-count. Never touched
+  // again on a future webhook delivery for the same transfer, since those
+  // will find `payment` via priorPayment and take the existing update
+  // branch instead of this recovery branch.
+  if (givingLinkId) {
+    try {
+      await prisma.givingLink.update({
+        where: { id: givingLinkId },
+        data: {
+          totalAttempts: { increment: 1 },
+          lastUsedAt: new Date(),
+          ...(normalizedState === "SUCCEEDED" ? { successfulDonations: { increment: 1 }, totalCollectedCents: { increment: payment.amountCents } } : {}),
+        },
+      });
+    } catch (err) {
+      console.error("Failed to update giving link counters during orphan recovery:", err);
+    }
+  }
+
+  if (normalizedState === "SUCCEEDED") {
+    try {
+      const { sendDonationReceipt } = await import("@/lib/giving/generateReceipt");
+      await sendDonationReceipt(payment.id, churchId);
+    } catch (err) {
+      console.error("Failed to send donation receipt during orphan recovery:", err);
+    }
+    try {
+      const { syncPaymentToQuickBooks } = await import("@/lib/integrations/quickbooks/sync");
+      await syncPaymentToQuickBooks(payment.id);
+    } catch (err) {
+      console.error("Failed to sync payment to QuickBooks during orphan recovery:", err);
+    }
+  }
+
+  return { recovered: true, paymentId: payment.id };
 }
 
 /**

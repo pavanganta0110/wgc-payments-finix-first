@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { buildIdempotencyKey } from "@/lib/billing/paymentRouting";
 import { logBillingAuditEvent } from "@/lib/billing/billingAudit";
@@ -52,22 +53,36 @@ export async function handleWgcSubscriptionWebhookEvent(eventType: string, data:
   const church = await prisma.church.findUnique({ where: { id: subscription.organizationId }, select: { name: true, primaryContactEmail: true } });
   const billingAccount = await prisma.wgcBillingAccount.findUnique({ where: { organizationId: subscription.organizationId } });
 
-  await prisma.billingCharge.create({
-    data: {
-      organizationId: subscription.organizationId,
-      chargeType: "WGC_PLATFORM_SUBSCRIPTION",
-      billingPeriod,
-      amountCents,
-      currency: subscription.currency,
-      finixTransferId: finixTransferId ?? null,
-      finixSubscriptionId,
-      pricingVersionId: subscription.priceVersionId,
-      idempotencyKey,
-      status: succeeded ? "SUCCEEDED" : "FAILED",
-      succeededAt: succeeded ? new Date() : null,
-      failedAt: failed ? new Date() : null,
-    },
-  });
+  try {
+    await prisma.billingCharge.create({
+      data: {
+        organizationId: subscription.organizationId,
+        chargeType: "WGC_PLATFORM_SUBSCRIPTION",
+        billingPeriod,
+        amountCents,
+        currency: subscription.currency,
+        finixTransferId: finixTransferId ?? null,
+        finixSubscriptionId,
+        pricingVersionId: subscription.priceVersionId,
+        idempotencyKey,
+        status: succeeded ? "SUCCEEDED" : "FAILED",
+        succeededAt: succeeded ? new Date() : null,
+        failedAt: failed ? new Date() : null,
+      },
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      // Lost a race against another concurrent delivery of an event with
+      // the same effective idempotencyKey (the top-level FinixWebhookEvent
+      // dedup only catches an identical event ID being redelivered — a
+      // narrow window where TWO DIFFERENT event IDs for the same charge
+      // arrive close enough together to both pass the existingCharge check
+      // above is still possible in principle). Already handled by the
+      // winner; nothing more to do.
+      return true;
+    }
+    throw err;
+  }
 
   if (succeeded) {
     await prisma.wgcSubscription.update({
