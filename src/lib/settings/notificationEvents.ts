@@ -3,19 +3,16 @@ export interface NotificationEventDef {
   label: string;
   description: string;
   /** Overrides DEFAULT_NOTIFICATION_PREFERENCE.emailEnabled for this event
-   * only. Needed for DONATION_RECEIVED — unlike every other event here
-   * (disputes, failed payments, settlement funded...), which fire rarely,
-   * a busy organization can receive dozens of donations a day. Defaulting
-   * email on for every existing organization the moment this shipped
-   * would have silently flooded inboxes nobody asked for. Off by default;
-   * an org that wants it opts in from Settings -> Notifications same as
-   * any other event. */
+   * only, when a specific event needs a different default than every other
+   * one (e.g. an unusually high-frequency event where opt-out, not opt-in,
+   * is still the right call — see resolveNotificationDefault). Every event
+   * below currently relies on the shared default rather than this. */
   defaultEmailEnabled?: boolean;
 }
 
 /** Only events this codebase can actually detect and act on — no fabricated notification types. */
 export const NOTIFICATION_EVENTS: NotificationEventDef[] = [
-  { key: "DONATION_RECEIVED", label: "Donation Received", description: "A donor completed a gift on one of your giving pages.", defaultEmailEnabled: false },
+  { key: "DONATION_RECEIVED", label: "Donation Received", description: "A donor completed a gift on one of your giving pages." },
   { key: "DISPUTE_OPENED", label: "New Dispute Opened", description: "A donor has disputed a payment and evidence may be required." },
   { key: "SUBSCRIPTION_PAYMENT_FAILED", label: "Recurring Payment Failed", description: "A scheduled recurring donation payment failed to process." },
   { key: "SETTLEMENT_FUNDED", label: "Settlement Funded", description: "Funds from a settlement batch have been deposited to your bank account." },
