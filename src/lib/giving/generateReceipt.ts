@@ -258,7 +258,7 @@ export async function sendDonationReceipt(
  * a resend or reconciliation backfill, so an org is only ever notified once
  * per real donation.
  */
-export async function notifyMerchantOfNewDonation(paymentId: string, churchId: string) {
+export async function notifyMerchantOfNewDonation(paymentId: string, churchId: string, actorUserId: string | null = null) {
   const payment = await prisma.payment.findFirst({ where: { id: paymentId, churchId } });
   if (!payment) return;
 
@@ -273,6 +273,11 @@ export async function notifyMerchantOfNewDonation(paymentId: string, churchId: s
   await notifyEvent({
     churchId,
     eventKey: "DONATION_RECEIVED",
+    // actorUserId is set only when a logged-in staff member entered this
+    // donation themselves (Take Payment) — routes the email to that
+    // specific person instead of the org owner, per notifyEvent's own
+    // recipient-priority comment.
+    recipientUserId: actorUserId,
     subject: `New donation received: ${formatCents(amountCents)}`,
     title: "New donation received",
     badgeText: "New Donation",

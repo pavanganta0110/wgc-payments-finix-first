@@ -4,7 +4,7 @@ import { finixClient } from "@/lib/finix/client";
 import { FEE_CALCULATION_VERSION } from "@/lib/giving/feeCalculator";
 import { resolveWgcTransferFeeStrategy } from "@/lib/giving/serverFeeStrategy";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
-import { sendDonationReceipt } from "@/lib/giving/generateReceipt";
+import { sendDonationReceipt, notifyMerchantOfNewDonation } from "@/lib/giving/generateReceipt";
 import { normalizeUSPhone, isValidEmail } from "@/lib/validation";
 import { toSafeErrorResponse, toSafePaymentErrorResponse } from "@/lib/utils/errorNormalizer";
 import { validateGoodsServicesInput, computeRecordedContributionAmountCents } from "@/lib/giving/goodsServices";
@@ -346,6 +346,14 @@ export async function POST(req: Request) {
         await sendDonationReceipt(newPayment.id, church.id);
       } catch (err) {
         console.error("Failed to send donation receipt:", err);
+      }
+      try {
+        // Notifies the staff member who actually took this payment, not
+        // the org owner — see notifyMerchantOfNewDonation/notifyEvent's
+        // own comments for why.
+        await notifyMerchantOfNewDonation(newPayment.id, church.id, auth.userId);
+      } catch (err) {
+        console.error("Failed to notify merchant of new donation:", err);
       }
     }
 
