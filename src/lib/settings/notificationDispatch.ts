@@ -37,6 +37,14 @@ export async function notifyEvent(params: {
   /** The specific user who caused this event, if any — see recipient
    * priority above. Omit for events with no single responsible actor. */
   recipientUserId?: string | null;
+  /** Threaded straight through to sendWgcEmail's own `log` — see that
+   * option's comment on WgcEmailOptions for why this is required for the
+   * email to appear in the org's Email Logs page at all (previously
+   * omitted here entirely, so every notifyEvent email — disputes,
+   * settlements, merchandise orders, donations — sent successfully but
+   * never showed up in Email Logs). */
+  relatedEntityType?: string;
+  relatedEntityId?: string;
 }) {
   try {
     const [church, preference, recipientUser] = await Promise.all([
@@ -75,6 +83,12 @@ export async function notifyEvent(params: {
       badgeText: params.badgeText,
       badgeColor: params.badgeColor,
       bodyHtml: params.bodyHtml,
+      log: {
+        churchId: params.churchId,
+        category: "MERCHANT_NOTIFICATION",
+        relatedEntityType: params.relatedEntityType ?? params.eventKey,
+        relatedEntityId: params.relatedEntityId ?? null,
+      },
     });
   } catch (err) {
     console.error(`notifyEvent(${params.eventKey}) failed:`, err);

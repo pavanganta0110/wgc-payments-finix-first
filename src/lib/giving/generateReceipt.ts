@@ -285,6 +285,8 @@ export async function notifyMerchantOfNewDonation(paymentId: string, churchId: s
     // notification is correctly attributed on every donation path
     // automatically, with nothing new to wire up when a new one is added.
     recipientUserId: payment.attributedUserId,
+    relatedEntityType: "Payment",
+    relatedEntityId: paymentId,
     subject: `New donation received: ${formatCents(amountCents)}`,
     title: "New donation received",
     badgeText: "New Donation",

@@ -47,6 +47,7 @@ interface WgcEmailOptions {
       | "INVOICE"
       | "MERCHANDISE_ORDER"
       | "SUBSCRIPTION_SETUP_LINK"
+      | "MERCHANT_NOTIFICATION"
       | "OTHER";
     relatedEntityType?: string | null;
     relatedEntityId?: string | null;

@@ -801,6 +801,8 @@ export async function syncFinixDataFromWebhookEvent(
       await notifyEvent({
         churchId,
         eventKey: "DISPUTE_OPENED",
+        relatedEntityType: "Dispute",
+        relatedEntityId: data.id,
         subject: "New payment dispute opened",
         title: "New Dispute Opened",
         badgeText: "Action May Be Required",
@@ -925,6 +927,8 @@ export async function syncFinixDataFromWebhookEvent(
       await notifyEvent({
         churchId,
         eventKey: "SETTLEMENT_FUNDED",
+        relatedEntityType: "Settlement",
+        relatedEntityId: data.id,
         subject: "Settlement funded",
         title: "Settlement Funded",
         badgeText: "Funds Deposited",
