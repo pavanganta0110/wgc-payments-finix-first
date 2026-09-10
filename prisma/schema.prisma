@@ -4614,11 +4614,10 @@ model QuickBooksBackfillJob {
 }
 
 // =============================================================================
-// Giving Campaigns — bulk-send a giving link to a donor list (email first;
-// schema is channel-agnostic so SMS can reuse it later without a rework),
-// with per-recipient click/payment tracking and a template+live-preview
-// composer. See GivingCampaignRecipient's own comment for how attribution
-// actually works end to end.
+// Giving Campaigns — bulk-send a giving link to a donor list, by email or
+// text, with per-recipient click/payment tracking and a template+live-
+// preview composer. See GivingCampaignRecipient's own comment for how
+// attribution actually works end to end.
 // =============================================================================
 
 model GivingCampaign {
@@ -4627,12 +4626,15 @@ model GivingCampaign {
   givingLinkId String
   // Internal label only, never shown to a recipient — e.g. "Fall Giving Email Blast".
   name         String
-  channel      String // EMAIL today; SMS later reuses the same model/flow.
+  channel      String // EMAIL | TEXT
   emailSubject String?
-  // Merge-field template — {{firstName}}, {{churchName}}, {{link}} — rendered
-  // per recipient at send time (renderCampaignTemplate in campaignTemplate.ts)
-  // and for the live preview before sending.
+  // Merge-field templates — {{firstName}}, {{churchName}}, {{link}} —
+  // rendered per recipient at send time (renderCampaignTemplate in
+  // campaignTemplate.ts) and for the live preview before sending.
+  // emailBodyTemplate is used for channel EMAIL, textBodyTemplate for TEXT;
+  // a campaign only ever populates the one matching its own channel.
   emailBodyTemplate String?
+  textBodyTemplate  String?
 
   status          String    @default("DRAFT") // DRAFT | SENDING | SENT | FAILED
   createdByUserId String?

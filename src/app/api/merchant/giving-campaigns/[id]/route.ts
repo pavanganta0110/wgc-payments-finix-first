@@ -29,6 +29,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       id: true,
       recipientName: true,
       recipientEmail: true,
+      recipientPhone: true,
       sendStatus: true,
       sendError: true,
       sentAt: true,

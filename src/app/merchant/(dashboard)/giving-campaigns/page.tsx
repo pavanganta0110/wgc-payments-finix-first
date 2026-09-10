@@ -57,6 +57,7 @@ export default async function GivingCampaignsPage() {
             <thead>
               <tr className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-100">
                 <th className="px-6 py-3">Name</th>
+                <th className="px-6 py-3">Channel</th>
                 <th className="px-6 py-3">Status</th>
                 <th className="px-6 py-3 text-right">Recipients</th>
                 <th className="px-6 py-3 text-right">Paid</th>
@@ -74,6 +75,7 @@ export default async function GivingCampaignsPage() {
                         {c.name}
                       </Link>
                     </td>
+                    <td className="px-6 py-3 text-slate-500">{c.channel === "TEXT" ? "Text" : "Email"}</td>
                     <td className="px-6 py-3">
                       <StateBadge state={c.status} />
                     </td>

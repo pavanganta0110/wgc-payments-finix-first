@@ -22,8 +22,10 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
+  const channel = body.channel === "TEXT" ? "TEXT" : "EMAIL";
   const subject = typeof body.emailSubject === "string" ? body.emailSubject : "";
-  const template = typeof body.emailBodyTemplate === "string" ? body.emailBodyTemplate : "";
+  const rawTemplate = channel === "TEXT" ? body.textBodyTemplate : body.emailBodyTemplate;
+  const template = typeof rawTemplate === "string" ? rawTemplate : "";
 
   const church = await prisma.church.findUnique({ where: { id: auth.churchId }, select: { name: true } });
 
@@ -34,7 +36,7 @@ export async function POST(req: Request) {
   };
 
   return NextResponse.json({
-    subject: renderCampaignTemplate(subject, vars),
+    subject: channel === "TEXT" ? null : renderCampaignTemplate(subject, vars),
     body: renderCampaignTemplate(template, vars),
   });
 }

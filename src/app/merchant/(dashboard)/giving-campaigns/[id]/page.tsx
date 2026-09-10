@@ -38,9 +38,14 @@ export default async function GivingCampaignDetailPage({ params }: { params: Pro
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-lg font-bold text-slate-900">{campaign.name}</h2>
-          <p className="text-sm text-slate-500 mt-1">{campaign.emailSubject}</p>
+          <p className="text-sm text-slate-500 mt-1">
+            {campaign.channel === "TEXT" ? "Text message" : campaign.emailSubject}
+          </p>
         </div>
-        <StateBadge state={campaign.status} />
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{campaign.channel === "TEXT" ? "Text" : "Email"}</span>
+          <StateBadge state={campaign.status} />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -77,7 +82,7 @@ export default async function GivingCampaignDetailPage({ params }: { params: Pro
               <tr key={r.id} className="hover:bg-slate-50">
                 <td className="px-6 py-3">
                   <p className="font-medium text-slate-900">{r.recipientName || "—"}</p>
-                  <p className="text-xs text-slate-500">{r.recipientEmail}</p>
+                  <p className="text-xs text-slate-500">{campaign.channel === "TEXT" ? r.recipientPhone : r.recipientEmail}</p>
                 </td>
                 <td className="px-6 py-3">
                   {r.sendStatus === "SENT" ? (

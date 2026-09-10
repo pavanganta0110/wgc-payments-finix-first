@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { Loader2, X, Search } from "lucide-react";
+import { Loader2, X, Search, Mail, MessageSquare } from "lucide-react";
 
 interface GivingLinkOption {
   id: string;
@@ -19,29 +19,35 @@ interface DonorOption {
   phone: string | null;
 }
 
+type Channel = "EMAIL" | "TEXT";
+
 const MERGE_FIELDS = [
   { token: "{{firstName}}", label: "Donor first name" },
   { token: "{{churchName}}", label: "Your organization's name" },
   { token: "{{link}}", label: "Their personal giving link" },
 ];
 
+const DEFAULT_EMAIL_BODY =
+  "Hi {{firstName}},\n\n{{churchName}} would be grateful for your support. You can give securely here:\n{{link}}\n\nThank you!";
+const DEFAULT_TEXT_BODY = "Hi {{firstName}}, {{churchName}} would be grateful for your support. Give securely here: {{link}}";
+
 export default function GivingCampaignComposer() {
   const router = useRouter();
 
+  const [channel, setChannel] = useState<Channel>("EMAIL");
   const [links, setLinks] = useState<GivingLinkOption[]>([]);
   const [givingLinkId, setGivingLinkId] = useState("");
   const [name, setName] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
-  const [emailBodyTemplate, setEmailBodyTemplate] = useState(
-    "Hi {{firstName}},\n\n{{churchName}} would be grateful for your support. You can give securely here:\n{{link}}\n\nThank you!"
-  );
+  const [emailBodyTemplate, setEmailBodyTemplate] = useState(DEFAULT_EMAIL_BODY);
+  const [textBodyTemplate, setTextBodyTemplate] = useState(DEFAULT_TEXT_BODY);
 
   const [donorQuery, setDonorQuery] = useState("");
   const [donorResults, setDonorResults] = useState<DonorOption[]>([]);
   const [selectedDonors, setSelectedDonors] = useState<DonorOption[]>([]);
   const [searching, setSearching] = useState(false);
 
-  const [preview, setPreview] = useState<{ subject: string; body: string } | null>(null);
+  const [preview, setPreview] = useState<{ subject: string | null; body: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sendProgress, setSendProgress] = useState<{ sent: number; total: number } | null>(null);
 
@@ -61,26 +67,39 @@ export default function GivingCampaignComposer() {
       setSearching(true);
       fetch(`/api/merchant/donors/search?q=${encodeURIComponent(donorQuery)}`)
         .then((res) => res.json())
-        .then((data) => setDonorResults((data.donors || []).filter((d: DonorOption) => d.email)))
+        .then((data) =>
+          setDonorResults((data.donors || []).filter((d: DonorOption) => (channel === "TEXT" ? d.phone : d.email)))
+        )
         .catch(() => {})
         .finally(() => setSearching(false));
     }, 300);
     return () => clearTimeout(timeout);
-  }, [donorQuery]);
+  }, [donorQuery, channel]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
       fetch("/api/merchant/giving-campaigns/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emailSubject, emailBodyTemplate }),
+        body: JSON.stringify({ channel, emailSubject, emailBodyTemplate, textBodyTemplate }),
       })
         .then((res) => res.json())
         .then((data) => setPreview({ subject: data.subject, body: data.body }))
         .catch(() => {});
     }, 300);
     return () => clearTimeout(timeout);
-  }, [emailSubject, emailBodyTemplate]);
+  }, [channel, emailSubject, emailBodyTemplate, textBodyTemplate]);
+
+  const switchChannel = (next: Channel) => {
+    if (next === channel) return;
+    setChannel(next);
+    // A donor valid for one channel (has an email) may not be valid for the
+    // other (no phone on file, or vice versa) — clearing avoids silently
+    // dropping them at send time with no explanation.
+    setSelectedDonors([]);
+    setDonorQuery("");
+    setDonorResults([]);
+  };
 
   const addDonor = (donor: DonorOption) => {
     if (selectedDonors.some((d) => d.id === donor.id)) return;
@@ -94,12 +113,21 @@ export default function GivingCampaignComposer() {
   };
 
   const insertMergeField = (token: string) => {
-    setEmailBodyTemplate((prev) => `${prev}${prev.endsWith(" ") || prev.length === 0 ? "" : " "}${token}`);
+    if (channel === "TEXT") {
+      setTextBodyTemplate((prev) => `${prev}${prev.endsWith(" ") || prev.length === 0 ? "" : " "}${token}`);
+    } else {
+      setEmailBodyTemplate((prev) => `${prev}${prev.endsWith(" ") || prev.length === 0 ? "" : " "}${token}`);
+    }
   };
 
   const createAndSend = async () => {
-    if (!name.trim() || !givingLinkId || !emailSubject.trim() || !emailBodyTemplate.trim() || selectedDonors.length === 0) {
-      toast.error("Fill in a name, giving link, subject, message, and at least one donor.");
+    const messageReady = channel === "TEXT" ? textBodyTemplate.trim() : emailSubject.trim() && emailBodyTemplate.trim();
+    if (!name.trim() || !givingLinkId || !messageReady || selectedDonors.length === 0) {
+      toast.error(
+        channel === "TEXT"
+          ? "Fill in a name, giving link, message, and at least one donor."
+          : "Fill in a name, giving link, subject, message, and at least one donor."
+      );
       return;
     }
     setSubmitting(true);
@@ -110,8 +138,10 @@ export default function GivingCampaignComposer() {
         body: JSON.stringify({
           name,
           givingLinkId,
+          channel,
           emailSubject,
           emailBodyTemplate,
+          textBodyTemplate,
           donorIds: selectedDonors.map((d) => d.id),
         }),
       });
@@ -161,11 +191,34 @@ export default function GivingCampaignComposer() {
           <h3 className="text-sm font-bold text-slate-900 mb-4">Campaign Details</h3>
           <div className="space-y-3">
             <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1.5">Send by</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => switchChannel("EMAIL")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold border transition-colors ${
+                    channel === "EMAIL" ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <Mail className="w-4 h-4" /> Email
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchChannel("TEXT")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold border transition-colors ${
+                    channel === "TEXT" ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4" /> Text
+                </button>
+              </div>
+            </div>
+            <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1">Campaign Name (internal only)</label>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Fall Giving Email Blast"
+                placeholder={channel === "TEXT" ? "Fall Giving Text Blast" : "Fall Giving Email Blast"}
                 className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400"
               />
             </div>
@@ -189,13 +242,15 @@ export default function GivingCampaignComposer() {
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
           <h3 className="text-sm font-bold text-slate-900 mb-1">Recipients</h3>
-          <p className="text-xs text-slate-500 mb-3">Only donors with an email on file can be added.</p>
+          <p className="text-xs text-slate-500 mb-3">
+            {channel === "TEXT" ? "Only donors with a phone number on file can be added." : "Only donors with an email on file can be added."}
+          </p>
           <div className="relative mb-3">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               value={donorQuery}
               onChange={(e) => setDonorQuery(e.target.value)}
-              placeholder="Search donors by name or email…"
+              placeholder={channel === "TEXT" ? "Search donors by name or phone…" : "Search donors by name or email…"}
               className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400"
             />
             {searching && <Loader2 className="w-4 h-4 animate-spin text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />}
@@ -208,7 +263,7 @@ export default function GivingCampaignComposer() {
                     className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex flex-col"
                   >
                     <span className="font-medium text-slate-800">{d.name || "Unnamed donor"}</span>
-                    <span className="text-xs text-slate-500">{d.email}</span>
+                    <span className="text-xs text-slate-500">{channel === "TEXT" ? d.phone : d.email}</span>
                   </button>
                 ))}
               </div>
@@ -220,7 +275,7 @@ export default function GivingCampaignComposer() {
             <div className="flex flex-wrap gap-2">
               {selectedDonors.map((d) => (
                 <span key={d.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-xs font-medium text-slate-700">
-                  {d.name || d.email}
+                  {d.name || (channel === "TEXT" ? d.phone : d.email)}
                   <button onClick={() => removeDonor(d.id)}>
                     <X className="w-3 h-3 text-slate-400 hover:text-slate-700" />
                   </button>
@@ -234,17 +289,19 @@ export default function GivingCampaignComposer() {
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
           <h3 className="text-sm font-bold text-slate-900 mb-3">Message</h3>
           <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Subject</label>
-              <input
-                value={emailSubject}
-                onChange={(e) => setEmailSubject(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400"
-              />
-            </div>
+            {channel === "EMAIL" && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Subject</label>
+                <input
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400"
+                />
+              </div>
+            )}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-slate-500">Body</label>
+                <label className="block text-xs font-semibold text-slate-500">{channel === "TEXT" ? "Text Message" : "Body"}</label>
                 <div className="flex gap-1">
                   {MERGE_FIELDS.map((f) => (
                     <button
@@ -259,12 +316,24 @@ export default function GivingCampaignComposer() {
                   ))}
                 </div>
               </div>
-              <textarea
-                value={emailBodyTemplate}
-                onChange={(e) => setEmailBodyTemplate(e.target.value)}
-                rows={8}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400 font-mono"
-              />
+              {channel === "TEXT" ? (
+                <>
+                  <textarea
+                    value={textBodyTemplate}
+                    onChange={(e) => setTextBodyTemplate(e.target.value)}
+                    rows={5}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400 font-mono"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">{textBodyTemplate.length} characters (before merge fields expand)</p>
+                </>
+              ) : (
+                <textarea
+                  value={emailBodyTemplate}
+                  onChange={(e) => setEmailBodyTemplate(e.target.value)}
+                  rows={8}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400 font-mono"
+                />
+              )}
             </div>
           </div>
         </div>
@@ -281,15 +350,27 @@ export default function GivingCampaignComposer() {
       <div className="lg:sticky lg:top-6 self-start">
         <div className="bg-slate-50 rounded-2xl border border-slate-200 p-6">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">Live Preview</p>
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-100">
-              <p className="text-[11px] text-slate-400">Subject</p>
-              <p className="text-sm font-semibold text-slate-900">{preview?.subject || "—"}</p>
+          {channel === "TEXT" ? (
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center gap-1.5 mb-2 text-slate-400">
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span className="text-[11px] font-semibold uppercase tracking-wide">Text Message</span>
+              </div>
+              <div className="bg-blue-600 text-white text-sm rounded-2xl rounded-bl-sm px-4 py-2.5 max-w-[85%] whitespace-pre-wrap">
+                {preview?.body || "—"}
+              </div>
             </div>
-            <div className="px-4 py-4">
-              <p className="text-sm text-slate-700 whitespace-pre-wrap">{preview?.body || "—"}</p>
+          ) : (
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-100">
+                <p className="text-[11px] text-slate-400">Subject</p>
+                <p className="text-sm font-semibold text-slate-900">{preview?.subject || "—"}</p>
+              </div>
+              <div className="px-4 py-4">
+                <p className="text-sm text-slate-700 whitespace-pre-wrap">{preview?.body || "—"}</p>
+              </div>
             </div>
-          </div>
+          )}
           <p className="text-xs text-slate-500 mt-3">
             Shown with sample data — each real recipient gets their own name and a unique tracked link.
           </p>

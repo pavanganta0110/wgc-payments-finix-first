@@ -5,6 +5,9 @@ import { isAuthError } from "@/lib/auth/errors";
 import { getDonorPermissions } from "@/lib/donors/donorPermissions";
 import { generateCampaignTrackingToken } from "@/lib/giving/campaignTemplate";
 import { logDashboardAction } from "@/lib/dashboardAudit";
+import { isSmsConfigured } from "@/lib/sms/sendText";
+
+const CHANNELS = new Set(["EMAIL", "TEXT"]);
 
 /** List this church's campaigns, most recent first, with a lightweight
  * recipient-status rollup (no per-recipient rows — see [id]/route.ts for
@@ -50,11 +53,11 @@ export async function GET() {
 }
 
 /** Creates a DRAFT campaign and seeds one GivingCampaignRecipient per
- * requested donor. Never sends anything — see [id]/send-chunk/route.ts.
- * A donor with no email on file is skipped (silently — this is an EMAIL
- * campaign; a future SMS campaign would apply the reverse filter), which
- * is why the response reports back how many of the requested donors
- * actually became real recipients. */
+ * requested donor. Never sends anything — see [id]/send-chunk/route.ts. A
+ * donor missing the contact info the chosen channel needs (email for
+ * EMAIL, a US-parseable phone for TEXT) is skipped silently, which is why
+ * the response reports back how many of the requested donors actually
+ * became real recipients. */
 export async function POST(req: Request) {
   let auth;
   try {
@@ -73,12 +76,23 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const givingLinkId = typeof body.givingLinkId === "string" ? body.givingLinkId : "";
+  const channel = typeof body.channel === "string" && CHANNELS.has(body.channel) ? body.channel : "EMAIL";
   const emailSubject = typeof body.emailSubject === "string" ? body.emailSubject.trim() : "";
   const emailBodyTemplate = typeof body.emailBodyTemplate === "string" ? body.emailBodyTemplate : "";
+  const textBodyTemplate = typeof body.textBodyTemplate === "string" ? body.textBodyTemplate.trim() : "";
   const donorIds: string[] = Array.isArray(body.donorIds) ? body.donorIds.filter((id: unknown) => typeof id === "string") : [];
 
-  if (!name || !givingLinkId || !emailSubject || !emailBodyTemplate) {
-    return NextResponse.json({ error: "Name, giving link, subject, and message are all required." }, { status: 400 });
+  if (channel === "EMAIL" && (!emailSubject || !emailBodyTemplate)) {
+    return NextResponse.json({ error: "A subject and message are required." }, { status: 400 });
+  }
+  if (channel === "TEXT" && !textBodyTemplate) {
+    return NextResponse.json({ error: "A message is required." }, { status: 400 });
+  }
+  if (channel === "TEXT" && !isSmsConfigured()) {
+    return NextResponse.json({ error: "Text messaging is not configured for this organization." }, { status: 400 });
+  }
+  if (!name || !givingLinkId) {
+    return NextResponse.json({ error: "Name and giving link are required." }, { status: 400 });
   }
   if (donorIds.length === 0) {
     return NextResponse.json({ error: "Select at least one donor." }, { status: 400 });
@@ -89,13 +103,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Giving link not found." }, { status: 404 });
   }
 
-  const donors = await prisma.donor.findMany({
-    where: { id: { in: donorIds }, churchId: auth.churchId, email: { not: null } },
-    select: { id: true, name: true, email: true },
-  });
+  const donors =
+    channel === "TEXT"
+      ? await prisma.donor.findMany({
+          where: { id: { in: donorIds }, churchId: auth.churchId, normalizedPhone: { not: null } },
+          select: { id: true, name: true, normalizedPhone: true },
+        })
+      : await prisma.donor.findMany({
+          where: { id: { in: donorIds }, churchId: auth.churchId, email: { not: null } },
+          select: { id: true, name: true, email: true },
+        });
 
   if (donors.length === 0) {
-    return NextResponse.json({ error: "None of the selected donors have an email address on file." }, { status: 400 });
+    return NextResponse.json(
+      { error: channel === "TEXT" ? "None of the selected donors have a valid phone number on file." : "None of the selected donors have an email address on file." },
+      { status: 400 }
+    );
   }
 
   const campaign = await prisma.givingCampaign.create({
@@ -103,22 +126,33 @@ export async function POST(req: Request) {
       churchId: auth.churchId,
       givingLinkId: link.id,
       name,
-      channel: "EMAIL",
-      emailSubject,
-      emailBodyTemplate,
+      channel,
+      emailSubject: channel === "EMAIL" ? emailSubject : null,
+      emailBodyTemplate: channel === "EMAIL" ? emailBodyTemplate : null,
+      textBodyTemplate: channel === "TEXT" ? textBodyTemplate : null,
       createdByUserId: auth.userId,
     },
   });
 
   await prisma.givingCampaignRecipient.createMany({
-    data: donors.map((d) => ({
-      campaignId: campaign.id,
-      churchId: auth.churchId,
-      donorId: d.id,
-      trackingToken: generateCampaignTrackingToken(),
-      recipientEmail: d.email,
-      recipientName: d.name,
-    })),
+    data:
+      channel === "TEXT"
+        ? (donors as { id: string; name: string | null; normalizedPhone: string | null }[]).map((d) => ({
+            campaignId: campaign.id,
+            churchId: auth.churchId,
+            donorId: d.id,
+            trackingToken: generateCampaignTrackingToken(),
+            recipientPhone: d.normalizedPhone,
+            recipientName: d.name,
+          }))
+        : (donors as { id: string; name: string | null; email: string | null }[]).map((d) => ({
+            campaignId: campaign.id,
+            churchId: auth.churchId,
+            donorId: d.id,
+            trackingToken: generateCampaignTrackingToken(),
+            recipientEmail: d.email,
+            recipientName: d.name,
+          })),
   });
 
   await logDashboardAction({
@@ -129,7 +163,7 @@ export async function POST(req: Request) {
     action: "giving_campaign.created",
     entityType: "GivingCampaign",
     entityId: campaign.id,
-    metadata: { name, givingLinkId, requestedCount: donorIds.length, recipientCount: donors.length },
+    metadata: { name, givingLinkId, channel, requestedCount: donorIds.length, recipientCount: donors.length },
     req,
   });
 

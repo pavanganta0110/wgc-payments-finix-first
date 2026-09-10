@@ -5,6 +5,7 @@ import { isAuthError } from "@/lib/auth/errors";
 import { getDonorPermissions } from "@/lib/donors/donorPermissions";
 import { renderCampaignTemplate } from "@/lib/giving/campaignTemplate";
 import { sendWgcEmail } from "@/lib/email";
+import { sendText } from "@/lib/sms/sendText";
 import { logDashboardAction } from "@/lib/dashboardAudit";
 
 // Same chunk size as bulkStatementJobs.ts — small enough that one call
@@ -49,35 +50,46 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   for (const recipient of pending) {
-    if (!recipient.recipientEmail) {
-      await prisma.givingCampaignRecipient.update({ where: { id: recipient.id }, data: { sendStatus: "FAILED", sendError: "No email on file" } });
-      continue;
-    }
     const vars = {
       firstName: recipient.recipientName?.split(" ")[0] || "there",
       churchName,
       link: `${appUrl}/gc/${recipient.trackingToken}`,
     };
-    const subject = renderCampaignTemplate(campaign.emailSubject || "", vars);
-    const bodyHtml = renderCampaignTemplate(campaign.emailBodyTemplate || "", vars);
 
-    const result = await sendWgcEmail({
-      to: recipient.recipientEmail,
-      subject,
-      title: subject,
-      badgeText: `A message from ${churchName}`,
-      badgeColor: "#0B5DBC",
-      bodyHtml,
-      log: {
-        churchId: auth.churchId,
-        donorId: recipient.donorId,
-        recipientName: recipient.recipientName,
-        category: "MERCHANT_NOTIFICATION",
-        relatedEntityType: "GivingCampaignRecipient",
-        relatedEntityId: recipient.id,
-        createdByUserId: auth.userId,
-      },
-    });
+    let result: { success: boolean; error?: string };
+
+    if (campaign.channel === "TEXT") {
+      if (!recipient.recipientPhone) {
+        await prisma.givingCampaignRecipient.update({ where: { id: recipient.id }, data: { sendStatus: "FAILED", sendError: "No phone number on file" } });
+        continue;
+      }
+      const smsBody = renderCampaignTemplate(campaign.textBodyTemplate || "", vars);
+      result = await sendText(recipient.recipientPhone, smsBody);
+    } else {
+      if (!recipient.recipientEmail) {
+        await prisma.givingCampaignRecipient.update({ where: { id: recipient.id }, data: { sendStatus: "FAILED", sendError: "No email on file" } });
+        continue;
+      }
+      const subject = renderCampaignTemplate(campaign.emailSubject || "", vars);
+      const bodyHtml = renderCampaignTemplate(campaign.emailBodyTemplate || "", vars);
+      result = await sendWgcEmail({
+        to: recipient.recipientEmail,
+        subject,
+        title: subject,
+        badgeText: `A message from ${churchName}`,
+        badgeColor: "#0B5DBC",
+        bodyHtml,
+        log: {
+          churchId: auth.churchId,
+          donorId: recipient.donorId,
+          recipientName: recipient.recipientName,
+          category: "MERCHANT_NOTIFICATION",
+          relatedEntityType: "GivingCampaignRecipient",
+          relatedEntityId: recipient.id,
+          createdByUserId: auth.userId,
+        },
+      });
+    }
 
     await prisma.givingCampaignRecipient.update({
       where: { id: recipient.id },
