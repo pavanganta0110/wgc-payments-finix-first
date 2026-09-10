@@ -52,6 +52,7 @@ export default function GivingCampaignComposer() {
   const [submitting, setSubmitting] = useState(false);
   const [sendProgress, setSendProgress] = useState<{ sent: number; total: number } | null>(null);
   const [smsAddonActive, setSmsAddonActive] = useState<boolean | null>(null);
+  const [smsConfigured, setSmsConfigured] = useState(true);
 
   useEffect(() => {
     fetch("/api/merchant/giving-links")
@@ -63,7 +64,10 @@ export default function GivingCampaignComposer() {
   useEffect(() => {
     fetch("/api/merchant/sms-addon")
       .then((res) => res.json())
-      .then((data) => setSmsAddonActive(Boolean(data.active)))
+      .then((data) => {
+        setSmsAddonActive(Boolean(data.active));
+        setSmsConfigured(Boolean(data.smsConfigured));
+      })
       .catch(() => setSmsAddonActive(false));
   }, []);
 
@@ -102,7 +106,7 @@ export default function GivingCampaignComposer() {
   const switchChannel = (next: Channel) => {
     if (next === channel) return;
     if (next === "TEXT" && smsAddonActive === false) {
-      toast.error("Text messaging is a paid add-on — subscribe from Billing Plan to unlock it.");
+      toast.error(smsConfigured ? "Text messaging is a paid add-on — subscribe from Billing Plan to unlock it." : "Text messaging isn't available yet — coming soon.");
       return;
     }
     setChannel(next);
@@ -228,11 +232,17 @@ export default function GivingCampaignComposer() {
               </div>
               {smsAddonActive === false && (
                 <p className="text-xs text-slate-500 mt-1.5">
-                  Text messaging is a paid add-on.{" "}
-                  <Link href="/merchant/subscription" className="text-blue-600 hover:underline">
-                    Subscribe from Billing Plan
-                  </Link>{" "}
-                  to unlock it.
+                  {smsConfigured ? (
+                    <>
+                      Text messaging is a paid add-on.{" "}
+                      <Link href="/merchant/subscription" className="text-blue-600 hover:underline">
+                        Subscribe from Billing Plan
+                      </Link>{" "}
+                      to unlock it.
+                    </>
+                  ) : (
+                    "Text messaging isn't available yet — coming soon."
+                  )}
                 </p>
               )}
             </div>

@@ -3,6 +3,7 @@ import { finixClient } from "@/lib/finix/client";
 import { getSmsAddonPlan } from "@/lib/billing/smsAddonPlans";
 import { resolveProcessingMerchant, buildTrustedFinixTags, buildIdempotencyKey } from "@/lib/billing/paymentRouting";
 import { logBillingAuditEvent } from "@/lib/billing/billingAudit";
+import { isSmsConfigured } from "@/lib/sms/sendText";
 
 /**
  * Activates an organization's SMS add-on subscription — a second,
@@ -35,6 +36,15 @@ export interface ActivateSmsAddonInput {
 }
 
 export async function activateSmsAddonSubscription(input: ActivateSmsAddonInput) {
+  // Refuse to start charging for a feature that can't actually send
+  // anything yet — Twilio isn't configured in every environment
+  // (TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_FROM_NUMBER). Checked here,
+  // not just in the UI, since this is the one function that actually moves
+  // money — any future caller gets the same guarantee.
+  if (!isSmsConfigured()) {
+    throw new SmsAddonSubscriptionError("Text messaging isn't available yet — coming soon.");
+  }
+
   const plan = getSmsAddonPlan(input.planCode);
   if (!plan) {
     throw new SmsAddonSubscriptionError(`Unknown SMS add-on plan code: ${input.planCode}`);

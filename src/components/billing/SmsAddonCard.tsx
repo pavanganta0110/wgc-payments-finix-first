@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { MessageSquare, Check, ShieldCheck } from "lucide-react";
+import { MessageSquare, Check, ShieldCheck, Clock } from "lucide-react";
 import StateBadge from "@/components/merchant/StateBadge";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,7 @@ interface SmsAddonStatus {
   usage: { textsSent: number; billingPeriod: string };
   plans: SmsAddonPlan[];
   canManageSubscription: boolean;
+  smsConfigured: boolean;
 }
 
 function cents(n: number) {
@@ -111,6 +112,17 @@ export default function SmsAddonCard() {
             </p>
           </div>
         </>
+      ) : !status.smsConfigured ? (
+        <div className="flex items-start gap-3 rounded-xl bg-slate-50 border border-slate-100 px-4 py-4">
+          <Clock className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-slate-700">Coming Soon</p>
+            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+              Text messaging isn&rsquo;t available to subscribe to yet. We&rsquo;ll turn this on as soon as it&rsquo;s ready — nothing to do on
+              your end in the meantime.
+            </p>
+          </div>
+        </div>
       ) : (
         <>
           <p className="text-sm text-slate-500 mb-5">

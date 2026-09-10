@@ -5,6 +5,7 @@ import { getSmsAddonSubscription } from "@/lib/billing/smsAddonSubscriptionServi
 import { getSmsUsageForPeriod, resolveCurrentMonthRange } from "@/lib/giving/smsUsage";
 import { SMS_ADDON_PLANS } from "@/lib/billing/smsAddonPlans";
 import { hasPermission } from "@/lib/auth/permissions";
+import { isSmsConfigured } from "@/lib/sms/sendText";
 
 /** Status the composer's Text toggle and the Billing Plan page both read:
  * whether the org can send texts right now, and how much of this month's
@@ -38,5 +39,11 @@ export async function GET() {
     usage: { textsSent, billingPeriod },
     plans: Object.values(SMS_ADDON_PLANS),
     canManageSubscription: hasPermission(auth, "canManageSubscription"),
+    // Twilio isn't wired up in every environment yet (TWILIO_ACCOUNT_SID /
+    // TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER) — the UI shows "Coming Soon"
+    // instead of a live Subscribe button while this is false, and the
+    // subscribe route itself refuses to activate (and start charging) a
+    // feature that can't actually send anything yet.
+    smsConfigured: isSmsConfigured(),
   });
 }
