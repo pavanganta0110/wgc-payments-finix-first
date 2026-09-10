@@ -18,6 +18,10 @@
       "schedule": "0 16 1 * *"
     },
     {
+      "path": "/api/cron/sms-addon-overage-check",
+      "schedule": "5 16 1 * *"
+    },
+    {
       "path": "/api/cron/resync-transfer-fees",
       "schedule": "0 17 * * *"
     },

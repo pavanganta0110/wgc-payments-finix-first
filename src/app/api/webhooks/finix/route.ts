@@ -1507,6 +1507,17 @@ export async function POST(req: Request) {
       if (handled) {
         return NextResponse.json({ message: "WGC billing event processed" }, { status: 200 });
       }
+
+      // Same finixSubscriptionId-matching shape as above, for the separate
+      // SMS add-on subscription table — see that handler's doc comment for
+      // why it's a distinct function rather than a branch inside the one
+      // above (SmsAddonSubscription is a separate table from
+      // WgcSubscription, not a second row on it).
+      const { handleSmsAddonSubscriptionWebhookEvent } = await import("@/lib/billing/smsAddonSubscriptionWebhook");
+      const smsAddonHandled = await handleSmsAddonSubscriptionWebhookEvent(eventType, data);
+      if (smsAddonHandled) {
+        return NextResponse.json({ message: "SMS add-on billing event processed" }, { status: 200 });
+      }
     } catch (wgcBillingError) {
       console.error("WGC subscription webhook handling failed:", wgcBillingError);
       // Fall through to the existing logic below rather than failing the

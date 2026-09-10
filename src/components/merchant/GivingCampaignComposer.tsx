@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import toast from "react-hot-toast";
-import { Loader2, X, Search, Mail, MessageSquare } from "lucide-react";
+import { Loader2, X, Search, Mail, MessageSquare, Lock } from "lucide-react";
 
 interface GivingLinkOption {
   id: string;
@@ -50,12 +51,20 @@ export default function GivingCampaignComposer() {
   const [preview, setPreview] = useState<{ subject: string | null; body: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sendProgress, setSendProgress] = useState<{ sent: number; total: number } | null>(null);
+  const [smsAddonActive, setSmsAddonActive] = useState<boolean | null>(null);
 
   useEffect(() => {
     fetch("/api/merchant/giving-links")
       .then((res) => res.json())
       .then((data) => setLinks((data.links || []).filter((l: GivingLinkOption) => l.status === "ACTIVE")))
       .catch(() => toast.error("Failed to load giving links"));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/merchant/sms-addon")
+      .then((res) => res.json())
+      .then((data) => setSmsAddonActive(Boolean(data.active)))
+      .catch(() => setSmsAddonActive(false));
   }, []);
 
   useEffect(() => {
@@ -92,6 +101,10 @@ export default function GivingCampaignComposer() {
 
   const switchChannel = (next: Channel) => {
     if (next === channel) return;
+    if (next === "TEXT" && smsAddonActive === false) {
+      toast.error("Text messaging is a paid add-on — subscribe from Billing Plan to unlock it.");
+      return;
+    }
     setChannel(next);
     // A donor valid for one channel (has an email) may not be valid for the
     // other (no phone on file, or vice versa) — clearing avoids silently
@@ -209,9 +222,19 @@ export default function GivingCampaignComposer() {
                     channel === "TEXT" ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"
                   }`}
                 >
-                  <MessageSquare className="w-4 h-4" /> Text
+                  {smsAddonActive === false ? <Lock className="w-3.5 h-3.5" /> : <MessageSquare className="w-4 h-4" />}
+                  Text
                 </button>
               </div>
+              {smsAddonActive === false && (
+                <p className="text-xs text-slate-500 mt-1.5">
+                  Text messaging is a paid add-on.{" "}
+                  <Link href="/merchant/subscription" className="text-blue-600 hover:underline">
+                    Subscribe from Billing Plan
+                  </Link>{" "}
+                  to unlock it.
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1">Campaign Name (internal only)</label>

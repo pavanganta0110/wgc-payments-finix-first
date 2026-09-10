@@ -1370,7 +1370,8 @@ model BillingCharge {
   id                  String    @id @default(cuid())
   organizationId      String
   // WGC_PLATFORM_SUBSCRIPTION | WGC_INVOICE_ADD_ON | WGC_INVOICE_USAGE |
-  // WGC_PLAN_UPGRADE | PROMOTIONAL_CREDIT | BILLING_ADJUSTMENT | REFUND
+  // WGC_PLAN_UPGRADE | PROMOTIONAL_CREDIT | BILLING_ADJUSTMENT | REFUND |
+  // SMS_ADDON_SUBSCRIPTION | SMS_ADDON_OVERAGE
   chargeType          String
   // e.g. "2027-02" for a monthly billing period; null for one-off charges.
   billingPeriod       String?
@@ -4685,4 +4686,90 @@ model GivingCampaignRecipient {
   createdAt DateTime @default(now())
 
   @@index([churchId, campaignId])
+}
+
+// =============================================================================
+// SMS Add-on billing — text-message sending (Giving Campaign text channel
+// and the giving-link Share modal's Send Text tab) is gated behind its own
+// paid subscription, separate from the WGC platform subscription
+// (WgcSubscription). One row per organization, same lifecycle shape as
+// WgcSubscription (see activateWgcSubscription's doc comment for the real
+// Finix field semantics this mirrors) but its OWN Finix subscription object
+// — organizations don't get a second line item bolted onto their platform
+// subscription, they get a second, independent one billed to the same
+// on-file payment method.
+// =============================================================================
+
+model SmsAddonSubscription {
+  id             String @id @default(cuid())
+  organizationId String @unique
+  planCode       String // SMS_STARTER | SMS_GROWTH — see smsAddonPlans.ts for the definitions this references
+  includedTexts  Int
+  // Snapshotted from the plan at activation time, like WgcSubscription
+  // snapshots WgcPricingVersion — a later change to smsAddonPlans.ts must
+  // never retroactively change what an already-subscribed org is billed.
+  monthlyAmountCents Int
+  overageRateCents   Int
+  currency           String @default("USD")
+
+  finixSubscriptionId        String? @unique
+  billingIdentityId          String?
+  billingPaymentInstrumentId String?
+
+  // INCOMPLETE | ACTIVE | PAST_DUE | CANCELED — INCOMPLETE only ever exists
+  // transiently between the upsert and the Finix call succeeding, same as
+  // WgcSubscription; the send-time gate treats only ACTIVE as usable.
+  status String @default("INCOMPLETE")
+
+  lastChargeAt      DateTime?
+  pastDueAt         DateTime?
+  gracePeriodEndsAt DateTime?
+  canceledAt        DateTime?
+  createdByUserId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+// One row per organization per calendar-month billing period that ended
+// over its included-texts allowance. Deliberately review-first, matching
+// PromoShortfallCharge's design: the monthly detection cron only ever
+// creates a FLAGGED row here — see smsAddonOverageCharge.ts for the actual
+// (admin-triggered) charge/waive actions. Nothing in detection ever calls
+// Finix or moves money.
+model SmsAddonOverageCharge {
+  id             String @id @default(cuid())
+  organizationId String
+  // e.g. "2026-09" — the calendar month that was found over-allowance.
+  billingPeriod String
+
+  textsIncluded    Int
+  textsSent        Int
+  overageTexts     Int
+  overageRateCents Int
+  // Snapshotted at detection time so a later plan-price edit can never
+  // retroactively change what an admin's "Charge now" action actually charges.
+  chargeAmountCents Int
+  currency          String @default("USD")
+
+  // FLAGGED | CHARGED | CHARGE_FAILED | WAIVED
+  status          String    @default("FLAGGED")
+  finixTransferId String?
+  billingChargeId String?
+  chargedByUserId String?
+  chargedAt       DateTime?
+  waivedByUserId  String?
+  waivedAt        DateTime?
+  waiveReason     String?
+  failureMessage  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, billingPeriod])
+  @@index([status])
+  @@index([organizationId])
 }

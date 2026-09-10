@@ -11,6 +11,7 @@ import RefreshPricingButton from "@/components/merchant/RefreshPricingButton";
 import { WGC_PRICING } from "@/lib/giving/feeCalculator";
 import CancelSubscriptionButton from "@/components/billing/CancelSubscriptionButton";
 import ActivationForm from "@/components/billing/ActivationForm";
+import SmsAddonCard from "@/components/billing/SmsAddonCard";
 import { createBillingActivationToken } from "@/lib/billing/billingActivation";
 import { redirect } from "next/navigation";
 
@@ -175,6 +176,8 @@ export default async function SubscriptionPage() {
           )}
         </div>
       )}
+
+      {billingAccount?.status === "ACTIVE" && <SmsAddonCard />}
 
       {canViewHistory && charges.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden mb-6">

@@ -6,6 +6,7 @@ import { getDonorPermissions } from "@/lib/donors/donorPermissions";
 import { generateCampaignTrackingToken } from "@/lib/giving/campaignTemplate";
 import { logDashboardAction } from "@/lib/dashboardAudit";
 import { isSmsConfigured } from "@/lib/sms/sendText";
+import { isSmsAddonActive } from "@/lib/billing/smsAddonSubscriptionService";
 
 const CHANNELS = new Set(["EMAIL", "TEXT"]);
 
@@ -90,6 +91,9 @@ export async function POST(req: Request) {
   }
   if (channel === "TEXT" && !isSmsConfigured()) {
     return NextResponse.json({ error: "Text messaging is not configured for this organization." }, { status: 400 });
+  }
+  if (channel === "TEXT" && !(await isSmsAddonActive(auth.churchId))) {
+    return NextResponse.json({ error: "Text messaging is a paid add-on — subscribe from Billing Plan to send texts." }, { status: 402 });
   }
   if (!name || !givingLinkId) {
     return NextResponse.json({ error: "Name and giving link are required." }, { status: 400 });

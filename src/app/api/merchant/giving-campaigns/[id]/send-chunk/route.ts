@@ -6,6 +6,7 @@ import { getDonorPermissions } from "@/lib/donors/donorPermissions";
 import { renderCampaignTemplate } from "@/lib/giving/campaignTemplate";
 import { sendWgcEmail } from "@/lib/email";
 import { sendText } from "@/lib/sms/sendText";
+import { isSmsAddonActive } from "@/lib/billing/smsAddonSubscriptionService";
 import { logDashboardAction } from "@/lib/dashboardAudit";
 
 // Same chunk size as bulkStatementJobs.ts — small enough that one call
@@ -34,6 +35,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   if (campaign.status === "SENT") {
     return NextResponse.json({ done: true, campaign });
+  }
+  // Defense in depth — the create route already checked this before the
+  // campaign existed, but a chunked send can span minutes and the add-on
+  // subscription could lapse (payment failure, cancellation) between
+  // chunks. Leaves remaining recipients PENDING rather than FAILED, since
+  // this is a billing-state problem, not something wrong with the send.
+  if (campaign.channel === "TEXT" && !(await isSmsAddonActive(auth.churchId))) {
+    return NextResponse.json({ error: "Text messaging add-on is no longer active — resolve billing to continue sending." }, { status: 402 });
   }
 
   const church = await prisma.church.findUnique({ where: { id: auth.churchId }, select: { name: true } });
