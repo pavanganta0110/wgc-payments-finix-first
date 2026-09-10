@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, type SessionPayload } from "@/lib/auth/session";
+import { maskPhone } from "@/lib/auth/mfaCode";
+import { isSmsConfigured } from "@/lib/sms/sendText";
 
 // GET: retrieve login methods and recent activity
 export async function GET() {
@@ -12,7 +14,7 @@ export async function GET() {
 
     const user = await prisma.user.findUnique({
       where: { id: session.userId },
-      select: { passwordHash: true },
+      select: { passwordHash: true, mfaEnabled: true, phone: true },
     });
 
     if (!user) {
@@ -35,6 +37,9 @@ export async function GET() {
       hasPassword: user.passwordHash !== null,
       recentActivity,
       recentAuthTime: session.authTime || null,
+      mfaEnabled: user.mfaEnabled,
+      maskedPhone: user.phone ? maskPhone(user.phone) : null,
+      mfaAvailable: isSmsConfigured(),
     });
   } catch (err) {
     console.error("Failed to fetch auth accounts info:", err);

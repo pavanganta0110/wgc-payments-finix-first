@@ -44,6 +44,15 @@ function AuthOptionsInner({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [reauthHasPassword, setReauthHasPassword] = useState(true);
 
+  // MFA step — set once /api/merchant/login responds with mfaRequired,
+  // replacing the email/password form with a code-entry form until it's
+  // verified. Applies to both a normal login and a reauth attempt (both
+  // POST the same /api/merchant/login), which is intentional: a step-up
+  // reauth for a sensitive action should be at least as strong as the
+  // original login, not weaker.
+  const [mfaChallenge, setMfaChallenge] = useState<{ challengeId: string; maskedPhone: string } | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+
   // Error handling from URL
   useEffect(() => {
     const errorMsg = searchParams.get("error");
@@ -150,6 +159,12 @@ function AuthOptionsInner({
         throw new Error(data.error || "Authentication failed.");
       }
 
+      if (data.mfaRequired) {
+        setMfaChallenge({ challengeId: data.challengeId, maskedPhone: data.maskedPhone });
+        setAuthLoading(null);
+        return;
+      }
+
       toast.success("Success!");
       // Redirect
       const finalDest = redirectTo || "/merchant/dashboard";
@@ -161,10 +176,76 @@ function AuthOptionsInner({
     }
   };
 
+  const handleMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mfaChallenge || authLoading) return;
+    setAuthLoading("email");
+    try {
+      const res = await fetch("/api/merchant/login/mfa-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeId: mfaChallenge.challengeId, code: mfaCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Verification failed.");
+
+      toast.success("Success!");
+      const finalDest = redirectTo || "/merchant/dashboard";
+      router.replace(finalDest);
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Incorrect code");
+      setAuthLoading(null);
+    }
+  };
+
   if (loadingConfig) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+  if (mfaChallenge) {
+    return (
+      <div className="w-full max-w-md mx-auto space-y-6">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">Enter your verification code</h1>
+          <p className="text-slate-600 text-sm">We texted a 6-digit code to {mfaChallenge.maskedPhone}.</p>
+        </div>
+        <form onSubmit={handleMfaSubmit} className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 space-y-5">
+          <div>
+            <label className="block text-sm font-semibold mb-2">Verification Code</label>
+            <input
+              required
+              autoFocus
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={mfaCode}
+              onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))}
+              className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-[#eab308] text-center text-lg tracking-[0.3em]"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={!!authLoading || mfaCode.length !== 6}
+            className="w-full px-6 py-3 rounded-xl font-bold text-slate-900 metallic-gold shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {authLoading === "email" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMfaChallenge(null);
+              setMfaCode("");
+            }}
+            className="w-full text-xs text-slate-500 hover:text-slate-900"
+          >
+            Back to login
+          </button>
+        </form>
       </div>
     );
   }

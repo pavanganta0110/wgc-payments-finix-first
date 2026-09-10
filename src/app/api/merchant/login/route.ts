@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/auth/password";
-import { setSessionCookie, type SessionPayload } from "@/lib/auth/session";
 import { checkMerchantAuthRateLimit } from "@/lib/auth/merchantAuthRateLimit";
-import { cookies } from "next/headers";
+import { completeMerchantLogin } from "@/lib/auth/completeMerchantLogin";
+import { generateMfaCode, generateMfaChallengeId, maskPhone, MFA_CODE_TTL_MINUTES } from "@/lib/auth/mfaCode";
+import { getSmsProvider } from "@/lib/sms/smsProvider";
 
 export async function POST(req: Request) {
   try {
@@ -38,71 +39,34 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
 
-    await setSessionCookie({
-      userId: user.id,
-      email: user.email,
-      role: user.role as SessionPayload["role"],
-      churchId: user.churchId,
-      authVersion: user.authVersion,
-    });
-
-    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-
-    // Handle account linking if a pending link cookie is present
-    const cookieStore = await cookies();
-    const pendingLinkCookie = cookieStore.get("wgc_pending_link")?.value;
-    if (pendingLinkCookie) {
-      try {
-        const pendingLink = JSON.parse(pendingLinkCookie);
-        if (pendingLink.email === user.email) {
-          // Link provider account
-          await prisma.authAccount.upsert({
-            where: { provider_providerAccountId: { provider: pendingLink.provider, providerAccountId: pendingLink.providerAccountId } },
-            create: {
-              userId: user.id,
-              provider: pendingLink.provider,
-              providerAccountId: pendingLink.providerAccountId,
-              providerEmail: pendingLink.providerEmail,
-              lastLoginAt: new Date(),
-            },
-            update: {
-              userId: user.id,
-              providerEmail: pendingLink.providerEmail,
-              lastLoginAt: new Date(),
-            },
-          });
-
-          // Log Audit event
-          if (user.churchId) {
-            await prisma.dashboardAuditLog.create({
-              data: {
-                churchId: user.churchId,
-                actorUserId: user.id,
-                actorEmail: user.email,
-                actorRole: user.role,
-                action: `auth.${pendingLink.provider}_account_linked`,
-                metadata: { provider: pendingLink.provider, providerEmail: pendingLink.providerEmail },
-                createdAt: new Date(),
-              },
-            });
-          } else {
-            await prisma.auditLog.create({
-              data: {
-                action: `auth.${pendingLink.provider}_account_linked`,
-                actorEmail: user.email,
-                metadata: { provider: pendingLink.provider, providerEmail: pendingLink.providerEmail },
-                createdAt: new Date(),
-              },
-            });
-          }
-
-          cookieStore.delete("wgc_pending_link");
-        }
-      } catch (err) {
-        console.error("Account linking failed during login:", err);
+    if (user.mfaEnabled) {
+      if (!user.phone) {
+        // Shouldn't happen (enrollment always sets both together), but
+        // fail toward "let support sort it out" rather than locking the
+        // user out with no code ever sendable.
+        console.error(`MFA enabled with no phone on file for user ${user.id}`);
+        return NextResponse.json({ error: "Two-factor setup is incomplete on this account. Contact WGC Payments Support." }, { status: 500 });
       }
+      const { code, codeHash } = generateMfaCode();
+      const challengeId = generateMfaChallengeId();
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          mfaCodeHash: codeHash,
+          mfaCodeExpiresAt: new Date(Date.now() + MFA_CODE_TTL_MINUTES * 60 * 1000),
+          mfaCodeAttempts: 0,
+          mfaLoginChallengeId: challengeId,
+        },
+      });
+      const smsResult = await getSmsProvider().send(user.phone, `Your WGC Payments verification code is ${code}. It expires in ${MFA_CODE_TTL_MINUTES} minutes.`);
+      if (!smsResult.success) {
+        console.error(`Failed to send MFA login code to user ${user.id}:`, smsResult.error);
+        return NextResponse.json({ error: "Couldn't send your verification code. Please try again in a moment." }, { status: 502 });
+      }
+      return NextResponse.json({ mfaRequired: true, challengeId, maskedPhone: maskPhone(user.phone) });
     }
 
+    await completeMerchantLogin(user);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("Church login failed:", error);

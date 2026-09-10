@@ -2414,6 +2414,26 @@ model User {
   setPasswordTokenHash      String?
   setPasswordTokenExpiresAt DateTime?
   lastLoginAt               DateTime?
+  // SMS-based MFA (Settings -> Security). phone/phoneVerifiedAt are the
+  // confirmed, active number once enrollment completes; pendingPhone holds
+  // the number being verified during enrollment (a code is sent there
+  // before it's trusted). mfaCodeHash/mfaCodeExpiresAt/mfaCodeAttempts are
+  // reused for both enrollment codes and login challenge codes — a user is
+  // never in both states at once, same reuse-one-field-set convention as
+  // setPasswordTokenHash serving both invite-setup and password-reset.
+  // mfaCodeAttempts locks out (forces a fresh code) after repeated wrong
+  // guesses against a 6-digit code, which is otherwise brute-forceable.
+  // mfaLoginChallengeId is the opaque token returned to the client during
+  // login instead of the userId itself, so the mfa-verify step never has
+  // the client echo back a real user id.
+  phone                     String?
+  phoneVerifiedAt           DateTime?
+  pendingPhone              String?
+  mfaEnabled                Boolean    @default(false)
+  mfaCodeHash               String?
+  mfaCodeExpiresAt          DateTime?
+  mfaCodeAttempts           Int        @default(0)
+  mfaLoginChallengeId       String?
   // Team & Access (Settings -> Team). A User with passwordHash null and a
   // live setPasswordTokenHash is "invited, pending" — the exact same
   // pattern already used by forgot-password, reused here rather than
@@ -2448,6 +2468,7 @@ model User {
   authAccounts              AuthAccount[]
 
   @@index([churchId])
+  @@index([mfaLoginChallengeId])
 }
 
 model FinixAuthorization {
