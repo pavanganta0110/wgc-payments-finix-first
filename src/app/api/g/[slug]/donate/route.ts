@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { finixClient } from "@/lib/finix/client";
@@ -848,6 +849,27 @@ async function handleDonate(req: Request, slug: string) {
         await syncPaymentToQuickBooks(newPayment.id);
       } catch (err) {
         console.error("Failed to sync payment to QuickBooks:", err);
+      }
+    }
+
+    // Giving Campaign attribution — if this donor arrived via a campaign's
+    // per-recipient /gc/[token] link (see that route), credit their click
+    // with this payment. Best-effort and silent: absence of the cookie is
+    // the overwhelmingly common case (a normal, non-campaign donation), not
+    // an error. Only ever sets paidAt/paymentId once — a donor re-donating
+    // later in the same 2-hour cookie window shouldn't overwrite their
+    // first attribution with a second, unrelated gift.
+    if (succeeded) {
+      try {
+        const campaignRef = (await cookies()).get("wgc_campaign_ref")?.value;
+        if (campaignRef) {
+          await prisma.givingCampaignRecipient.updateMany({
+            where: { trackingToken: campaignRef, churchId: church.id, paidAt: null },
+            data: { paidAt: new Date(), paymentId: newPayment.id },
+          });
+        }
+      } catch (err) {
+        console.error("Failed to attribute payment to campaign recipient:", err);
       }
     }
 

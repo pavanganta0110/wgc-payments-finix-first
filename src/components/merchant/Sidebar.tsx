@@ -28,6 +28,7 @@ import {
   HandCoins,
   Target,
   Mail,
+  Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import GatewayIcon from "@/components/ui/GatewayIcon";
@@ -83,6 +84,7 @@ export const NAV_ITEMS: NavItem[] = [
   { name: "Subscriptions", href: "/merchant/subscriptions", icon: RefreshCw, section: "Money" },
   { name: "Donors", href: "/merchant/donors", icon: Users, section: "Giving" },
   { name: "Giving Links", href: "/merchant/giving-links", icon: HeartHandshake, section: "Giving" },
+  { name: "Giving Campaigns", href: "/merchant/giving-campaigns", icon: Send, section: "Giving" },
   { name: "External Donations", href: "/merchant/donations/external", icon: HandCoins, section: "Giving" },
   {
     name: "Pledges",

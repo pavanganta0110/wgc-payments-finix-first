@@ -4612,3 +4612,75 @@ model QuickBooksBackfillJob {
 
   @@index([churchId, status])
 }
+
+// =============================================================================
+// Giving Campaigns — bulk-send a giving link to a donor list (email first;
+// schema is channel-agnostic so SMS can reuse it later without a rework),
+// with per-recipient click/payment tracking and a template+live-preview
+// composer. See GivingCampaignRecipient's own comment for how attribution
+// actually works end to end.
+// =============================================================================
+
+model GivingCampaign {
+  id           String  @id @default(cuid())
+  churchId     String
+  givingLinkId String
+  // Internal label only, never shown to a recipient — e.g. "Fall Giving Email Blast".
+  name         String
+  channel      String // EMAIL today; SMS later reuses the same model/flow.
+  emailSubject String?
+  // Merge-field template — {{firstName}}, {{churchName}}, {{link}} — rendered
+  // per recipient at send time (renderCampaignTemplate in campaignTemplate.ts)
+  // and for the live preview before sending.
+  emailBodyTemplate String?
+
+  status          String    @default("DRAFT") // DRAFT | SENDING | SENT | FAILED
+  createdByUserId String?
+  createdAt       DateTime  @default(now())
+  sentAt          DateTime?
+
+  // Recipients are looked up by campaignId (plain string, not a Prisma
+  // relation), matching this schema's established cross-reference
+  // convention elsewhere — see GivingCampaignRecipient below.
+  @@index([churchId, createdAt])
+}
+
+// One row per donor targeted by a campaign. trackingToken is what makes
+// per-recipient attribution possible at all: the link this specific person
+// receives is /gc/{trackingToken}, not the giving link's own URL directly —
+// that redirect route (src/app/gc/[token]/route.ts) records clickedAt and
+// sets a short-lived cookie naming this token before forwarding to the real
+// /g/[slug] page, and the donate route reads that cookie to fill in paidAt/
+// paymentId here once a payment actually completes. Without the unique
+// per-recipient link, there would be no way to tell which of many
+// recipients on the same giving link actually paid.
+model GivingCampaignRecipient {
+  id         String @id @default(cuid())
+  campaignId String
+  // Denormalized for scoping safety — every lookup by trackingToken (an
+  // unauthenticated route, since a donor clicking their link isn't logged
+  // in) re-verifies churchId rather than trusting the token/campaign join
+  // alone, same defense-in-depth convention used elsewhere in this schema.
+  churchId String
+  donorId  String?
+
+  trackingToken  String  @unique
+  recipientEmail String?
+  recipientPhone String?
+  recipientName  String?
+
+  sendStatus String    @default("PENDING") // PENDING | SENT | FAILED
+  sendError  String?
+  sentAt     DateTime?
+
+  clickedAt DateTime?
+  paidAt    DateTime?
+  // Plain-string reference to the Payment this recipient's click eventually
+  // produced, matching this schema's established cross-reference convention
+  // (see Payment.attributedUserId's own comment) rather than a Prisma relation.
+  paymentId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([churchId, campaignId])
+}
