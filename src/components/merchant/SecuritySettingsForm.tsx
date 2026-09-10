@@ -72,11 +72,14 @@ export default function SecuritySettingsForm({ email, lastLoginAt }: { email: st
         return;
       }
       if (!res.ok) throw new Error(data.error || "Failed to change password");
-      toast.success("Password changed");
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      fetchAuthDetails();
+      // A password change invalidates every session for this user,
+      // including this one (see the route's own comment) — staying on
+      // this page would just mean the next request here fails auth with
+      // no explanation. Same redirect used for the other reauth cases in
+      // this file, just proactive instead of reactive to a 403.
+      toast.success("Password changed. Please log in again.");
+      router.push("/merchant/login?reauth=true&redirectTo=/merchant/settings/security&reauthType=change_password");
+      return;
     } catch (err: any) {
       toast.error(err.message || "Failed to change password");
     } finally {

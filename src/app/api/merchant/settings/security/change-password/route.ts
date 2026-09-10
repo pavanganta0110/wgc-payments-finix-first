@@ -4,6 +4,7 @@ import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { logDashboardAction } from "@/lib/dashboardAudit";
 import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { isAuthError } from "@/lib/auth/errors";
+import { bumpAuthVersion } from "@/lib/auth/session";
 
 export async function POST(req: Request) {
   // Team-access Checkpoint 4C: migrated off getSession() to
@@ -44,6 +45,12 @@ export async function POST(req: Request) {
 
   const passwordHash = await hashPassword(newPassword);
   await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+  // A password change must kill every other session (a stolen cookie
+  // otherwise survives its own victim's password change) — this is the
+  // one place in the codebase besides admin-forced actions that does so.
+  // Invalidates the CALLER's own session too, by design; the frontend
+  // should treat a successful response here as "log in again."
+  await bumpAuthVersion(user.id);
 
   await logDashboardAction({
     churchId: auth.churchId,
