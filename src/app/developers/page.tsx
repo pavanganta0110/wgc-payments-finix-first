@@ -6,7 +6,7 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import CTASection from "@/components/ui/CTASection";
 import ScrollFade from "@/components/ui/ScrollFade";
-import { Shield, Zap, Code, Webhook, Database, Layout } from "lucide-react";
+import { Shield, Zap, Code, Database, Layout } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const SECTIONS = [
@@ -15,7 +15,6 @@ const SECTIONS = [
   { id: "merchants", label: "Merchant Onboarding" },
   { id: "payments", label: "Payments & Charges" },
   { id: "recurring", label: "Recurring Engine" },
-  { id: "webhooks", label: "Webhooks" },
 ];
 
 export default function DevelopersPage() {
