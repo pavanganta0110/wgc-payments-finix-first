@@ -96,7 +96,27 @@ export default function PrivacyPage() {
             </section>
 
             <section>
-              <h2 className="text-2xl font-bold text-wgc-navy-900 mb-4 tracking-tight">6. Contact Us</h2>
+              <h2 className="text-2xl font-bold text-wgc-navy-900 mb-4 tracking-tight">6. SMS / Text Messaging</h2>
+              <p>
+                Organizations using WGC Payments may send text messages containing a giving/donation link to their own donors through our
+                platform. By providing a mobile phone number to an organization, or by an organization providing a donor&rsquo;s mobile phone
+                number to us on their behalf, the recipient consents to receive text messages related to that organization&rsquo;s giving
+                communications.
+              </p>
+              <ul className="list-disc pl-6 space-y-2 mt-4">
+                <li>Message frequency varies by organization and campaign; you should not expect a fixed number of messages per month.</li>
+                <li>Message and data rates may apply, depending on your mobile carrier and plan.</li>
+                <li>
+                  Mobile phone numbers collected for text messaging are <strong>not sold, rented, or shared with third parties</strong> for
+                  marketing purposes. Numbers are used solely to deliver the sending organization&rsquo;s own giving communications and are
+                  shared only with our SMS delivery provider as strictly necessary to send those messages.
+                </li>
+                <li>You may opt out of text messages at any time by replying STOP. Reply HELP for assistance.</li>
+              </ul>
+            </section>
+
+            <section>
+              <h2 className="text-2xl font-bold text-wgc-navy-900 mb-4 tracking-tight">7. Contact Us</h2>
               <p>
                 If you have questions about this Privacy Policy or how your data is handled, please contact us at:
               </p>
@@ -111,7 +131,7 @@ export default function PrivacyPage() {
           <div className="absolute -right-20 -bottom-20 opacity-[0.02] pointer-events-none select-none text-[12rem] font-black text-wgc-navy-900 leading-none">PRIVACY</div>
         </div>
 
-        <p className="text-slate-500 font-medium tracking-tight mt-8 opacity-80 text-center text-sm">Last updated July 2026.</p>
+        <p className="text-slate-500 font-medium tracking-tight mt-8 opacity-80 text-center text-sm">Last updated September 2026.</p>
         
         <div className="mt-12 text-center">
           <Link href="/" className="inline-flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-wgc-navy-900 transition-colors uppercase tracking-widest font-mono">
