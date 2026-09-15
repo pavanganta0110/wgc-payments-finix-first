@@ -22,7 +22,6 @@ const ROUTES = [
   "/for/christian-nonprofits",
   "/for/schools",
   "/for/government",
-  "/for/nonprofits",
   "/kansas-city/church-payment-processing",
   "/kansas-city/nonprofit-payment-processing",
   "/kansas-city/tithely-alternative",

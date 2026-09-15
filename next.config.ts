@@ -105,6 +105,13 @@ const nextConfig: NextConfig = {
       // links to the old URL keep working.
       { source: "/six-months-free", destination: "/90-days-free", permanent: true },
       { source: "/six-months-free/signup", destination: "/90-days-free/signup", permanent: true },
+      // Consolidated 2026-09: "Christian Nonprofits" and "Nonprofits" were
+      // two separate, overlapping nav tabs/pages — merged into one page at
+      // the (already-indexed) /for/christian-nonprofits URL, now covering
+      // the full nonprofit audience (including Missions as a section within
+      // it). This redirect preserves any existing links/rankings pointing
+      // at the retired /for/nonprofits URL.
+      { source: "/for/nonprofits", destination: "/for/christian-nonprofits", permanent: true },
     ];
   },
   experimental: {

@@ -17,6 +17,11 @@ export interface AudienceUseCase {
   description: string;
 }
 
+export interface AudienceCategory {
+  title: string;
+  items: string[];
+}
+
 export interface AudienceFAQ {
   question: string;
   answer: string;
@@ -29,6 +34,13 @@ export interface AudienceLandingContent {
   intro: string;
   whoWeServeTitle: string;
   whoWeServe: string[];
+  /** Optional grouped alternative to the flat `whoWeServe` list — when
+   * present, rendered as titled category cards (each with its own bullet
+   * list) instead of the single flat grid. Lets a broader audience page
+   * (e.g. Nonprofits, which covers several distinct sub-audiences like
+   * Missions) give each sub-audience its own clearly labeled section
+   * without every other audience page needing to adopt the same shape. */
+  whoWeServeCategories?: AudienceCategory[];
   useCasesTitle: string;
   useCasesSubtitle: string;
   useCases: AudienceUseCase[];
@@ -50,6 +62,7 @@ export default function AudienceLandingPage({ content }: { content: AudienceLand
     intro,
     whoWeServeTitle,
     whoWeServe,
+    whoWeServeCategories,
     useCasesTitle,
     useCasesSubtitle,
     useCases,
@@ -127,14 +140,32 @@ export default function AudienceLandingPage({ content }: { content: AudienceLand
               <h2 className="text-2xl md:text-3xl font-bold text-wgc-navy-900 mb-10 text-center">
                 {whoWeServeTitle}
               </h2>
-              <div className="grid sm:grid-cols-2 gap-4">
-                {whoWeServe.map((item) => (
-                  <div key={item} className="flex items-start gap-3 p-4 rounded-xl bg-wgc-off border border-wgc-navy-50">
-                    <CheckCircle2 className="w-5 h-5 text-wgc-gold-500 shrink-0 mt-0.5" />
-                    <span className="text-wgc-navy-700 text-sm font-medium">{item}</span>
-                  </div>
-                ))}
-              </div>
+              {whoWeServeCategories ? (
+                <div className="grid sm:grid-cols-2 gap-6">
+                  {whoWeServeCategories.map((category) => (
+                    <div key={category.title} className="p-6 rounded-2xl bg-wgc-off border border-wgc-navy-50">
+                      <h3 className="text-sm font-bold text-wgc-navy-900 uppercase tracking-wide mb-4">{category.title}</h3>
+                      <div className="space-y-2.5">
+                        {category.items.map((item) => (
+                          <div key={item} className="flex items-start gap-2.5">
+                            <CheckCircle2 className="w-4 h-4 text-wgc-gold-500 shrink-0 mt-0.5" />
+                            <span className="text-wgc-navy-700 text-sm font-medium">{item}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {whoWeServe.map((item) => (
+                    <div key={item} className="flex items-start gap-3 p-4 rounded-xl bg-wgc-off border border-wgc-navy-50">
+                      <CheckCircle2 className="w-5 h-5 text-wgc-gold-500 shrink-0 mt-0.5" />
+                      <span className="text-wgc-navy-700 text-sm font-medium">{item}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </ScrollFade>
           </div>
         </section>

@@ -17,10 +17,9 @@ const NAV_LINKS = [
 
 const WHO_WE_SERVE_LINKS = [
   { name: "Churches", href: "/for/churches" },
-  { name: "Christian Nonprofits", href: "/for/christian-nonprofits" },
+  { name: "Nonprofits", href: "/for/christian-nonprofits" },
   { name: "Schools", href: "/for/schools" },
   { name: "Government & Public Sector", href: "/for/government" },
-  { name: "Nonprofits", href: "/for/nonprofits" },
 ];
 
 export default function Header() {
