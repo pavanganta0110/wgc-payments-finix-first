@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import StateBadge from "@/components/merchant/StateBadge";
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { SMS_2FA_CONSENT_TEXT } from "@/lib/auth/smsConsentText";
 
 const inputClass = "w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400";
 
@@ -37,6 +38,10 @@ export default function SecuritySettingsForm({ email, lastLoginAt }: { email: st
   const [mfaPhone, setMfaPhone] = useState("");
   const [mfaCodeInput, setMfaCodeInput] = useState("");
   const [mfaBusy, setMfaBusy] = useState(false);
+  // Always starts unchecked — never pre-checked, never derived from an
+  // existing phone number on the account. A phone number alone is never
+  // consent (see enroll/route.ts's server-side gate on this same rule).
+  const [mfaConsent, setMfaConsent] = useState(false);
 
   const fetchAuthDetails = async () => {
     try {
@@ -59,16 +64,21 @@ export default function SecuritySettingsForm({ email, lastLoginAt }: { email: st
 
   const startMfaEnrollment = () => {
     setMfaPhone("");
+    setMfaConsent(false);
     setMfaStep("phone");
   };
 
   const sendMfaCode = async () => {
+    if (!mfaConsent) {
+      toast.error("Please check the box agreeing to receive SMS verification codes.");
+      return;
+    }
     setMfaBusy(true);
     try {
       const res = await fetch("/api/merchant/settings/security/mfa/enroll", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: mfaPhone }),
+        body: JSON.stringify({ phone: mfaPhone, smsConsent: mfaConsent }),
       });
       const data = await res.json();
       if (res.status === 403 && data.reauthRequired) {
@@ -382,7 +392,7 @@ export default function SecuritySettingsForm({ email, lastLoginAt }: { email: st
           {mfaStep === "phone" && (
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Phone Number</label>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Mobile Phone Number</label>
                 <input
                   type="tel"
                   placeholder="(555) 123-4567"
@@ -391,13 +401,34 @@ export default function SecuritySettingsForm({ email, lastLoginAt }: { email: st
                   onChange={(e) => setMfaPhone(e.target.value)}
                 />
               </div>
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                <input
+                  type="checkbox"
+                  id="mfa-sms-consent"
+                  checked={mfaConsent}
+                  onChange={(e) => setMfaConsent(e.target.checked)}
+                  className="mt-0.5 shrink-0"
+                />
+                <label htmlFor="mfa-sms-consent" className="text-xs text-slate-600 leading-relaxed">
+                  {SMS_2FA_CONSENT_TEXT}
+                </label>
+              </div>
+              <p className="text-xs text-slate-400">
+                <a href="/legal/privacy" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  Privacy Policy
+                </a>{" "}
+                ·{" "}
+                <a href="/legal/terms" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  Terms of Service
+                </a>
+              </p>
               <div className="flex items-center gap-2">
                 <button
                   onClick={sendMfaCode}
-                  disabled={mfaBusy || !mfaPhone}
+                  disabled={mfaBusy || !mfaPhone || !mfaConsent}
                   className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold disabled:opacity-50"
                 >
-                  {mfaBusy ? "Sending…" : "Send Code"}
+                  {mfaBusy ? "Sending…" : "Enable SMS 2FA"}
                 </button>
                 <button onClick={() => setMfaStep("idle")} className="px-3 py-2 text-xs text-slate-500 hover:text-slate-900">
                   Cancel

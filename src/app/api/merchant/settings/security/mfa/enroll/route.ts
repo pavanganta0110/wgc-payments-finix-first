@@ -6,6 +6,7 @@ import { normalizeUSPhone } from "@/lib/validation";
 import { generateMfaCode, MFA_CODE_TTL_MINUTES } from "@/lib/auth/mfaCode";
 import { getSmsProvider } from "@/lib/sms/smsProvider";
 import { isSmsConfigured } from "@/lib/sms/sendText";
+import { recordSmsConsentGranted } from "@/lib/auth/smsConsent";
 
 /**
  * Step 1 of turning on SMS MFA: validate the phone, text it a code, and
@@ -40,6 +41,12 @@ export async function POST(req: Request) {
   if (!normalized) {
     return NextResponse.json({ error: "Please enter a valid U.S. phone number." }, { status: 400 });
   }
+  // Server-side consent gate — never trust the button being disabled
+  // client-side as the actual enforcement. A phone number alone is never
+  // consent; the checkbox must have been explicitly checked.
+  if (body.smsConsent !== true) {
+    return NextResponse.json({ error: "You must agree to receive SMS verification codes to enable text-message two-factor authentication." }, { status: 400 });
+  }
 
   const { code, codeHash } = generateMfaCode();
   await prisma.user.update({
@@ -55,6 +62,15 @@ export async function POST(req: Request) {
   const result = await getSmsProvider().send(normalized, `Your WGC Payments verification code is ${code}. It expires in ${MFA_CODE_TTL_MINUTES} minutes.`);
   if (!result.success) {
     return NextResponse.json({ error: result.error || "Couldn't send the verification code. Please try again." }, { status: 502 });
+  }
+
+  // Recorded here, not at confirm — this enroll step is the moment consent
+  // was validated and the first SMS actually went out. Never logs the
+  // phone number itself.
+  try {
+    await recordSmsConsentGranted({ userId: auth.userId, churchId: auth.churchId ?? null, phone: normalized, source: "settings_security_mfa_enroll" });
+  } catch (err) {
+    console.error(`Failed to record SMS consent for user ${auth.userId}:`, err);
   }
 
   return NextResponse.json({ success: true });

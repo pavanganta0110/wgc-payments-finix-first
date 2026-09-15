@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { isAuthError } from "@/lib/auth/errors";
 import { logDashboardAction } from "@/lib/dashboardAudit";
+import { recordSmsConsentWithdrawn } from "@/lib/auth/smsConsent";
 
 export async function POST(req: Request) {
   let auth;
@@ -21,7 +22,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Reauthentication required. Please log in again to verify your identity.", reauthRequired: true }, { status: 403 });
   }
 
+  const userBefore = await prisma.user.findUnique({ where: { id: auth.userId }, select: { phone: true } });
   await prisma.user.update({ where: { id: auth.userId }, data: { mfaEnabled: false } });
+
+  if (userBefore?.phone) {
+    try {
+      await recordSmsConsentWithdrawn({ userId: auth.userId, churchId: auth.churchId ?? null, phone: userBefore.phone, source: "settings_security_mfa_disable" });
+    } catch (err) {
+      console.error(`Failed to record SMS consent withdrawal for user ${auth.userId}:`, err);
+    }
+  }
 
   await logDashboardAction({
     churchId: auth.churchId,

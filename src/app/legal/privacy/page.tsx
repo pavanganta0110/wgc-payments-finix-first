@@ -96,7 +96,7 @@ export default function PrivacyPage() {
             </section>
 
             <section>
-              <h2 className="text-2xl font-bold text-wgc-navy-900 mb-4 tracking-tight">6. SMS / Text Messaging</h2>
+              <h2 className="text-2xl font-bold text-wgc-navy-900 mb-4 tracking-tight">6. Donor Giving-Link SMS Messaging</h2>
               <p>
                 Organizations using WGC Payments may send text messages containing a giving/donation link to their own donors through our
                 platform. By providing a mobile phone number to an organization, or by an organization providing a donor&rsquo;s mobile phone
@@ -116,7 +116,40 @@ export default function PrivacyPage() {
             </section>
 
             <section>
-              <h2 className="text-2xl font-bold text-wgc-navy-900 mb-4 tracking-tight">7. Contact Us</h2>
+              <h2 className="text-2xl font-bold text-wgc-navy-900 mb-4 tracking-tight">7. SMS Account Verification and Two-Factor Authentication</h2>
+              <p>
+                Authorized WGC Payments account users may voluntarily provide a mobile telephone number to receive SMS authentication and
+                security verification messages. This is separate and distinct from the donor giving-link messaging described above — these
+                are one-time verification codes sent only to a WGC Payments merchant/account user who has enrolled their own account.
+              </p>
+              <p className="mt-4">
+                Enrollment in SMS authentication is optional. Providing a telephone number elsewhere on the WGC Payments platform (for
+                example, a business phone number entered during account registration) does <strong>not</strong> automatically enroll a
+                user in SMS messaging. Enrollment happens only from the authenticated account&rsquo;s Settings &gt; Security page, where the
+                user enters a mobile number and affirmatively checks a consent checkbox that is unchecked by default.
+              </p>
+              <ul className="list-disc pl-6 space-y-2 mt-4">
+                <li>Message frequency varies based on authentication and account-security activity.</li>
+                <li>Message and data rates may apply.</li>
+                <li>
+                  Mobile numbers, SMS opt-in data, and consent records are <strong>not sold, rented, or shared with third parties or
+                  affiliates for their marketing or promotional purposes</strong>. Information may be disclosed to service providers solely
+                  as necessary to provide the requested messaging service, maintain security, prevent fraud, or comply with law — for
+                  example, our SMS delivery provider (Twilio) necessarily receives the phone number in order to deliver the message.
+                </li>
+                <li>Users may reply STOP to opt out and HELP for assistance.</li>
+              </ul>
+              <p className="mt-4 text-sm text-slate-500">
+                See{" "}
+                <Link href="/legal/sms-consent" className="text-blue-600 hover:underline">
+                  our SMS verification consent page
+                </Link>{" "}
+                for the exact consent language and screenshots of the enrollment flow.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-2xl font-bold text-wgc-navy-900 mb-4 tracking-tight">8. Contact Us</h2>
               <p>
                 If you have questions about this Privacy Policy or how your data is handled, please contact us at:
               </p>

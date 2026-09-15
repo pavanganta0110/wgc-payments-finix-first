@@ -4773,3 +4773,42 @@ model SmsAddonOverageCharge {
   @@index([status])
   @@index([organizationId])
 }
+
+// =============================================================================
+// SMS 2FA consent audit trail — append-only record of every grant/withdrawal
+// of consent to receive SMS authentication codes, required for Twilio A2P
+// 10DLC compliance (Error 30909: reviewers need documented, verifiable
+// opt-in). Separate from User.mfaEnabled (the current-state flag) — this is
+// the historical record proving when and how consent was given, which
+// version of the disclosure text the user saw, and where the consent
+// happened. Never mutated after creation; a withdrawal is a new row, not an
+// update to the grant row.
+// =============================================================================
+
+model SmsConsentEvent {
+  id       String  @id @default(cuid())
+  userId   String
+  churchId String?
+  // Stored as entered (E.164-normalized where possible) — matches this
+  // schema's existing convention of storing phone numbers in plain text
+  // (see User.phone, Donor.phone); never written to application logs (see
+  // the enroll/disable routes' console.error calls, which log user/church
+  // ids only, never the phone value itself).
+  phone String
+
+  // GRANTED | WITHDRAWN
+  eventType String
+
+  consentTimestamp DateTime @default(now())
+  // Where consent was captured — e.g. "settings_security_mfa_enroll" —
+  // distinct from consentTextVersion so the disclosure copy can change
+  // independently of where in the product it's shown.
+  consentSource     String
+  consentTextVersion String
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([churchId])
+  @@index([phone])
+}
