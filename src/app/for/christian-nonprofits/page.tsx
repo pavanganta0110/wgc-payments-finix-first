@@ -3,43 +3,25 @@ import { Globe2, Repeat, ShieldCheck, LayoutDashboard, Plane, CalendarDays } fro
 import AudienceLandingPage, { type AudienceLandingContent } from "@/components/marketing/AudienceLandingPage";
 
 export const metadata: Metadata = {
-  title: "Donation Software for Nonprofits, Ministries & Missions Organizations",
-  description: "Payment infrastructure for nonprofits, charities, ministries, and missions organizations — Christian and community nonprofits alike. Recurring giving, event ticketing, sponsorship-style support, and international donor payments.",
+  title: "Donation Software for Nonprofits & Ministries",
+  description: "Payment infrastructure for nonprofits, charities, and ministries — Christian and community nonprofits alike. Recurring giving, event ticketing, sponsorship-style support, and international donor payments.",
   openGraph: {
     images: [{ url: "/og/verticals.png", width: 1200, height: 630 }],
-    title: "Donation Software for Nonprofits, Ministries & Missions Organizations",
-    description: "Recurring giving, event ticketing, sponsorship-style support, and international donor payments for nonprofits, ministries, and missions organizations.",
+    title: "Donation Software for Nonprofits & Ministries",
+    description: "Recurring giving, event ticketing, sponsorship-style support, and international donor payments for nonprofits and ministries.",
     url: "https://www.wgcpayments.com/for/christian-nonprofits",
   },
   alternates: { canonical: "/for/christian-nonprofits" },
 };
 
 const content: AudienceLandingContent = {
-  eyebrow: "For Nonprofits, Ministries & Missions",
+  eyebrow: "For Nonprofits & Ministries",
   headline: "Fund the mission,",
   headlineAccent: "not the overhead",
   intro: "Whether you're a Christian nonprofit, a missions organization, a community charity, or any other 501(c) organization, WGC Payments gives you low-cost, reliable donation processing so more of every gift reaches the cause.",
   whoWeServeTitle: "Built for nonprofits, ministries, and mission-driven organizations",
   whoWeServe: [],
   whoWeServeCategories: [
-    {
-      title: "Christian Nonprofits",
-      items: [
-        "Faith-based 501(c)(3) ministries",
-        "Discipleship, media, and outreach ministries",
-        "Christian camps, conferences, and retreat centers",
-        "Denominational agencies",
-      ],
-    },
-    {
-      title: "Missions & Mission Organizations",
-      items: [
-        "International and domestic missions organizations",
-        "Christian relief and humanitarian aid ministries",
-        "Mission boards and field-worker sending agencies",
-        "Short-term missions trip and team fundraising",
-      ],
-    },
     {
       title: "Ministries & Faith-Based Organizations",
       items: [
