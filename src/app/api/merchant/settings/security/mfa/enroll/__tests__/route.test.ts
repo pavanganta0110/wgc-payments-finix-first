@@ -122,6 +122,21 @@ describe("POST /api/merchant/settings/security/mfa/enroll — sends via the 2FA-
     expect(mockRecordGranted).not.toHaveBeenCalled();
   });
 
+  it("refuses to enroll when the session is a 'View as Merchant' impersonation — this would otherwise enroll 2FA on the impersonating admin's own account", async () => {
+    mockAuth.mockResolvedValue({
+      userId: "admin-1",
+      churchId: "church-a",
+      email: "admin@wgc.com",
+      authTime: Math.floor(Date.now() / 1000),
+      impersonation: { impersonationSessionId: "imp-1", adminUserId: "admin-1", adminEmail: "admin@wgc.com", targetChurchId: "church-a", targetChurchName: "Test Church" },
+    });
+    const { POST } = await loadModule();
+    const res = await POST(req({ phone: "(555) 019-2837", smsConsent: true }));
+    expect(res.status).toBe(403);
+    expect(mockSendAuthSms).not.toHaveBeenCalled();
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+
   it("returns 403 with reauthRequired when the session's authTime is stale", async () => {
     mockAuth.mockResolvedValue({ userId: "user-1", churchId: "church-a", email: "u@a.com", authTime: Math.floor(Date.now() / 1000) - 700 });
     const { POST } = await loadModule();

@@ -19,6 +19,16 @@ export async function POST(req: Request) {
     throw err;
   }
 
+  // A WGC admin viewing a merchant via impersonation has auth.userId set
+  // to their OWN real user id (see requireMerchantSession.ts's
+  // impersonation branch) — without this guard, this route would change
+  // the ADMIN's own password and bumpAuthVersion() would sign the admin
+  // out of their own real session, while the UI implies this is the
+  // merchant's password.
+  if (auth.impersonation) {
+    return NextResponse.json({ error: "Personal account security settings aren't available while viewing as a merchant." }, { status: 403 });
+  }
+
   // Reauthentication Gate
   const now = Math.floor(Date.now() / 1000);
   if (!auth.authTime || now - auth.authTime > 600) {

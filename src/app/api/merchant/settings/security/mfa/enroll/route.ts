@@ -26,6 +26,16 @@ export async function POST(req: Request) {
     throw err;
   }
 
+  // A WGC admin viewing a merchant via impersonation has auth.userId set
+  // to their OWN real user id (see requireMerchantSession.ts's
+  // impersonation branch) — proceeding here would enroll 2FA on the
+  // ADMIN's account while the UI implies it's the merchant's. Personal
+  // account-security settings are never available inside an impersonated
+  // session.
+  if (auth.impersonation) {
+    return NextResponse.json({ error: "Personal account security settings aren't available while viewing as a merchant." }, { status: 403 });
+  }
+
   if (!isAuthSmsConfigured()) {
     return NextResponse.json({ error: "Two-factor authentication isn't available yet." }, { status: 503 });
   }

@@ -107,6 +107,22 @@ describe("POST /api/merchant/settings/security/mfa/confirm — enroll vs. phone-
     });
   });
 
+  it("refuses to confirm when the session is a 'View as Merchant' impersonation — never reads pendingPhone or mutates state", async () => {
+    mockAuth.mockResolvedValue({
+      userId: "admin-1",
+      churchId: "church-a",
+      email: "admin@wgc.com",
+      rawRole: "wgc_super_admin",
+      authTime: Math.floor(Date.now() / 1000),
+      impersonation: { impersonationSessionId: "imp-1", adminUserId: "admin-1", adminEmail: "admin@wgc.com", targetChurchId: "church-a", targetChurchName: "Test Church" },
+    });
+    const { POST } = await loadModule();
+    const res = await POST(req(CODE));
+    expect(res.status).toBe(403);
+    expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+
   it("rejects an expired code and clears the pending state", async () => {
     mockPrisma.user.findUnique.mockResolvedValue({
       id: "user-1",

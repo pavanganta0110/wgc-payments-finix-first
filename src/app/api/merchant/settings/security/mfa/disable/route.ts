@@ -15,6 +15,12 @@ export async function POST(req: Request) {
     throw err;
   }
 
+  // See enroll/route.ts's comment — never let an impersonated session
+  // disable the impersonating ADMIN's own MFA.
+  if (auth.impersonation) {
+    return NextResponse.json({ error: "Personal account security settings aren't available while viewing as a merchant." }, { status: 403 });
+  }
+
   // Reauthentication gate — turning MFA off is at least as sensitive as
   // turning it on, and is the kind of thing an attacker who's already
   // inside a session would want to do to make their own access durable.

@@ -30,6 +30,12 @@ export async function POST(req: Request) {
     throw err;
   }
 
+  // See enroll/route.ts's comment — never let an impersonated session
+  // confirm/mutate the impersonating ADMIN's own MFA/phone.
+  if (auth.impersonation) {
+    return NextResponse.json({ error: "Personal account security settings aren't available while viewing as a merchant." }, { status: 403 });
+  }
+
   const headerList = await headers();
   const ip = headerList.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
   const userAgent = headerList.get("user-agent") || null;

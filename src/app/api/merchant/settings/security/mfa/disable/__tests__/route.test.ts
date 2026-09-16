@@ -59,4 +59,20 @@ describe("POST /api/merchant/settings/security/mfa/disable — consent withdrawa
       expect.objectContaining({ action: "MFA_DISABLED", userId: "user-1", churchId: "church-a" })
     );
   });
+
+  it("refuses to disable 2FA when the session is a 'View as Merchant' impersonation — never touches the DB", async () => {
+    mockAuth.mockResolvedValue({
+      userId: "admin-1",
+      churchId: "church-a",
+      rawRole: "wgc_super_admin",
+      email: "admin@wgc.com",
+      authTime: Math.floor(Date.now() / 1000),
+      impersonation: { impersonationSessionId: "imp-1", adminUserId: "admin-1", adminEmail: "admin@wgc.com", targetChurchId: "church-a", targetChurchName: "Test Church" },
+    });
+    const { POST } = await loadModule();
+    const res = await POST(new Request("http://x", { method: "POST" }));
+    expect(res.status).toBe(403);
+    expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
 });

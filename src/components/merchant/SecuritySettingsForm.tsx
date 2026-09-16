@@ -29,6 +29,12 @@ export default function SecuritySettingsForm({ email, lastLoginAt }: { email: st
   const [hasPassword, setHasPassword] = useState(false);
   const [recentActivity, setRecentActivity] = useState<Activity[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(true);
+  // True only when a WGC admin is viewing this church via "View as
+  // Merchant" — every field below intentionally comes back blank in that
+  // case (see auth-accounts/route.ts's comment), since this page shows a
+  // real person's own password/phone/MFA, and there is no single merchant
+  // user an impersonation session maps to.
+  const [isImpersonating, setIsImpersonating] = useState(false);
 
   // MFA state
   const [mfaEnabled, setMfaEnabled] = useState(false);
@@ -54,6 +60,7 @@ export default function SecuritySettingsForm({ email, lastLoginAt }: { email: st
         setMfaEnabled(data.mfaEnabled || false);
         setMfaAvailable(data.mfaAvailable || false);
         setMaskedPhone(data.maskedPhone || null);
+        setIsImpersonating(data.impersonating === true);
       }
     } catch (err) {
       console.error("Failed to load auth accounts details", err);
@@ -215,6 +222,15 @@ export default function SecuritySettingsForm({ email, lastLoginAt }: { email: st
     return (
       <div className="flex justify-center py-12">
         <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+  if (isImpersonating) {
+    return (
+      <div className="max-w-2xl p-6 rounded-2xl border border-amber-200 bg-amber-50 text-sm text-amber-800">
+        Personal account security settings (password, two-factor authentication, connected login methods) belong to
+        an individual user&apos;s own account and aren&apos;t shown or editable while viewing this organization as an admin.
       </div>
     );
   }
