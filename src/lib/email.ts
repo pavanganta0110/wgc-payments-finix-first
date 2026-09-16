@@ -28,6 +28,18 @@ interface WgcEmailOptions {
    * to Resend's own `cc` field. */
   cc?: string[];
 
+  /** Overrides the WGC Payments logo in the header — used for donor-facing
+   * emails sent on behalf of a specific church (Giving Campaigns), so the
+   * recipient sees their own church's branding rather than WGC's. Falls
+   * back to the WGC logo when unset, which is every other sender in this
+   * file (receipts, statements, invoices — those are legitimately "from
+   * WGC Payments" in a payment-processor sense). */
+  logoUrl?: string;
+  logoAlt?: string;
+  /** Overrides "WGC Payments Team" in the footer signature — same
+   * church-branding use case as logoUrl. */
+  senderName?: string;
+
   // When present, sendWgcEmail writes an OrgEmailLog row after the send
   // attempt (success or failure) — this is the ONLY place that decides
   // whether an email is donor/org-facing (logged) vs internal WGC-admin
@@ -94,7 +106,16 @@ export function parseAdditionalRecipients(raw: unknown): string[] {
 const WGC_LOGO_URL = "https://www.wgcpayments.com/wgc-logo.png";
 
 export function generateWgcEmailHtml(options: WgcEmailOptions) {
-  const { title, previewText, bodyHtml, badgeText, badgeColor = "#0B5DBC" } = options;
+  const {
+    title,
+    previewText,
+    bodyHtml,
+    badgeText,
+    badgeColor = "#0B5DBC",
+    logoUrl = WGC_LOGO_URL,
+    logoAlt = "WGC Payments",
+    senderName = "WGC Payments Team",
+  } = options;
 
   return `
     <!DOCTYPE html>
@@ -114,7 +135,7 @@ export function generateWgcEmailHtml(options: WgcEmailOptions) {
               <!-- Header with Logo -->
               <tr>
                 <td style="padding: 20px 40px 30px 40px; text-align: center;">
-                  <img src="${WGC_LOGO_URL}" alt="WGC Payments" style="width: 220px; height: auto; max-width: 100%; display: block; margin: 0 auto; border: 0;" />
+                  <img src="${logoUrl}" alt="${logoAlt}" style="width: 220px; height: auto; max-width: 100%; display: block; margin: 0 auto; border: 0;" />
                 </td>
               </tr>
               
@@ -154,7 +175,7 @@ export function generateWgcEmailHtml(options: WgcEmailOptions) {
                 <td style="padding: 30px 40px; text-align: center; border-top: 1px solid #F0F4F8;">
                   <p style="margin: 0; color: #4A5568; font-size: 14px; line-height: 1.5;">
                     Thank you,<br/>
-                    <strong>WGC Payments Team</strong><br/>
+                    <strong>${senderName}</strong><br/>
                     <a href="mailto:support@wgcpayments.com" style="color: #0B5DBC; text-decoration: none;">support@wgcpayments.com</a>
                   </p>
                 </td>
@@ -196,7 +217,7 @@ ${cleanBody}
 Need help? Contact WGC Payments Support at support@wgcpayments.com
 
 Thank you,
-WGC Payments Team
+${options.senderName || "WGC Payments Team"}
 support@wgcpayments.com
   `.trim();
 

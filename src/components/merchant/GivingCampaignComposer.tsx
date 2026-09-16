@@ -45,10 +45,11 @@ export default function GivingCampaignComposer() {
 
   const [donorQuery, setDonorQuery] = useState("");
   const [donorResults, setDonorResults] = useState<DonorOption[]>([]);
+  const [donorListTruncated, setDonorListTruncated] = useState(false);
   const [selectedDonors, setSelectedDonors] = useState<DonorOption[]>([]);
   const [searching, setSearching] = useState(false);
 
-  const [preview, setPreview] = useState<{ subject: string | null; body: string } | null>(null);
+  const [preview, setPreview] = useState<{ subject: string | null; body: string; churchName?: string; logoUrl?: string | null } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sendProgress, setSendProgress] = useState<{ sent: number; total: number } | null>(null);
   const [smsAddonActive, setSmsAddonActive] = useState<boolean | null>(null);
@@ -71,18 +72,21 @@ export default function GivingCampaignComposer() {
       .catch(() => setSmsAddonActive(false));
   }, []);
 
+  // Empty query -> browse-all (capped, alphabetical) so donors can be
+  // multi-selected without typing anything; a query narrows the same list
+  // via server-side search. Runs on mount and on every channel switch too,
+  // since eligibility (has email vs. has phone) depends on channel.
   useEffect(() => {
-    if (donorQuery.trim().length < 2) {
-      const clear = setTimeout(() => setDonorResults([]), 0);
-      return () => clearTimeout(clear);
-    }
     const timeout = setTimeout(() => {
       setSearching(true);
-      fetch(`/api/merchant/donors/search?q=${encodeURIComponent(donorQuery)}`)
+      const q = donorQuery.trim();
+      const url = q ? `/api/merchant/donors/search?q=${encodeURIComponent(q)}` : "/api/merchant/donors/search";
+      fetch(url)
         .then((res) => res.json())
-        .then((data) =>
-          setDonorResults((data.donors || []).filter((d: DonorOption) => (channel === "TEXT" ? d.phone : d.email)))
-        )
+        .then((data) => {
+          setDonorResults((data.donors || []).filter((d: DonorOption) => (channel === "TEXT" ? d.phone : d.email)));
+          setDonorListTruncated(Boolean(data.truncated));
+        })
         .catch(() => {})
         .finally(() => setSearching(false));
     }, 300);
@@ -97,7 +101,7 @@ export default function GivingCampaignComposer() {
         body: JSON.stringify({ channel, emailSubject, emailBodyTemplate, textBodyTemplate }),
       })
         .then((res) => res.json())
-        .then((data) => setPreview({ subject: data.subject, body: data.body }))
+        .then((data) => setPreview({ subject: data.subject, body: data.body, churchName: data.churchName, logoUrl: data.logoUrl }))
         .catch(() => {});
     }, 300);
     return () => clearTimeout(timeout);
@@ -118,15 +122,30 @@ export default function GivingCampaignComposer() {
     setDonorResults([]);
   };
 
-  const addDonor = (donor: DonorOption) => {
-    if (selectedDonors.some((d) => d.id === donor.id)) return;
-    setSelectedDonors((prev) => [...prev, donor]);
-    setDonorQuery("");
-    setDonorResults([]);
+  // Toggles one donor in/out of the selection — deliberately does not clear
+  // donorQuery/donorResults the way the old single-pick dropdown did, so
+  // the list stays visible and multiple donors can be checked in sequence.
+  const toggleDonor = (donor: DonorOption) => {
+    setSelectedDonors((prev) =>
+      prev.some((d) => d.id === donor.id) ? prev.filter((d) => d.id !== donor.id) : [...prev, donor]
+    );
   };
 
   const removeDonor = (id: string) => {
     setSelectedDonors((prev) => prev.filter((d) => d.id !== id));
+  };
+
+  const allVisibleSelected = donorResults.length > 0 && donorResults.every((d) => selectedDonors.some((s) => s.id === d.id));
+
+  const toggleSelectAllVisible = () => {
+    if (allVisibleSelected) {
+      setSelectedDonors((prev) => prev.filter((d) => !donorResults.some((r) => r.id === d.id)));
+    } else {
+      setSelectedDonors((prev) => {
+        const existingIds = new Set(prev.map((d) => d.id));
+        return [...prev, ...donorResults.filter((d) => !existingIds.has(d.id))];
+      });
+    }
   };
 
   const insertMergeField = (token: string) => {
@@ -287,21 +306,57 @@ export default function GivingCampaignComposer() {
               className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400"
             />
             {searching && <Loader2 className="w-4 h-4 animate-spin text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />}
-            {donorResults.length > 0 && (
-              <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                {donorResults.map((d) => (
-                  <button
-                    key={d.id}
-                    onClick={() => addDonor(d)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex flex-col"
-                  >
-                    <span className="font-medium text-slate-800">{d.name || "Unnamed donor"}</span>
-                    <span className="text-xs text-slate-500">{channel === "TEXT" ? d.phone : d.email}</span>
-                  </button>
-                ))}
-              </div>
+          </div>
+
+          <div className="border border-slate-200 rounded-lg mb-3 overflow-hidden">
+            {donorResults.length > 0 ? (
+              <>
+                <button
+                  type="button"
+                  onClick={toggleSelectAllVisible}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-50 border-b border-slate-200 hover:bg-slate-100"
+                >
+                  <input type="checkbox" checked={allVisibleSelected} onChange={() => {}} className="pointer-events-none" />
+                  {allVisibleSelected ? "Deselect all shown" : `Select all shown (${donorResults.length})`}
+                </button>
+                <div className="max-h-56 overflow-y-auto">
+                  {donorResults.map((d) => {
+                    const isSelected = selectedDonors.some((s) => s.id === d.id);
+                    return (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => toggleDonor(d)}
+                        className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2.5 hover:bg-slate-50 ${isSelected ? "bg-slate-50" : ""}`}
+                      >
+                        <input type="checkbox" checked={isSelected} onChange={() => {}} className="pointer-events-none shrink-0" />
+                        <span className="flex flex-col min-w-0">
+                          <span className="font-medium text-slate-800 truncate">{d.name || "Unnamed donor"}</span>
+                          <span className="text-xs text-slate-500 truncate">{channel === "TEXT" ? d.phone : d.email}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {donorListTruncated && (
+                  <p className="text-[11px] text-slate-400 px-3 py-2 border-t border-slate-100">
+                    Showing the first 500 donors — search above to find someone else.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-slate-400 px-3 py-4 text-center">
+                {searching
+                  ? "Loading donors…"
+                  : donorQuery.trim()
+                  ? "No matching donors found."
+                  : channel === "TEXT"
+                  ? "No donors with a phone number on file yet."
+                  : "No donors with an email on file yet."}
+              </p>
             )}
           </div>
+
           {selectedDonors.length === 0 ? (
             <p className="text-xs text-slate-400">No donors added yet.</p>
           ) : (
@@ -395,6 +450,14 @@ export default function GivingCampaignComposer() {
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className="px-4 py-5 text-center border-b border-slate-100 bg-slate-50">
+                {preview?.logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={preview.logoUrl} alt={preview.churchName || "Your organization"} className="h-10 mx-auto object-contain" />
+                ) : (
+                  <p className="text-sm font-bold text-slate-700">{preview?.churchName || "Your Organization"}</p>
+                )}
+              </div>
               <div className="px-4 py-3 border-b border-slate-100">
                 <p className="text-[11px] text-slate-400">Subject</p>
                 <p className="text-sm font-semibold text-slate-900">{preview?.subject || "—"}</p>
@@ -406,6 +469,16 @@ export default function GivingCampaignComposer() {
           )}
           <p className="text-xs text-slate-500 mt-3">
             Shown with sample data — each real recipient gets their own name and a unique tracked link.
+            {channel === "EMAIL" && !preview?.logoUrl && (
+              <>
+                {" "}
+                Add a logo in{" "}
+                <Link href="/merchant/settings/branding" className="text-blue-600 hover:underline">
+                  Settings → Branding
+                </Link>{" "}
+                to show it here.
+              </>
+            )}
           </p>
         </div>
       </div>

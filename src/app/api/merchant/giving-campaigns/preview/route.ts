@@ -27,7 +27,7 @@ export async function POST(req: Request) {
   const rawTemplate = channel === "TEXT" ? body.textBodyTemplate : body.emailBodyTemplate;
   const template = typeof rawTemplate === "string" ? rawTemplate : "";
 
-  const church = await prisma.church.findUnique({ where: { id: auth.churchId }, select: { name: true } });
+  const church = await prisma.church.findUnique({ where: { id: auth.churchId }, select: { name: true, logoUrl: true } });
 
   const vars = {
     firstName: "Jordan",
@@ -38,5 +38,10 @@ export async function POST(req: Request) {
   return NextResponse.json({
     subject: channel === "TEXT" ? null : renderCampaignTemplate(subject, vars),
     body: renderCampaignTemplate(template, vars),
+    // Only meaningful for EMAIL — lets the composer's preview show the same
+    // church-branded header (logo, not the WGC one) that the actual send
+    // uses (see send-chunk/route.ts).
+    churchName: vars.churchName,
+    logoUrl: channel === "TEXT" ? null : church?.logoUrl || null,
   });
 }

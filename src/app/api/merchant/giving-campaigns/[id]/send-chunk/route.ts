@@ -45,7 +45,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "Text messaging add-on is no longer active — resolve billing to continue sending." }, { status: 402 });
   }
 
-  const church = await prisma.church.findUnique({ where: { id: auth.churchId }, select: { name: true } });
+  const church = await prisma.church.findUnique({ where: { id: auth.churchId }, select: { name: true, logoUrl: true } });
   const churchName = church?.name || "Your Organization";
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://wgcpayments.com";
 
@@ -88,6 +88,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         badgeText: `A message from ${churchName}`,
         badgeColor: "#0B5DBC",
         bodyHtml,
+        // Church-branded, not WGC-branded — this is the church reaching
+        // out to its own donor, so the recipient should see the church's
+        // logo and signature, not WGC Payments'. Falls back to the WGC
+        // logo (via sendWgcEmail's own default) when the church hasn't
+        // uploaded one in Settings -> Branding.
+        logoUrl: church?.logoUrl || undefined,
+        logoAlt: churchName,
+        senderName: `${churchName} Team`,
         log: {
           churchId: auth.churchId,
           donorId: recipient.donorId,
