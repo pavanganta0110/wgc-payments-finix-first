@@ -4,6 +4,7 @@ import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { isAuthError } from "@/lib/auth/errors";
 import { logDashboardAction } from "@/lib/dashboardAudit";
 import { recordSmsConsentWithdrawn } from "@/lib/auth/smsConsent";
+import { logOtpEvent } from "@/lib/auth/otpAuditLog";
 
 export async function POST(req: Request) {
   let auth;
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
     entityId: auth.userId,
     req,
   });
+  await logOtpEvent({ action: "MFA_DISABLED", userId: auth.userId, churchId: auth.churchId, actorEmail: auth.email });
 
   return NextResponse.json({ success: true });
 }

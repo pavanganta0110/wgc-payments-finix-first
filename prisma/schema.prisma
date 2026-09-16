@@ -4812,3 +4812,45 @@ model SmsConsentEvent {
   @@index([churchId])
   @@index([phone])
 }
+
+// =============================================================================
+// Authentication SMS send log — persistent (DB-backed, not in-memory) record
+// of every OTP send attempt, for two purposes that share one table on
+// purpose: (1) resend cooldown / per-account / per-phone / per-IP send caps,
+// computed from recent rows rather than a process-local counter that resets
+// per serverless instance; (2) Twilio delivery-status tracking, updated by
+// the status callback webhook once Twilio reports queued/sent/delivered/
+// undelivered/failed for a given providerMessageId. Every row here
+// represents an AUTHENTICATION send only (login OTP, enrollment OTP, resend,
+// admin login OTP) — donor/invoice SMS never writes here because that
+// sending path is hard-disabled (see src/lib/sms/authSmsSender.ts).
+// =============================================================================
+
+model AuthSmsSendLog {
+  id     String  @id @default(cuid())
+  userId String
+  // Denormalized (not just looked up via userId) so a rate-limit query can
+  // filter by phone directly — catches abuse patterns where the same
+  // number is targeted across what look like different accounts.
+  phone String
+  // ENROLL | LOGIN | RESEND | ADMIN_LOGIN | ADMIN_RESEND
+  purpose   String
+  ipAddress String?
+
+  providerMessageId String?
+  // QUEUED | SENT | DELIVERED | UNDELIVERED | FAILED — null until Twilio's
+  // status callback updates it, or forever null if delivery webhooks
+  // aren't configured.
+  deliveryStatus   String?
+  deliveryStatusAt DateTime?
+  // Twilio's own error code (a number as a string, e.g. "30003") — safe to
+  // store, never shown to the end user verbatim (see the status callback
+  // route's own comment on why).
+  errorCode String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([phone, createdAt])
+  @@index([providerMessageId])
+}

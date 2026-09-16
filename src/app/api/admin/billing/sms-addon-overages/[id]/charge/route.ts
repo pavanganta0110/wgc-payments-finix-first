@@ -1,19 +1,25 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAdminSession } from "@/lib/auth/session";
+import { requireMfaVerifiedAdminSession } from "@/lib/auth/requireAdminSession";
+import { isAuthError } from "@/lib/auth/errors";
 import { resolveWgcAdminBillingPermissions } from "@/lib/auth/billingAdminPermissions";
 import { chargeSmsOverage, SmsOverageChargeError } from "@/lib/billing/smsAddonOverageCharge";
 
 /**
  * The only place in the codebase that actually moves money for a text-
- * messaging overage — requires an authenticated WGC billing admin with
- * canManageBilling AND explicit confirmation in the request body. There is
- * no automatic/cron path that reaches this (mirrors
+ * messaging overage — requires an authenticated, MFA-verified WGC billing
+ * admin with canManageBilling AND explicit confirmation in the request
+ * body. There is no automatic/cron path that reaches this (mirrors
  * /api/admin/billing/promo-shortfalls/[id]/charge exactly).
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getAdminSession();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let session;
+  try {
+    session = await requireMfaVerifiedAdminSession();
+  } catch (err) {
+    if (isAuthError(err)) return NextResponse.json({ error: err.message }, { status: err.status });
+    throw err;
+  }
 
   const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { permissionsJson: true } });
   const perms = resolveWgcAdminBillingPermissions(session.role, user?.permissionsJson);

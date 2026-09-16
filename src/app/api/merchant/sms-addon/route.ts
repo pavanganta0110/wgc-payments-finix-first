@@ -39,11 +39,12 @@ export async function GET() {
     usage: { textsSent, billingPeriod },
     plans: Object.values(SMS_ADDON_PLANS),
     canManageSubscription: hasPermission(auth, "canManageSubscription"),
-    // Twilio isn't wired up in every environment yet (TWILIO_ACCOUNT_SID /
-    // TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER) — the UI shows "Coming Soon"
-    // instead of a live Subscribe button while this is false, and the
-    // subscribe route itself refuses to activate (and start charging) a
-    // feature that can't actually send anything yet.
+    // Donor/campaign SMS is hard-disabled until TWILIO_DONOR_FROM_NUMBER is
+    // deliberately introduced alongside its own approved Twilio campaign —
+    // see sendText.ts. The UI shows "Coming Soon" instead of a live
+    // Subscribe button while this is false, and the subscribe route itself
+    // refuses to activate (and start charging) a feature that can't
+    // actually send anything yet.
     smsConfigured: isSmsConfigured(),
   });
 }

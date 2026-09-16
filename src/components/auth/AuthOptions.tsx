@@ -52,6 +52,8 @@ function AuthOptionsInner({
   // original login, not weaker.
   const [mfaChallenge, setMfaChallenge] = useState<{ challengeId: string; maskedPhone: string } | null>(null);
   const [mfaCode, setMfaCode] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resending, setResending] = useState(false);
 
   // Error handling from URL
   useEffect(() => {
@@ -161,6 +163,7 @@ function AuthOptionsInner({
 
       if (data.mfaRequired) {
         setMfaChallenge({ challengeId: data.challengeId, maskedPhone: data.maskedPhone });
+        setResendCooldown(60);
         setAuthLoading(null);
         return;
       }
@@ -196,6 +199,40 @@ function AuthOptionsInner({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Incorrect code");
       setAuthLoading(null);
+    }
+  };
+
+  // Ticks the "Resend available in Ns" countdown client-side; the server
+  // is the actual source of truth for the cooldown (checkOtpSendLimits),
+  // this just keeps the button disabled so a resend isn't attempted (and
+  // rejected with a 429) before it's likely to succeed.
+  useEffect(() => {
+    if (!mfaChallenge || resendCooldown <= 0) return;
+    const timer = setInterval(() => setResendCooldown((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [mfaChallenge, resendCooldown]);
+
+  const handleResend = async () => {
+    if (!mfaChallenge || resending || resendCooldown > 0) return;
+    setResending(true);
+    try {
+      const res = await fetch("/api/merchant/login/mfa-resend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeId: mfaChallenge.challengeId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (typeof data.retryAfterSeconds === "number") setResendCooldown(data.retryAfterSeconds);
+        throw new Error(data.error || "Couldn't resend the code.");
+      }
+      setMfaChallenge({ challengeId: mfaChallenge.challengeId, maskedPhone: data.maskedPhone });
+      setResendCooldown(data.cooldownSeconds || 60);
+      toast.success("A new code is on its way.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't resend the code.");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -235,11 +272,27 @@ function AuthOptionsInner({
           >
             {authLoading === "email" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify"}
           </button>
+          <div className="text-center text-xs text-slate-500">
+            Didn&apos;t receive a code?{" "}
+            {resendCooldown > 0 ? (
+              <span>Resend available in {resendCooldown}s</span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resending}
+                className="font-semibold text-blue-600 hover:underline disabled:opacity-50"
+              >
+                {resending ? "Sending…" : "Resend code"}
+              </button>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => {
               setMfaChallenge(null);
               setMfaCode("");
+              setResendCooldown(0);
             }}
             className="w-full text-xs text-slate-500 hover:text-slate-900"
           >

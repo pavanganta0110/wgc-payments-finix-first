@@ -1,15 +1,23 @@
-import { getAdminSession } from "@/lib/auth/session";
+import { requireMfaVerifiedAdminSession } from "@/lib/auth/requireAdminSession";
+import { isAuthError } from "@/lib/auth/errors";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import { notifyAdminSupportChange } from "@/lib/support/ticketNotifications";
 import { sendWgcEmail } from "@/lib/email";
 
+// Every action this route can take (disable/reactivate a merchant user,
+// correct their profile/email, revoke their sessions, resend credentials)
+// materially affects a merchant account — an MFA-verified admin session is
+// required, not just admin authentication.
 export async function POST(req: Request) {
   try {
-    const session = await getAdminSession();
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    let session;
+    try {
+      session = await requireMfaVerifiedAdminSession();
+    } catch (err) {
+      if (isAuthError(err)) return NextResponse.json({ error: err.message }, { status: err.status });
+      throw err;
     }
 
     const { userId, churchId, actionType, reason, ticketId, ticketNumber, ...extraData } = await req.json();

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, type SessionPayload } from "@/lib/auth/session";
 import { maskPhone } from "@/lib/auth/mfaCode";
-import { isSmsConfigured } from "@/lib/sms/sendText";
+import { isAuthSmsConfigured } from "@/lib/sms/authSmsSender";
 
 // GET: retrieve login methods and recent activity
 export async function GET() {
@@ -39,7 +39,7 @@ export async function GET() {
       recentAuthTime: session.authTime || null,
       mfaEnabled: user.mfaEnabled,
       maskedPhone: user.phone ? maskPhone(user.phone) : null,
-      mfaAvailable: isSmsConfigured(),
+      mfaAvailable: isAuthSmsConfigured(),
     });
   } catch (err) {
     console.error("Failed to fetch auth accounts info:", err);

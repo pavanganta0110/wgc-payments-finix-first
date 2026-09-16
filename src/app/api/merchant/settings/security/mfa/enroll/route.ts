@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { isAuthError } from "@/lib/auth/errors";
 import { normalizeUSPhone } from "@/lib/validation";
 import { generateMfaCode, MFA_CODE_TTL_MINUTES } from "@/lib/auth/mfaCode";
-import { getSmsProvider } from "@/lib/sms/smsProvider";
-import { isSmsConfigured } from "@/lib/sms/sendText";
+import { sendAuthSms, isAuthSmsConfigured } from "@/lib/sms/authSmsSender";
+import { checkOtpSendLimits, recordOtpSend, otpSendLimitMessage } from "@/lib/auth/otpSendLimits";
+import { logOtpEvent } from "@/lib/auth/otpAuditLog";
 import { recordSmsConsentGranted } from "@/lib/auth/smsConsent";
 
 /**
@@ -24,7 +26,7 @@ export async function POST(req: Request) {
     throw err;
   }
 
-  if (!isSmsConfigured()) {
+  if (!isAuthSmsConfigured()) {
     return NextResponse.json({ error: "Two-factor authentication isn't available yet." }, { status: 503 });
   }
 
@@ -48,6 +50,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "You must agree to receive SMS verification codes to enable text-message two-factor authentication." }, { status: 400 });
   }
 
+  const headerList = await headers();
+  const ip = headerList.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+  const userAgent = headerList.get("user-agent") || null;
+
+  const limitCheck = await checkOtpSendLimits({ userId: auth.userId, phone: normalized, ipAddress: ip });
+  if (!limitCheck.allowed) {
+    await logOtpEvent({ action: "OTP_RATE_LIMITED", userId: auth.userId, churchId: auth.churchId, actorEmail: auth.email, ipAddress: ip, userAgent, metadata: { reason: limitCheck.reason, purpose: "ENROLL" } });
+    return NextResponse.json({ error: otpSendLimitMessage(limitCheck), retryAfterSeconds: limitCheck.retryAfterSeconds }, { status: 429 });
+  }
+
   const { code, codeHash } = generateMfaCode();
   await prisma.user.update({
     where: { id: auth.userId },
@@ -59,10 +71,18 @@ export async function POST(req: Request) {
     },
   });
 
-  const result = await getSmsProvider().send(normalized, `Your WGC Payments verification code is ${code}. It expires in ${MFA_CODE_TTL_MINUTES} minutes.`);
+  const result = await sendAuthSms(normalized, `Your WGC Payments verification code is ${code}. It expires in ${MFA_CODE_TTL_MINUTES} minutes.`);
+  await recordOtpSend({ userId: auth.userId, phone: normalized, purpose: "ENROLL", ipAddress: ip, providerMessageId: result.providerMessageId });
+
   if (!result.success) {
-    return NextResponse.json({ error: result.error || "Couldn't send the verification code. Please try again." }, { status: 502 });
+    console.error(`Failed to send MFA enrollment code to user ${auth.userId}:`, result.error);
+    await logOtpEvent({ action: "OTP_FAILED", userId: auth.userId, churchId: auth.churchId, actorEmail: auth.email, ipAddress: ip, userAgent, metadata: { purpose: "ENROLL", stage: "SEND" } });
+    // Never surface result.error (raw Twilio error text) to the client —
+    // see Priority 6's non-sensitive-failure-message requirement.
+    return NextResponse.json({ error: "We couldn't deliver the verification code. Confirm your phone number or try again." }, { status: 502 });
   }
+
+  await logOtpEvent({ action: "OTP_SENT", userId: auth.userId, churchId: auth.churchId, actorEmail: auth.email, ipAddress: ip, userAgent, metadata: { purpose: "ENROLL" } });
 
   // Recorded here, not at confirm — this enroll step is the moment consent
   // was validated and the first SMS actually went out. Never logs the

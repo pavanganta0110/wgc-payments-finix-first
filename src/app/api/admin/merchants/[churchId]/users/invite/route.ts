@@ -1,4 +1,5 @@
-import { getAdminSession } from "@/lib/auth/session";
+import { requireMfaVerifiedAdminSession } from "@/lib/auth/requireAdminSession";
+import { isAuthError } from "@/lib/auth/errors";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
@@ -17,9 +18,15 @@ const INVITABLE_ROLES = ["admin", "fundraiser", "viewer"] as const;
 export async function POST(req: Request, { params }: { params: Promise<{ churchId: string }> }) {
   const { churchId } = await params;
 
-  const session = await getAdminSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Creates a new user with an assigned role on a merchant organization —
+  // an MFA-verified session is required, matching the other role/account
+  // management routes in this file's audit.
+  let session;
+  try {
+    session = await requireMfaVerifiedAdminSession();
+  } catch (err) {
+    if (isAuthError(err)) return NextResponse.json({ error: err.message }, { status: err.status });
+    throw err;
   }
 
   const adminUser = await prisma.user.findUnique({ where: { id: session.userId }, select: { permissionsJson: true } });

@@ -18,6 +18,9 @@ vi.mock("@/lib/dashboardAudit", () => ({ logDashboardAction: vi.fn().mockResolve
 const mockRecordWithdrawn = vi.fn().mockResolvedValue(undefined);
 vi.mock("@/lib/auth/smsConsent", () => ({ recordSmsConsentWithdrawn: (...args: unknown[]) => mockRecordWithdrawn(...args) }));
 
+const mockLogOtpEvent = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/lib/auth/otpAuditLog", () => ({ logOtpEvent: (...args: unknown[]) => mockLogOtpEvent(...args) }));
+
 async function loadModule() {
   vi.resetModules();
   return import("@/app/api/merchant/settings/security/mfa/disable/route");
@@ -46,5 +49,14 @@ describe("POST /api/merchant/settings/security/mfa/disable — consent withdrawa
     const res = await POST(new Request("http://x", { method: "POST" }));
     expect(res.status).toBe(200);
     expect(mockRecordWithdrawn).not.toHaveBeenCalled();
+  });
+
+  it("logs an MFA_DISABLED OTP audit event", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ phone: "+15550192837" });
+    const { POST } = await loadModule();
+    await POST(new Request("http://x", { method: "POST" }));
+    expect(mockLogOtpEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "MFA_DISABLED", userId: "user-1", churchId: "church-a" })
+    );
   });
 });

@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAdminSession } from "@/lib/auth/session";
+import { requireMfaVerifiedAdminSession } from "@/lib/auth/requireAdminSession";
+import { isAuthError } from "@/lib/auth/errors";
 import { resolveWgcAdminBillingPermissions } from "@/lib/auth/billingAdminPermissions";
 import { waiveSmsOverage, SmsOverageChargeError } from "@/lib/billing/smsAddonOverageCharge";
 
+// Waiving forgives money owed to WGC — same MFA-verified-session
+// requirement as actually charging it (see the sibling charge/route.ts).
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getAdminSession();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let session;
+  try {
+    session = await requireMfaVerifiedAdminSession();
+  } catch (err) {
+    if (isAuthError(err)) return NextResponse.json({ error: err.message }, { status: err.status });
+    throw err;
+  }
 
   const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { permissionsJson: true } });
   const perms = resolveWgcAdminBillingPermissions(session.role, user?.permissionsJson);

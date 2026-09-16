@@ -4,6 +4,7 @@ import StateBadge from "@/components/merchant/StateBadge";
 import { prisma } from "@/lib/prisma";
 import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { isAuthError } from "@/lib/auth/errors";
+import { isSmsConfigured } from "@/lib/sms/sendText";
 
 function IntegrationRow({ name, description, enabled }: { name: string; description: string; enabled: boolean }) {
   return (
@@ -18,9 +19,10 @@ function IntegrationRow({ name, description, enabled }: { name: string; descript
 }
 
 export default async function IntegrationsSettingsPage() {
-  const smsConfigured = Boolean(
-    process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER
-  );
+  // Donor/Giving Link texting specifically — deliberately NOT the auth-SMS
+  // check, since this row is about donor messaging, which is hard-disabled
+  // until its own separate Twilio number/campaign exists (see sendText.ts).
+  const smsConfigured = isSmsConfigured();
 
   // Aplos is merchant-configured (each organization connects its own
   // account), unlike the platform-level rows below — shown as its own

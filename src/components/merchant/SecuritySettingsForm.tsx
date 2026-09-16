@@ -107,7 +107,7 @@ export default function SecuritySettingsForm({ email, lastLoginAt }: { email: st
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Incorrect code");
-      toast.success("Two-factor authentication enabled");
+      toast.success(mfaEnabled ? "Phone number updated" : "Two-factor authentication enabled");
       setMfaStep("idle");
       fetchAuthDetails();
     } catch (err) {
@@ -367,13 +367,21 @@ export default function SecuritySettingsForm({ email, lastLoginAt }: { email: st
               <p className="text-sm text-slate-700 mb-3">
                 Enabled for <span className="font-medium">{maskedPhone}</span>. You&apos;ll be asked for a code sent by text every time you log in.
               </p>
-              <button
-                onClick={disableMfa}
-                disabled={mfaBusy}
-                className="px-3 py-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition-all disabled:opacity-50"
-              >
-                {mfaBusy ? "Disabling…" : "Disable Two-Factor Authentication"}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={startMfaEnrollment}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold transition-all"
+                >
+                  Change Number
+                </button>
+                <button
+                  onClick={disableMfa}
+                  disabled={mfaBusy}
+                  className="px-3 py-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition-all disabled:opacity-50"
+                >
+                  {mfaBusy ? "Disabling…" : "Disable Two-Factor Authentication"}
+                </button>
+              </div>
             </div>
           )}
 
@@ -391,8 +399,15 @@ export default function SecuritySettingsForm({ email, lastLoginAt }: { email: st
 
           {mfaStep === "phone" && (
             <div className="space-y-3">
+              {mfaEnabled && (
+                <p className="text-xs text-slate-500">
+                  Enter your new number below. Your current number stays active until the new one is verified.
+                </p>
+              )}
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Mobile Phone Number</label>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">
+                  {mfaEnabled ? "New Mobile Phone Number" : "Mobile Phone Number"}
+                </label>
                 <input
                   type="tel"
                   placeholder="(555) 123-4567"
@@ -428,7 +443,7 @@ export default function SecuritySettingsForm({ email, lastLoginAt }: { email: st
                   disabled={mfaBusy || !mfaPhone || !mfaConsent}
                   className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold disabled:opacity-50"
                 >
-                  {mfaBusy ? "Sending…" : "Enable SMS 2FA"}
+                  {mfaBusy ? "Sending…" : mfaEnabled ? "Send Code to New Number" : "Enable SMS 2FA"}
                 </button>
                 <button onClick={() => setMfaStep("idle")} className="px-3 py-2 text-xs text-slate-500 hover:text-slate-900">
                   Cancel
@@ -439,7 +454,7 @@ export default function SecuritySettingsForm({ email, lastLoginAt }: { email: st
 
           {mfaStep === "code" && (
             <div className="space-y-3">
-              <p className="text-xs text-slate-500">Enter the 6-digit code we texted you.</p>
+              <p className="text-xs text-slate-500">Enter the 6-digit code we texted to your {mfaEnabled ? "new" : ""} number.</p>
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Verification Code</label>
                 <input

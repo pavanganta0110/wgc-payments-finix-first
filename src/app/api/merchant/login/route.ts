@@ -5,7 +5,9 @@ import { verifyPassword } from "@/lib/auth/password";
 import { checkMerchantAuthRateLimit } from "@/lib/auth/merchantAuthRateLimit";
 import { completeMerchantLogin } from "@/lib/auth/completeMerchantLogin";
 import { generateMfaCode, generateMfaChallengeId, maskPhone, MFA_CODE_TTL_MINUTES } from "@/lib/auth/mfaCode";
-import { getSmsProvider } from "@/lib/sms/smsProvider";
+import { sendAuthSms } from "@/lib/sms/authSmsSender";
+import { checkOtpSendLimits, recordOtpSend, otpSendLimitMessage } from "@/lib/auth/otpSendLimits";
+import { logOtpEvent } from "@/lib/auth/otpAuditLog";
 
 export async function POST(req: Request) {
   try {
@@ -17,6 +19,7 @@ export async function POST(req: Request) {
 
     const headerList = await headers();
     const ip = headerList.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+    const userAgent = headerList.get("user-agent") || null;
     if (!checkMerchantAuthRateLimit(`merchant-login:${ip}`)) {
       return NextResponse.json({ error: "Too many attempts. Please try again in a minute." }, { status: 429 });
     }
@@ -47,6 +50,13 @@ export async function POST(req: Request) {
         console.error(`MFA enabled with no phone on file for user ${user.id}`);
         return NextResponse.json({ error: "Two-factor setup is incomplete on this account. Contact WGC Payments Support." }, { status: 500 });
       }
+
+      const limitCheck = await checkOtpSendLimits({ userId: user.id, phone: user.phone, ipAddress: ip });
+      if (!limitCheck.allowed) {
+        await logOtpEvent({ action: "OTP_RATE_LIMITED", userId: user.id, churchId: user.churchId, actorEmail: user.email, ipAddress: ip, userAgent, metadata: { reason: limitCheck.reason, purpose: "LOGIN" } });
+        return NextResponse.json({ error: otpSendLimitMessage(limitCheck) }, { status: 429 });
+      }
+
       const { code, codeHash } = generateMfaCode();
       const challengeId = generateMfaChallengeId();
       await prisma.user.update({
@@ -58,11 +68,16 @@ export async function POST(req: Request) {
           mfaLoginChallengeId: challengeId,
         },
       });
-      const smsResult = await getSmsProvider().send(user.phone, `Your WGC Payments verification code is ${code}. It expires in ${MFA_CODE_TTL_MINUTES} minutes.`);
+      const smsResult = await sendAuthSms(user.phone, `Your WGC Payments verification code is ${code}. It expires in ${MFA_CODE_TTL_MINUTES} minutes.`);
+      await recordOtpSend({ userId: user.id, phone: user.phone, purpose: "LOGIN", ipAddress: ip, providerMessageId: smsResult.providerMessageId });
+
       if (!smsResult.success) {
         console.error(`Failed to send MFA login code to user ${user.id}:`, smsResult.error);
+        await logOtpEvent({ action: "OTP_FAILED", userId: user.id, churchId: user.churchId, actorEmail: user.email, ipAddress: ip, userAgent, metadata: { purpose: "LOGIN", stage: "SEND" } });
         return NextResponse.json({ error: "Couldn't send your verification code. Please try again in a moment." }, { status: 502 });
       }
+
+      await logOtpEvent({ action: "OTP_SENT", userId: user.id, churchId: user.churchId, actorEmail: user.email, ipAddress: ip, userAgent, metadata: { purpose: "LOGIN" } });
       return NextResponse.json({ mfaRequired: true, challengeId, maskedPhone: maskPhone(user.phone) });
     }
 

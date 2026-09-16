@@ -16,6 +16,13 @@ export default async function AdminDashboardLayout({ children }: { children: Rea
     redirect("/admin/login");
   }
 
+  // Mandatory MFA gate — an admin who hasn't completed enrollment gets no
+  // dashboard functionality at all (impersonation included) until they do,
+  // but isn't locked out of signing in entirely (see mfa-setup/page.tsx).
+  if (!session.mfaEnabled) {
+    redirect("/admin/mfa-setup");
+  }
+
   const roleLabel = session.role === "wgc_super_admin" ? "Super Admin" : "Admin";
 
   return (
