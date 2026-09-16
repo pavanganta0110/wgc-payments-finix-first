@@ -27,7 +27,10 @@ export async function POST(req: Request) {
   const rawTemplate = channel === "TEXT" ? body.textBodyTemplate : body.emailBodyTemplate;
   const template = typeof rawTemplate === "string" ? rawTemplate : "";
 
-  const church = await prisma.church.findUnique({ where: { id: auth.churchId }, select: { name: true, logoUrl: true } });
+  const church = await prisma.church.findUnique({
+    where: { id: auth.churchId },
+    select: { name: true, logoUrl: true, primaryColor: true, statementSenderName: true },
+  });
 
   const vars = {
     firstName: "Jordan",
@@ -39,9 +42,15 @@ export async function POST(req: Request) {
     subject: channel === "TEXT" ? null : renderCampaignTemplate(subject, vars),
     body: renderCampaignTemplate(template, vars),
     // Only meaningful for EMAIL — lets the composer's preview show the same
-    // church-branded header (logo, not the WGC one) that the actual send
-    // uses (see send-chunk/route.ts).
+    // church branding (logo, brand color, and the merchant's own
+    // configured signature — Settings -> Receipts & Annual Statements'
+    // "Sender Name") that the actual send uses (see send-chunk/route.ts).
+    // Never a hardcoded default here — whatever the merchant has (or
+    // hasn't) set is exactly what shows, so the preview never overstates
+    // what's actually configured.
     churchName: vars.churchName,
     logoUrl: channel === "TEXT" ? null : church?.logoUrl || null,
+    senderName: channel === "TEXT" ? null : church?.statementSenderName || vars.churchName,
+    badgeColor: channel === "TEXT" ? null : church?.primaryColor || null,
   });
 }

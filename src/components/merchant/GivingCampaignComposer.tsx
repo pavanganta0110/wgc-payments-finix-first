@@ -49,7 +49,14 @@ export default function GivingCampaignComposer() {
   const [selectedDonors, setSelectedDonors] = useState<DonorOption[]>([]);
   const [searching, setSearching] = useState(false);
 
-  const [preview, setPreview] = useState<{ subject: string | null; body: string; churchName?: string; logoUrl?: string | null } | null>(null);
+  const [preview, setPreview] = useState<{
+    subject: string | null;
+    body: string;
+    churchName?: string;
+    logoUrl?: string | null;
+    senderName?: string | null;
+    badgeColor?: string | null;
+  } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sendProgress, setSendProgress] = useState<{ sent: number; total: number } | null>(null);
   const [smsAddonActive, setSmsAddonActive] = useState<boolean | null>(null);
@@ -101,7 +108,16 @@ export default function GivingCampaignComposer() {
         body: JSON.stringify({ channel, emailSubject, emailBodyTemplate, textBodyTemplate }),
       })
         .then((res) => res.json())
-        .then((data) => setPreview({ subject: data.subject, body: data.body, churchName: data.churchName, logoUrl: data.logoUrl }))
+        .then((data) =>
+          setPreview({
+            subject: data.subject,
+            body: data.body,
+            churchName: data.churchName,
+            logoUrl: data.logoUrl,
+            senderName: data.senderName,
+            badgeColor: data.badgeColor,
+          })
+        )
         .catch(() => {});
     }, 300);
     return () => clearTimeout(timeout);
@@ -458,6 +474,17 @@ export default function GivingCampaignComposer() {
                   <p className="text-sm font-bold text-slate-700">{preview?.churchName || "Your Organization"}</p>
                 )}
               </div>
+              <div className="px-4 pt-4">
+                <span
+                  className="inline-block px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide"
+                  style={{
+                    color: preview?.badgeColor || "#0B5DBC",
+                    backgroundColor: `${preview?.badgeColor || "#0B5DBC"}15`,
+                  }}
+                >
+                  A message from {preview?.churchName || "Your Organization"}
+                </span>
+              </div>
               <div className="px-4 py-3 border-b border-slate-100">
                 <p className="text-[11px] text-slate-400">Subject</p>
                 <p className="text-sm font-semibold text-slate-900">{preview?.subject || "—"}</p>
@@ -465,20 +492,26 @@ export default function GivingCampaignComposer() {
               <div className="px-4 py-4">
                 <p className="text-sm text-slate-700 whitespace-pre-wrap">{preview?.body || "—"}</p>
               </div>
+              <div className="px-4 py-3 border-t border-slate-100">
+                <p className="text-xs text-slate-500">
+                  Thank you,
+                  <br />
+                  <span className="font-semibold text-slate-700">{preview?.senderName || preview?.churchName || "Your Organization"}</span>
+                </p>
+              </div>
             </div>
           )}
           <p className="text-xs text-slate-500 mt-3">
-            Shown with sample data — each real recipient gets their own name and a unique tracked link.
-            {channel === "EMAIL" && !preview?.logoUrl && (
-              <>
-                {" "}
-                Add a logo in{" "}
-                <Link href="/merchant/settings/branding" className="text-blue-600 hover:underline">
-                  Settings → Branding
-                </Link>{" "}
-                to show it here.
-              </>
-            )}
+            Shown with sample data — each real recipient gets their own name and a unique tracked link. Logo, brand
+            color, and signature all come from{" "}
+            <Link href="/merchant/settings/branding" className="text-blue-600 hover:underline">
+              Settings → Branding
+            </Link>{" "}
+            and{" "}
+            <Link href="/merchant/settings/annual-statements" className="text-blue-600 hover:underline">
+              Receipts & Annual Statements
+            </Link>
+            .
           </p>
         </div>
       </div>
