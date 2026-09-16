@@ -32,15 +32,23 @@ export default function AdminLoginPage() {
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) {
+      if (!res.ok) {
         throw new Error(data.error || "Unable to sign in with those credentials.");
       }
 
+      // Checked before data.success — the mfaRequired response never
+      // includes a success field at all (see /api/admin/login/route.ts),
+      // so gating on data.success first would throw here on every
+      // MFA-enrolled admin login, even though the code was already sent.
       if (data.mfaRequired) {
         setMfaChallenge({ challengeId: data.challengeId, maskedPhone: data.maskedPhone });
         setResendCooldown(60);
         setIsSubmitting(false);
         return;
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || "Unable to sign in with those credentials.");
       }
 
       // No MFA challenge means either mfaSetupRequired (session already
