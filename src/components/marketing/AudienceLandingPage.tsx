@@ -10,6 +10,9 @@ export interface AudienceFeature {
   icon: LucideIcon;
   title: string;
   description: string;
+  /** Optional "Coming Soon" pill for a roadmap capability that isn't live
+   * yet — never set for something already shipped. */
+  badge?: string;
 }
 
 export interface AudienceUseCase {
@@ -216,7 +219,7 @@ export default function AudienceLandingPage({ content }: { content: AudienceLand
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {features.map((feature, idx) => (
                 <ScrollFade key={feature.title} delay={idx * 0.1}>
-                  <FeatureCard icon={feature.icon} title={feature.title} description={feature.description} />
+                  <FeatureCard icon={feature.icon} title={feature.title} description={feature.description} badge={feature.badge} />
                 </ScrollFade>
               ))}
             </div>

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Globe2, Repeat, ShieldCheck, LayoutDashboard, Plane, CalendarDays, Heart, FileText, BarChart3, Undo2, Users, Plug, Mail } from "lucide-react";
+import { Globe2, Repeat, ShieldCheck, LayoutDashboard, Plane, CalendarDays, Heart, FileText, BarChart3, Undo2, Users, Plug, Mail, MessageSquare } from "lucide-react";
 import AudienceLandingPage, { type AudienceLandingContent } from "@/components/marketing/AudienceLandingPage";
 
 export const metadata: Metadata = {
@@ -83,6 +83,7 @@ const content: AudienceLandingContent = {
     { icon: Globe2, title: "Give from anywhere", description: "Accept card and ACH donations from supporters and donors around the world through a secure giving page." },
     { icon: Repeat, title: "Recurring giving & dues", description: "Turn one-time donors into monthly partners or sustaining members with simple, flexible recurring giving." },
     { icon: Mail, title: "Email giving campaigns", description: "Send your giving link straight to a supporter list for an appeal or emergency response, with per-donor tracking." },
+    { icon: MessageSquare, title: "Text campaigns", description: "Send your giving link to a supporter list by text message.", badge: "Coming Soon" },
     { icon: Plane, title: "Trip & team fundraising", description: "Give each missions trip or team its own giving link so supporters know exactly who and what they're funding." },
     { icon: CalendarDays, title: "Event & campaign giving links", description: "Spin up dedicated giving links for specific programs, campaigns, galas, or year-end appeals." },
     { icon: FileText, title: "Invoicing", description: "Bill membership dues, event fees, or program costs and track payment status alongside your giving." },

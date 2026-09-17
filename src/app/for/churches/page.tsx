@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CreditCard, Repeat, ShieldCheck, LayoutDashboard, Landmark, Smartphone, Heart, FileText, BarChart3, Undo2, Users, Plug, Mail } from "lucide-react";
+import { CreditCard, Repeat, ShieldCheck, LayoutDashboard, Landmark, Smartphone, Heart, FileText, BarChart3, Undo2, Users, Plug, Mail, MessageSquare } from "lucide-react";
 import AudienceLandingPage, { type AudienceLandingContent } from "@/components/marketing/AudienceLandingPage";
 
 export const metadata: Metadata = {
@@ -51,6 +51,7 @@ const content: AudienceLandingContent = {
     { icon: CreditCard, title: "Card and ACH giving", description: "Accept all major credit cards and low-cost ACH bank transfers directly from your congregation." },
     { icon: Repeat, title: "Recurring tithes & offerings", description: "Let members set up weekly, biweekly, or monthly recurring gifts in a few clicks." },
     { icon: Mail, title: "Email giving campaigns", description: "Send your giving link straight to a donor list by email for a fund drive or appeal, with per-donor tracking." },
+    { icon: MessageSquare, title: "Text campaigns", description: "Send your giving link to a donor list by text message.", badge: "Coming Soon" },
     { icon: Smartphone, title: "Embeddable giving pages", description: "Drop a giving button or inline form directly into your church website or app — no redirect required." },
     { icon: FileText, title: "Invoicing", description: "Bill facility rentals, event fees, or school tuition and track payment status alongside your giving." },
     { icon: BarChart3, title: "Reporting & analytics", description: "Real-time dashboards on giving trends, fund balances, and donor retention." },

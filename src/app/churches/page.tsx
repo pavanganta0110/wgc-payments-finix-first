@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CreditCard, Banknote, ShieldCheck, LayoutDashboard, Undo2, ArrowRightLeft, Heart, Users, Mail } from "lucide-react";
+import { CreditCard, Banknote, ShieldCheck, LayoutDashboard, Undo2, ArrowRightLeft, Heart, Users, Mail, MessageSquare } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import FeatureCard from "@/components/ui/FeatureCard";
@@ -27,6 +27,12 @@ const CHURCH_FEATURES = [
     icon: Mail,
     title: "Email giving campaigns",
     description: "Send your giving link straight to a donor list by email for a fund drive or appeal, with per-donor tracking.",
+  },
+  {
+    icon: MessageSquare,
+    title: "Text campaigns",
+    description: "Send your giving link to a donor list by text message.",
+    badge: "Coming Soon",
   },
   {
     icon: LayoutDashboard,
@@ -117,10 +123,11 @@ export default function ChurchesPage() {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {CHURCH_FEATURES.map((feature, idx) => (
                 <ScrollFade key={feature.title} delay={idx * 0.1}>
-                  <FeatureCard 
+                  <FeatureCard
                     icon={feature.icon}
                     title={feature.title}
                     description={feature.description}
+                    badge={feature.badge}
                   />
                 </ScrollFade>
               ))}

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ShieldCheck, Users, BarChart3, Repeat, Heart, FileText, Banknote, Undo2, ClipboardList, Plug, Mail, LucideIcon } from "lucide-react";
+import { ShieldCheck, Users, BarChart3, Repeat, Heart, FileText, Banknote, Undo2, ClipboardList, Plug, Mail, MessageSquare, LucideIcon } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import FeatureCard from "@/components/ui/FeatureCard";
@@ -41,6 +41,7 @@ const PLATFORM_FEATURES = [
   { icon: Repeat, title: "Recurring Giving", description: "Turn one-time gifts into sustaining monthly support automatically." },
   { icon: Banknote, title: "Giving Pages", description: "Launch a branded giving page in minutes, no developer required." },
   { icon: Mail, title: "Email Giving Campaigns", description: "Send your giving link straight to a donor list by email, with per-donor tracking." },
+  { icon: MessageSquare, title: "Text Campaigns", description: "Send your giving link to a donor list by text message.", badge: "Coming Soon" },
   { icon: FileText, title: "Invoicing", description: "Bill pledges, tuition, dues, or event fees and track payment status." },
   { icon: BarChart3, title: "Reporting & Analytics", description: "Real-time dashboards on giving trends, donor retention, and campaign performance." },
   { icon: Banknote, title: "Settlements & Payouts", description: "Know exactly when funds hit your bank account, itemized to the transaction." },
@@ -516,13 +517,20 @@ export default function Home() {
   );
 }
 
-function CompactFeatureCard({ icon: Icon, title, description }: { icon: LucideIcon; title: string; description: string }) {
+function CompactFeatureCard({ icon: Icon, title, description, badge }: { icon: LucideIcon; title: string; description: string; badge?: string }) {
   return (
     <div className="p-6 bg-white rounded-2xl border border-wgc-navy-100 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 h-full flex flex-col group">
       <div className="w-10 h-10 rounded-xl bg-wgc-navy-50 border border-wgc-navy-100 flex items-center justify-center text-wgc-gold-500 mb-5 group-hover:bg-wgc-gold-500 group-hover:text-wgc-navy-950 transition-all duration-300">
         <Icon className="w-5 h-5" />
       </div>
-      <h3 className="text-[15px] font-bold text-wgc-navy-950 mb-2 tracking-tight leading-snug">{title}</h3>
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <h3 className="text-[15px] font-bold text-wgc-navy-950 tracking-tight leading-snug">{title}</h3>
+        {badge && (
+          <span className="px-2 py-0.5 rounded-full bg-wgc-navy-50 border border-wgc-navy-100 text-wgc-navy-400 text-[8px] font-black uppercase tracking-widest">
+            {badge}
+          </span>
+        )}
+      </div>
       <p className="text-[12px] font-medium text-wgc-navy-500 leading-relaxed">{description}</p>
     </div>
   );
