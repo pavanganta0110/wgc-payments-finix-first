@@ -27,6 +27,11 @@ export interface AudienceFAQ {
   answer: string;
 }
 
+export interface AudienceTeamRole {
+  role: string;
+  description: string;
+}
+
 export interface AudienceLandingContent {
   eyebrow: string;
   headline: string;
@@ -47,6 +52,13 @@ export interface AudienceLandingContent {
   featuresTitle: string;
   featuresSubtitle: string;
   features: AudienceFeature[];
+  /** Optional "Owner / Admin / Fundraiser / Viewer" team-accounts spotlight,
+   * rendered between Features and FAQ. Omit to skip the section entirely —
+   * lets pages that don't want it (or haven't been updated yet) render
+   * unchanged. */
+  teamSpotlightTitle?: string;
+  teamSpotlightSubtitle?: string;
+  teamRoles?: AudienceTeamRole[];
   faqTitle: string;
   faqs: AudienceFAQ[];
   ctaHeadline: string;
@@ -69,6 +81,9 @@ export default function AudienceLandingPage({ content }: { content: AudienceLand
     featuresTitle,
     featuresSubtitle,
     features,
+    teamSpotlightTitle,
+    teamSpotlightSubtitle,
+    teamRoles,
     faqTitle,
     faqs,
     ctaHeadline,
@@ -207,6 +222,38 @@ export default function AudienceLandingPage({ content }: { content: AudienceLand
             </div>
           </div>
         </section>
+
+        {/* TEAM & PERMISSIONS SPOTLIGHT */}
+        {teamRoles && teamRoles.length > 0 && (
+          <section className="py-24 bg-white border-t border-wgc-navy-50">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+              <ScrollFade>
+                <div className="grid lg:grid-cols-2 gap-16 items-center">
+                  <div>
+                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-wgc-navy-50 text-wgc-navy-600 text-[10px] font-bold tracking-[0.2em] uppercase mb-6 border border-wgc-navy-100 font-mono">
+                      Built for Real Teams
+                    </div>
+                    <h2 className="text-3xl md:text-5xl font-bold text-wgc-navy-950 mb-6 tracking-tight">
+                      {teamSpotlightTitle || "Stop sharing one login"}
+                    </h2>
+                    <p className="text-lg text-wgc-navy-500 leading-relaxed">
+                      {teamSpotlightSubtitle ||
+                        "Give every staff member and volunteer their own account, scoped to exactly what they need — instead of one shared password everyone knows."}
+                    </p>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-5">
+                    {teamRoles.map((r) => (
+                      <div key={r.role} className="bg-wgc-off rounded-2xl border border-wgc-navy-100 p-6">
+                        <div className="text-[10px] font-black text-wgc-gold-600 uppercase tracking-widest mb-2 font-mono">{r.role}</div>
+                        <p className="text-sm font-medium text-wgc-navy-600 leading-relaxed">{r.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </ScrollFade>
+            </div>
+          </section>
+        )}
 
         {/* FAQ SECTION */}
         <section className="py-24 bg-white border-t border-wgc-navy-50">

@@ -23,23 +23,23 @@ const playfair = Playfair_Display({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.wgcpayments.com"),
-  title: "WGC | Payment Infrastructure for Church, Nonprofit & 501(c) Organization Software",
-  description: "White-label donation engine and settlement rails for software that serves churches, nonprofits, and other 501(c) organizations. Lower fees, low-cost ACH, and PCI Level 1 security.",
+  title: "WGC | Giving & Payment Management Platform for Churches & Nonprofits",
+  description: "Donor management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, and team accounts with role-based permissions — all in one platform. $0 processing cost when donors cover the fee.",
   robots: {
     index: true,
     follow: true,
   },
   openGraph: {
-    title: "WGC | Payment Infrastructure for Church, Nonprofit & 501(c) Organization Software",
-    description: "White-label donation engine and settlement rails for software that serves churches, nonprofits, and other 501(c) organizations. Lower fees, low-cost ACH, and PCI Level 1 security.",
+    title: "WGC | Giving & Payment Management Platform for Churches & Nonprofits",
+    description: "Donor management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, and team accounts with role-based permissions — all in one platform. $0 processing cost when donors cover the fee.",
     type: "website",
     images: [{ url: "/og/default.png", width: 1200, height: 630 }],
     url: "https://www.wgcpayments.com/",
   },
   twitter: {
     card: "summary_large_image",
-    title: "WGC | Payment Infrastructure for Church, Nonprofit & 501(c) Organization Software",
-    description: "White-label donation engine and settlement rails for software that serves churches, nonprofits, and other 501(c) organizations. Lower fees, low-cost ACH, and PCI Level 1 security.",
+    title: "WGC | Giving & Payment Management Platform for Churches & Nonprofits",
+    description: "Donor management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, and team accounts with role-based permissions — all in one platform. $0 processing cost when donors cover the fee.",
     images: ["/og/default.png"],
   },
   icons: {
