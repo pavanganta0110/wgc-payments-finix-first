@@ -11,37 +11,40 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/pricing" },
-  title: "Pricing | $0 Processing Cost When Donors Cover the Fee",
-  description: "$0 processing cost to your church or nonprofit when donors cover the fee. A simple $10/month platform fee includes donor management, recurring giving, reporting, settlements, refunds, statements, and team accounts.",
+  title: "Pricing | $0 Processing Cost When Supporters Cover the Fee",
+  description: "$0 processing cost to your organization when supporters cover the fee. A simple $10/month platform fee includes supporter management, recurring giving, reporting, settlements, refunds, statements, and team accounts.",
   openGraph: {
     images: [{ url: "/og/pricing.png", width: 1200, height: 630 }],
-    title: "Pricing | $0 Processing Cost When Donors Cover the Fee",
-    description: "$0 processing cost to your church or nonprofit when donors cover the fee. The $10/month platform fee includes the full WGC dashboard.",
+    title: "Pricing | $0 Processing Cost When Supporters Cover the Fee",
+    description: "$0 processing cost to your organization when supporters cover the fee. The $10/month platform fee includes the full WGC dashboard.",
     url: "https://www.wgcpayments.com/pricing",
   },
 };
 
 
 const INCLUDED_ITEMS = [
-  "Donor management",
-  "Recurring giving",
-  "Giving pages",
+  "One-time & recurring payments",
+  "Card, ACH, Apple Pay & Google Pay",
+  "Supporter management",
+  "Giving & campaign pages",
   "Email giving campaigns",
-  "Invoicing",
-  "Reporting & analytics",
+  "Invoicing & payment requests",
+  "Reporting & analytics with CSV exports",
   "Settlements & payouts",
   "Refunds & disputes",
-  "Donor statements",
+  "Year-end statements",
   "Team accounts (Owner, Admin, Fundraiser, Viewer)",
   "Role-based permissions",
   "QuickBooks integration",
 ];
 
 const TARGET_GROUPS = [
-  "Churches of all sizes",
-  "Global faith networks",
-  "Nonprofit organizations",
-  "Other 501(c) organizations",
+  "Nonprofits & charities",
+  "Churches & ministries",
+  "Foundations",
+  "Associations & membership organizations",
+  "Schools, PTAs & booster clubs",
+  "Community organizations",
 ];
 
 export default function PricingPage() {
@@ -71,10 +74,10 @@ export default function PricingPage() {
                   <span className="text-wgc-gold-600 italic">$0</span> processing cost to your organization.
                 </h1>
                 <p className="text-lg sm:text-xl font-medium leading-relaxed mb-4 text-wgc-navy-500 max-w-2xl tracking-tight opacity-80">
-                  By default, donors can choose to cover the processing fee — so more of every gift goes straight to your mission, at no cost to your church or nonprofit. Prefer your organization to absorb the fee instead? We show that rate too, clearly, below.
+                  By default, supporters can choose to cover the processing fee — so more of every gift goes straight to your mission, at no cost to your organization. Prefer your organization to absorb the fee instead? We show that rate too, clearly, below.
                 </p>
                 <p className="text-lg sm:text-xl font-medium leading-relaxed mb-12 text-wgc-navy-500 max-w-2xl tracking-tight opacity-80">
-                  The $10/month WGC platform fee isn&apos;t just for processing — it includes donor management, recurring giving, reporting, settlements, refunds, statements, and team accounts.
+                  The $10/month WGC platform fee isn&apos;t just for processing — it includes supporter management, recurring giving, reporting, settlements, refunds, statements, and team accounts.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-6">
                   <a href="#calculator" className="bg-wgc-gold-500 text-wgc-navy-950 inline-flex items-center justify-center px-10 py-5 text-[13px] font-bold rounded-2xl shadow-[0_20px_40px_rgba(234,179,8,0.2)] transform transition-all hover:scale-105 hover:bg-wgc-navy-950 hover:text-white uppercase tracking-widest">
@@ -119,9 +122,9 @@ export default function PricingPage() {
               <div className="rounded-[3rem] bg-wgc-grad-navy border border-wgc-gold-500/20 p-12 md:p-16 text-center shadow-2xl">
                 <div className="text-[10px] font-black text-wgc-gold-500 uppercase tracking-[0.4em] mb-6 font-mono">The Default Option</div>
                 <div className="text-6xl md:text-8xl font-black !text-white tracking-tighter mb-4">$0</div>
-                <h2 className="text-2xl md:text-3xl font-bold !text-white mb-6 tracking-tight">Processing cost to your organization — when the donor covers the fee</h2>
+                <h2 className="text-2xl md:text-3xl font-bold !text-white mb-6 tracking-tight">Processing cost to your organization — when the supporter covers the fee</h2>
                 <p className="text-white/70 max-w-2xl mx-auto leading-relaxed">
-                  Most donors are happy to cover the small processing fee so 100% of their intended gift reaches your organization. Prefer your organization to absorb it instead? See that rate below — it&apos;s just as transparent.
+                  Most supporters are happy to cover the small processing fee so 100% of their intended gift reaches your organization. Prefer your organization to absorb it instead? See that rate below — it&apos;s just as transparent.
                 </p>
               </div>
             </ScrollFade>
@@ -165,7 +168,7 @@ export default function PricingPage() {
                 <div className="bg-wgc-navy-950 text-white rounded-[2.5rem] shadow-2xl p-12 relative overflow-hidden group hover:-translate-y-2 transition-all duration-500">
                   <div className="text-[10px] font-black text-wgc-gold-500 uppercase tracking-[0.3em] mb-8 font-mono">WGC Platform Fee</div>
                   <h3 className="text-2xl font-bold !text-white mb-4 tracking-tight">Full platform access</h3>
-                  <p className="text-sm font-medium text-white/50 mb-10 leading-relaxed">Not a processing add-on — this is what unlocks the entire WGC dashboard: donors, recurring giving, reporting, settlements, refunds, statements, and team accounts.</p>
+                  <p className="text-sm font-medium text-white/50 mb-10 leading-relaxed">Not a processing add-on — this is what unlocks the entire WGC dashboard: supporters, recurring giving, reporting, settlements, refunds, statements, and team accounts.</p>
                   <div className="flex items-baseline gap-2 mb-2">
                     <span className="text-6xl font-bold text-white tracking-tighter">$10</span>
                     <span className="text-2xl font-bold text-white/30">/mo</span>
@@ -215,7 +218,7 @@ export default function PricingPage() {
                     </div>
                     <div>
                       <h4 className="text-lg font-bold text-wgc-navy-900 mb-2">Capped card processing rates</h4>
-                      <p className="text-[15px] font-medium text-wgc-navy-500 leading-relaxed opacity-80">We cap our card fees so larger gifts to your church or nonprofit aren&apos;t drained by standard retail margins.</p>
+                      <p className="text-[15px] font-medium text-wgc-navy-500 leading-relaxed opacity-80">We cap our card fees so larger gifts to your organization aren&apos;t drained by standard retail margins.</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-6">
@@ -224,7 +227,7 @@ export default function PricingPage() {
                     </div>
                     <div>
                       <h4 className="text-lg font-bold text-wgc-navy-900 mb-2">One platform fee, not five subscriptions</h4>
-                      <p className="text-[15px] font-medium text-wgc-navy-500 leading-relaxed opacity-80">Donor management, recurring giving, reporting, and team accounts are included in the $10/month platform fee — no separate tools to buy or staff hours spent connecting them.</p>
+                      <p className="text-[15px] font-medium text-wgc-navy-500 leading-relaxed opacity-80">Supporter management, recurring giving, reporting, and team accounts are included in the $10/month platform fee — no separate tools to buy or staff hours spent connecting them.</p>
                     </div>
                   </div>
                 </div>
@@ -294,7 +297,7 @@ export default function PricingPage() {
                 <div className="inline-flex items-center px-4 py-1.5 rounded-full bg-wgc-navy-50 text-wgc-gold-600 text-[9px] font-bold tracking-[0.2em] uppercase mb-8 border border-wgc-navy-100 font-mono">Mission Focused</div>
                 <h3 className="text-xl font-bold text-wgc-navy-900 mb-6 tracking-tight underline underline-offset-8 decoration-wgc-gold-500 decoration-2">Why organizations save</h3>
                 <p className="text-[15px] font-medium text-wgc-navy-500 leading-relaxed mb-6 tracking-tight opacity-80">
-                  WGC is purpose-built for churches and nonprofits — not retrofitted from generic retail checkout software, and not priced like Silicon Valley overhead.
+                  WGC is purpose-built for mission-driven organizations — not retrofitted from generic retail checkout software, and not priced like Silicon Valley overhead.
                 </p>
                 <p className="text-[15px] font-medium text-wgc-navy-500 leading-relaxed tracking-tight opacity-80">
                   A predictable monthly platform fee replaces the cost and hassle of separate donor, giving, reporting, and accounting tools — so your team spends less time on administration and more on the mission.

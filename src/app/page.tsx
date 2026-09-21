@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ShieldCheck, Users, BarChart3, Repeat, Heart, FileText, Banknote, Undo2, ClipboardList, Plug, Mail, MessageSquare, LucideIcon } from "lucide-react";
+import { ShieldCheck, Users, BarChart3, Repeat, Heart, FileText, Banknote, Undo2, ClipboardList, Plug, Mail, MessageSquare, CreditCard, Landmark, Building2, GraduationCap, HandCoins, Building, Code2, LucideIcon } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import FeatureCard from "@/components/ui/FeatureCard";
@@ -37,16 +37,17 @@ const IMPACT_ITEMS = [
 ];
 
 const PLATFORM_FEATURES = [
-  { icon: Heart, title: "Donor Management", description: "A full donor CRM — giving history, contact info, and notes in one record." },
-  { icon: Repeat, title: "Recurring Giving", description: "Turn one-time gifts into sustaining monthly support automatically." },
-  { icon: Banknote, title: "Giving Pages", description: "Launch a branded giving page in minutes, no developer required." },
-  { icon: Mail, title: "Email Giving Campaigns", description: "Send your giving link straight to a donor list by email, with per-donor tracking." },
-  { icon: MessageSquare, title: "Text Campaigns", description: "Send your giving link to a donor list by text message.", badge: "Coming Soon" },
-  { icon: FileText, title: "Invoicing", description: "Bill pledges, tuition, dues, or event fees and track payment status." },
-  { icon: BarChart3, title: "Reporting & Analytics", description: "Real-time dashboards on giving trends, donor retention, and campaign performance." },
+  { icon: CreditCard, title: "Cards, ACH & Digital Wallets", description: "Accept one-time and recurring payments by card, ACH bank transfer, and Apple Pay / Google Pay where available." },
+  { icon: Heart, title: "Supporter Management", description: "A full donor and supporter CRM — giving history, contact info, and notes in one record." },
+  { icon: Repeat, title: "Recurring Giving", description: "Turn one-time gifts or dues into sustaining recurring support automatically." },
+  { icon: Banknote, title: "Giving & Campaign Pages", description: "Launch a branded giving or campaign page in minutes, no developer required." },
+  { icon: Mail, title: "Email Giving Campaigns", description: "Send your giving link straight to a supporter list by email, with per-supporter tracking." },
+  { icon: MessageSquare, title: "Text Campaigns", description: "Send your giving link to a supporter list by text message.", badge: "Coming Soon" },
+  { icon: FileText, title: "Invoicing & Payment Requests", description: "Bill pledges, dues, tuition, or event fees and track payment status." },
+  { icon: BarChart3, title: "Reporting & CSV Exports", description: "Real-time dashboards on giving trends, retention, and campaign performance, exportable to CSV." },
   { icon: Banknote, title: "Settlements & Payouts", description: "Know exactly when funds hit your bank account, itemized to the transaction." },
   { icon: Undo2, title: "Refunds & Disputes", description: "Issue a refund or respond to a dispute directly from your dashboard." },
-  { icon: ClipboardList, title: "Donor Statements", description: "Auto-generated, tax-ready annual giving statements — no manual compiling." },
+  { icon: ClipboardList, title: "Year-End Statements", description: "Auto-generated, tax-ready annual giving statements — no manual compiling." },
   { icon: Users, title: "Team Accounts & Roles", description: "Owner, Admin, Fundraiser, and Viewer access, scoped to what each person needs." },
   { icon: Plug, title: "QuickBooks Integration", description: "Sync giving and transactions directly into QuickBooks and other accounting tools." },
 ];
@@ -57,7 +58,7 @@ const jsonLd = {
     {
       "@type": "Product",
       "name": "WGC Giving & Payment Management Platform",
-      "description": "An all-in-one giving and payment management platform for churches and nonprofits — donor management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, donor statements, team accounts with role-based permissions, and accounting integrations.",
+      "description": "An all-in-one giving and payment management platform for mission-driven organizations — nonprofits, churches and ministries, foundations, associations, schools, and community organizations — with supporter management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, year-end statements, team accounts with role-based permissions, and accounting integrations. WGC also provides payment infrastructure for software platforms.",
       "brand": { "@type": "Brand", "name": "WGC" },
       "offers": {
         "@type": "Offer",
@@ -82,15 +83,15 @@ const jsonLd = {
           "name": "Is WGC just a payment processor?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. WGC is a complete giving and payment management platform for churches and nonprofits. Beyond accepting card and ACH donations, WGC includes donor management, recurring giving, giving and campaign pages, invoicing, reporting and analytics, settlements and payouts, refunds, donor statements, team accounts with role-based permissions (Owner, Admin, Fundraiser, Viewer), and accounting integrations — all in one dashboard, instead of piecing together separate tools."
+            "text": "No. WGC is a complete giving and payment management platform for mission-driven organizations. Beyond accepting card, ACH, and digital wallet payments, WGC includes supporter management, recurring giving, giving and campaign pages, invoicing, reporting and analytics with CSV exports, settlements and payouts, refunds, year-end statements, team accounts with role-based permissions (Owner, Admin, Fundraiser, Viewer), and accounting integrations — all in one dashboard, instead of piecing together separate tools. WGC also provides payment infrastructure for software platforms."
           }
         },
         {
           "@type": "Question",
-          "name": "How much does WGC cost for a church or nonprofit?",
+          "name": "How much does WGC cost for a nonprofit, church, or other organization?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "When a donor chooses to cover the processing fee, the cost to the organization is $0. Organizations that choose to absorb the fee pay a maximum of 2.3% + 25¢ per card transaction and a flat 25¢ per ACH transaction. Every organization also pays a simple $10/month WGC platform fee, which includes full access to the dashboard and every platform feature — not just payment processing."
+            "text": "When a supporter chooses to cover the processing fee, the cost to the organization is $0. Organizations that choose to absorb the fee pay a maximum of 2.3% + 25¢ per card transaction and a flat 25¢ per ACH transaction. Every organization also pays a simple $10/month WGC platform fee, which includes full access to the dashboard and every platform feature — not just payment processing."
           }
         },
         {
@@ -98,7 +99,7 @@ const jsonLd = {
           "name": "Does WGC support team accounts and staff permissions?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Yes. WGC supports Owner, Admin, Fundraiser, and Viewer roles so churches and nonprofits can give each staff member or volunteer their own login with access scoped to what they actually need, instead of sharing one account and password."
+            "text": "Yes. WGC supports Owner, Admin, Fundraiser, and Viewer roles so any organization can give each staff member or volunteer their own login with access scoped to what they actually need, instead of sharing one account and password."
           }
         },
         {
@@ -106,7 +107,7 @@ const jsonLd = {
           "name": "What's the best alternative to Omella, Tithe.ly, Givebutter, or Zeffy?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "WGC is built for churches and nonprofits that want more than a giving page — it combines donor management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, donor statements, team accounts with role-based permissions, and accounting integrations in one platform, with a $0 processing cost option when donors cover the fee."
+            "text": "WGC is built for nonprofits, churches, foundations, associations, schools, and other mission-driven organizations that want more than a giving page — it combines supporter management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, year-end statements, team accounts with role-based permissions, and accounting integrations in one platform, with a $0 processing cost option when supporters cover the fee."
           }
         }
       ]
@@ -140,13 +141,13 @@ export default function Home() {
               <ScrollFade className="lg:col-span-7">
                 <div className="inline-flex items-center gap-3 px-5 py-2 rounded-xl mb-10 border border-wgc-gold-500/20 bg-wgc-gold-500/5 backdrop-blur-sm">
                   <div className="w-2 h-2 rounded-full bg-wgc-gold-500 animate-pulse"></div>
-                  <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500/90 font-mono">Giving & Payments Platform</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500/90 font-mono">Giving & Payments for Mission-Driven Organizations</span>
                 </div>
                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-8 !text-white">
-                  Save time. Save money. <span className="text-wgc-gold-500 italic">Put more toward the mission.</span>
+                  Save money. Save staff time. <span className="text-wgc-gold-500 italic">Put more toward the mission.</span>
                 </h1>
                 <p className="text-lg sm:text-xl font-medium leading-relaxed mb-12 text-white/70 max-w-2xl tracking-tight">
-                  WGC brings donor management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, and team accounts into one platform — so churches and nonprofits spend less time on administration and more time on their mission.
+                  WGC brings payments, supporters, giving pages, invoicing, reporting, settlements, refunds, and team accounts into one platform — so nonprofits, churches, foundations, associations, schools, and other mission-driven organizations spend less time managing operations and more time on their mission.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 max-w-lg">
                   <Link href="/start" className="bg-wgc-gold-500 text-wgc-navy-950 inline-flex items-center justify-center px-8 py-4 text-[13px] font-bold rounded-2xl shadow-[0_20px_40px_rgba(234,179,8,0.2)] transform transition-all hover:scale-105 hover:bg-white uppercase tracking-widest w-full sm:w-auto">
@@ -164,7 +165,7 @@ export default function Home() {
                   <div className="relative rounded-[3rem] overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.4)] border border-white/10 aspect-[4/5] lg:aspect-auto lg:h-[600px]">
                     <Image
                       src="/images/church.webp"
-                      alt="Church and nonprofit team using the WGC giving platform"
+                      alt="Mission-driven organization team using the WGC giving and payments platform"
                       fill
                       sizes="(max-width: 1024px) 100vw, 45vw"
                       priority
@@ -201,7 +202,7 @@ export default function Home() {
             <div className="flex flex-wrap justify-center gap-10 md:gap-20 text-[10px] font-bold uppercase tracking-[0.25em] text-wgc-navy-200 font-mono">
               <div className="flex items-center gap-3 group">
                 <Heart className="w-5 h-5 text-wgc-gold-500 opacity-90" />
-                Donor Management
+                Supporter Management
               </div>
               <div className="flex items-center gap-3 group">
                 <Repeat className="w-5 h-5 text-wgc-gold-500 opacity-90" />
@@ -219,6 +220,26 @@ export default function Home() {
           </div>
         </section>
 
+        {/* $0 ORGANIZATION PROCESSING COST */}
+        <section className="py-24 bg-white border-b border-wgc-navy-100">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <ScrollFade>
+              <div className="inline-flex items-center px-6 py-3 rounded-xl bg-wgc-gold-500/10 text-wgc-gold-600 text-[11px] font-black uppercase tracking-widest border border-wgc-gold-500/20 font-mono mb-8">
+                What WGC Does
+              </div>
+              <h2 className="text-4xl md:text-6xl font-bold text-wgc-navy-950 mb-6 tracking-tight">
+                $0 processing cost to your organization
+              </h2>
+              <p className="text-lg text-wgc-navy-500 max-w-2xl mx-auto leading-relaxed mb-4">
+                By default, supporters can choose to cover the processing fee — so more of every gift, dues payment, or transaction goes straight to your mission, at no cost to your organization.
+              </p>
+              <p className="text-sm text-wgc-navy-400 max-w-2xl mx-auto leading-relaxed">
+                Prefer your organization to absorb the fee instead? That option is available too, at transparent, published rates — see the <Link href="/pricing" className="text-wgc-gold-600 font-bold hover:underline">pricing page</Link> for details.
+              </p>
+            </ScrollFade>
+          </div>
+        </section>
+
         {/* EVERYTHING IN ONE PLACE */}
         <section className="py-32 bg-white relative overflow-hidden">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -229,7 +250,7 @@ export default function Home() {
                 </div>
                 <h2 className="text-4xl md:text-6xl font-bold text-wgc-navy-950 mb-6 tracking-tight">Everything in one place</h2>
                 <p className="text-lg text-wgc-navy-500 max-w-2xl mx-auto leading-relaxed">
-                  No more jumping between a payment processor, a donor spreadsheet, a recurring-giving app, and your accounting software. It&apos;s all here.
+                  No more jumping between a payment processor, a supporter spreadsheet, a recurring-giving app, and your accounting software. It&apos;s all here.
                 </p>
               </div>
             </ScrollFade>
@@ -250,16 +271,16 @@ export default function Home() {
               <div className="grid lg:grid-cols-2 gap-16 items-center">
                 <div>
                   <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white text-wgc-navy-600 text-[10px] font-bold tracking-[0.2em] uppercase mb-6 border border-wgc-navy-100 font-mono">
-                    Built for Real Teams
+                    Your Entire Team. One Organization Account.
                   </div>
                   <h2 className="text-3xl md:text-5xl font-bold text-wgc-navy-950 mb-6 tracking-tight">
                     Stop sharing one login
                   </h2>
                   <p className="text-lg text-wgc-navy-500 leading-relaxed mb-6">
-                    Pastors, finance staff, front-office admins, and volunteer fundraisers all need different access. WGC gives every team member their own account — scoped to exactly what they need.
+                    Executive directors, finance staff, front-office admins, and volunteer fundraisers all need different access. WGC gives every team member their own account — scoped to exactly what they need — without sharing credentials.
                   </p>
                   <p className="text-lg text-wgc-navy-500 leading-relaxed">
-                    No more one shared password floating around the office, and no more guessing who changed what.
+                    No more one shared password floating around the office, and no more guessing who changed what. Less time managing access, more time on the mission.
                   </p>
                 </div>
                 <div className="grid sm:grid-cols-2 gap-5">
@@ -277,6 +298,46 @@ export default function Home() {
                 </div>
               </div>
             </ScrollFade>
+          </div>
+        </section>
+
+        {/* ORGANIZATIONS WE SERVE */}
+        <section className="py-28 bg-white border-b border-wgc-navy-100">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <ScrollFade>
+              <div className="text-center mb-16">
+                <div className="inline-flex items-center px-6 py-3 rounded-xl bg-wgc-navy-50 text-wgc-navy-950 text-[11px] font-black uppercase tracking-widest border border-wgc-navy-100 font-mono mb-8">
+                  Who We Serve
+                </div>
+                <h2 className="text-4xl md:text-6xl font-bold text-wgc-navy-950 mb-6 tracking-tight">
+                  Built for organizations that move missions forward
+                </h2>
+                <p className="text-lg text-wgc-navy-500 max-w-2xl mx-auto leading-relaxed">
+                  WGC serves a wide range of mission-driven organizations directly through the WGC platform, and also provides payment infrastructure for the software platforms that serve them.
+                </p>
+              </div>
+            </ScrollFade>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[
+                { icon: Heart, title: "Nonprofits & Charities", desc: "Donor management, recurring giving, campaigns, and reporting for 501(c) organizations.", href: "/for/christian-nonprofits" },
+                { icon: Building2, title: "Churches & Ministries", desc: "Giving, tithing, and stewardship tools built for congregations of every size.", href: "/for/churches" },
+                { icon: GraduationCap, title: "Schools, PTAs & Booster Clubs", desc: "Dues, fundraisers, and event payments with team accounts for staff and volunteers.", href: "/for/schools" },
+                { icon: Landmark, title: "Foundations", desc: "Grant-ready reporting, recurring giving, and multi-fund tracking in one dashboard.", href: "/for/foundations" },
+                { icon: HandCoins, title: "Associations & Membership Organizations", desc: "Membership dues, renewals, invoicing, and member records, fully automated.", href: "/for/associations" },
+                { icon: Building, title: "Community Organizations", desc: "Payments, supporter records, and reporting for community and civic groups.", href: "/for/christian-nonprofits" },
+                { icon: Code2, title: "Software Platforms & ISVs", desc: "Embed WGC's payment infrastructure into your own software with APIs and webhooks.", href: "/software-partners" },
+              ].map((v, i) => (
+                <ScrollFade key={v.title} delay={i * 60}>
+                  <Link href={v.href} className="group block h-full p-6 bg-wgc-off rounded-2xl border border-wgc-navy-100 hover:border-wgc-gold-500/40 hover:shadow-lg transition-all">
+                    <div className="w-10 h-10 rounded-xl bg-white border border-wgc-navy-100 flex items-center justify-center text-wgc-gold-500 mb-5 group-hover:bg-wgc-gold-500 group-hover:text-wgc-navy-950 transition-all">
+                      <v.icon className="w-5 h-5" />
+                    </div>
+                    <h3 className="text-[15px] font-bold text-wgc-navy-950 tracking-tight leading-snug mb-2">{v.title}</h3>
+                    <p className="text-[12px] font-medium text-wgc-navy-500 leading-relaxed">{v.desc}</p>
+                  </Link>
+                </ScrollFade>
+              ))}
+            </div>
           </div>
         </section>
 
@@ -305,7 +366,7 @@ export default function Home() {
                 </div>
                 <h2 className="text-5xl sm:text-7xl lg:text-8xl font-black text-wgc-navy-950 tracking-tight mb-8 leading-none">The WGC Advantage</h2>
                 <p className="text-[13px] text-wgc-navy-400 font-bold max-w-2xl mx-auto leading-relaxed tracking-widest opacity-70">
-                  WGC handles giving, donors, and operations so churches and nonprofits can spend less time on administration and more time on their mission.
+                  WGC handles payments, supporters, and operations so mission-driven organizations can spend less time on administration and more time on their mission.
                 </p>
               </div>
             </ScrollFade>
@@ -314,7 +375,7 @@ export default function Home() {
                 <div className="relative rounded-[3rem] overflow-hidden shadow-2xl h-full min-h-[450px] group border border-wgc-navy-100">
                     <Image
                       src="/images/partners.webp"
-                      alt="Church and nonprofit staff saving time with WGC"
+                      alt="Mission-driven organization staff saving time with WGC"
                       fill
                       sizes="(max-width: 1024px) 100vw, 45vw"
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 brightness-[0.85]"
@@ -363,8 +424,8 @@ export default function Home() {
               <ScrollFade delay={150}>
                 <div className="relative bg-wgc-navy-950 rounded-[2.5rem] p-12 border border-white/10 shadow-2xl group hover:-translate-y-2 transition-transform duration-500">
                   <div className="w-10 h-10 rounded-full bg-wgc-gold-500 text-wgc-navy-950 flex items-center justify-center text-lg font-black mb-10 shadow-xl group-hover:scale-110 transition-transform">02</div>
-                  <h3 className="text-xl font-black !text-white mb-4 tracking-tight">Donors Give</h3>
-                  <p className="text-[13px] font-bold text-white/60 leading-relaxed mb-8 tracking-widest">One-time or recurring, by card or ACH — and donors can choose to cover the processing fee, at no cost to you.</p>
+                  <h3 className="text-xl font-black !text-white mb-4 tracking-tight">Supporters Give</h3>
+                  <p className="text-[13px] font-bold text-white/60 leading-relaxed mb-8 tracking-widest">One-time or recurring, by card, ACH, or digital wallet — and supporters can choose to cover the processing fee, at no cost to you.</p>
                   <Link href="/demo#donor-demo" className="inline-flex items-center text-[11px] font-black text-wgc-gold-500 hover:text-white transition-colors tracking-[0.2em] font-mono">
                     See the Giving Flow
                   </Link>
@@ -393,7 +454,7 @@ export default function Home() {
               <div className="w-20 h-1 bg-wgc-gold-500 mx-auto mb-16 rounded-full shadow-sm shadow-wgc-gold-500/20"></div>
               <blockquote className="space-y-12">
                 <p className="text-4xl sm:text-5xl lg:text-7xl font-bold italic leading-[1.05] !text-white tracking-tight">
-                  Every hour spent piecing together five different tools is an hour <span className="text-wgc-gold-500">not spent</span> on the mission. We built WGC so churches and nonprofits get both back.
+                  Every hour spent piecing together five different tools is an hour <span className="text-wgc-gold-500">not spent</span> on the mission. We built WGC so mission-driven organizations get both back.
                 </p>
                 <footer className="flex items-center justify-center gap-6">
                   <div className="w-12 h-px bg-white/20"></div>
@@ -439,7 +500,7 @@ export default function Home() {
             <ScrollFade>
               <div className="text-center mb-16">
                 <h2 className="text-3xl font-bold text-wgc-navy-950 tracking-tight mb-4">More Than a Payment Processor</h2>
-                <p className="text-lg text-wgc-navy-500 font-medium max-w-2xl mx-auto tracking-tight opacity-90">Why churches and nonprofits choose WGC over a giving page bolted onto a generic processor.</p>
+                <p className="text-lg text-wgc-navy-500 font-medium max-w-2xl mx-auto tracking-tight opacity-90">Why mission-driven organizations choose WGC over a giving page bolted onto a generic processor.</p>
               </div>
             </ScrollFade>
 
@@ -455,9 +516,9 @@ export default function Home() {
                   </thead>
                   <tbody className="divide-y divide-wgc-navy-50">
                     {[
-                      { f: 'Full platform', w: 'Donors, recurring, reports, team & more', s: 'Payments only' },
+                      { f: 'Full platform', w: 'Supporters, recurring, reports, team & more', s: 'Payments only' },
                       { f: 'Team accounts', w: 'Owner / Admin / Fundraiser / Viewer roles', s: 'One shared login' },
-                      { f: 'Processing cost', w: '$0 to your org when donors cover it', s: 'Org always pays' },
+                      { f: 'Processing cost', w: '$0 to your org when supporters cover it', s: 'Org always pays' },
                     ].map((row) => (
                       <tr key={row.f}>
                         <td className="py-6 px-10 font-bold text-wgc-navy-900 tracking-tight">{row.f}</td>
@@ -478,26 +539,63 @@ export default function Home() {
             <ScrollFade>
               <div className="text-center mb-16">
                 <h2 className="text-3xl font-bold text-wgc-navy-950 tracking-tight mb-4">Frequently Asked Questions</h2>
-                <p className="text-lg text-wgc-navy-500 font-medium tracking-tight">Learn more about how WGC is building the giving and payment platform for churches and nonprofits in 2026.</p>
+                <p className="text-lg text-wgc-navy-500 font-medium tracking-tight">Learn more about how WGC is building the giving and payment management platform for mission-driven organizations in 2026.</p>
               </div>
               <div className="space-y-8">
                 <div className="bg-wgc-off p-8 rounded-3xl border border-wgc-navy-50">
                   <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">Is WGC just a payment processor?</h3>
-                  <p className="text-wgc-navy-500 leading-relaxed font-medium">No. WGC is a complete giving and payment management platform for churches and nonprofits. Beyond accepting card and ACH donations, WGC includes donor management, recurring giving, giving and campaign pages, invoicing, reporting and analytics, settlements and payouts, refunds, donor statements, team accounts with role-based permissions (Owner, Admin, Fundraiser, Viewer), and accounting integrations — all in one dashboard, instead of piecing together separate tools.</p>
+                  <p className="text-wgc-navy-500 leading-relaxed font-medium">No. WGC is a complete giving and payment management platform for mission-driven organizations — nonprofits, churches and ministries, foundations, associations, schools, and community organizations. Beyond accepting card, ACH, and digital wallet payments, WGC includes supporter management, recurring giving, giving and campaign pages, invoicing, reporting and analytics with CSV exports, settlements and payouts, refunds, year-end statements, team accounts with role-based permissions (Owner, Admin, Fundraiser, Viewer), and accounting integrations — all in one dashboard, instead of piecing together separate tools. WGC also provides payment infrastructure for software platforms that serve these organizations.</p>
                 </div>
                 <div className="bg-wgc-off p-8 rounded-3xl border border-wgc-navy-50">
-                  <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">How much does WGC cost for a church or nonprofit?</h3>
-                  <p className="text-wgc-navy-500 leading-relaxed font-medium">When a donor chooses to cover the processing fee, the cost to the organization is $0. Organizations that choose to absorb the fee pay a maximum of 2.3% + 25¢ per card transaction and a flat 25¢ per ACH transaction. Every organization also pays a simple $10/month WGC platform fee, which includes full access to the dashboard and every platform feature — not just payment processing.</p>
+                  <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">How much does WGC cost for a nonprofit, church, or other organization?</h3>
+                  <p className="text-wgc-navy-500 leading-relaxed font-medium">When a supporter chooses to cover the processing fee, the cost to the organization is $0. Organizations that choose to absorb the fee pay a maximum of 2.3% + 25¢ per card transaction and a flat 25¢ per ACH transaction. Every organization also pays a simple $10/month WGC platform fee, which includes full access to the dashboard and every platform feature — not just payment processing.</p>
                 </div>
                 <div className="bg-wgc-off p-8 rounded-3xl border border-wgc-navy-50">
                   <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">Does WGC support team accounts and staff permissions?</h3>
-                  <p className="text-wgc-navy-500 leading-relaxed font-medium">Yes. WGC supports Owner, Admin, Fundraiser, and Viewer roles so churches and nonprofits can give each staff member or volunteer their own login with access scoped to what they actually need, instead of sharing one account and password.</p>
+                  <p className="text-wgc-navy-500 leading-relaxed font-medium">Yes. WGC supports Owner, Admin, Fundraiser, and Viewer roles so any organization can give each staff member or volunteer their own login with access scoped to what they actually need, instead of sharing one account and password.</p>
                 </div>
                 <div className="bg-wgc-off p-8 rounded-3xl border border-wgc-navy-50">
                   <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">What&apos;s the best alternative to Omella, Tithe.ly, Givebutter, or Zeffy?</h3>
-                  <p className="text-wgc-navy-500 leading-relaxed font-medium">WGC is built for churches and nonprofits that want more than a giving page — it combines donor management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, donor statements, team accounts with role-based permissions, and accounting integrations in one platform, with a $0 processing cost option when donors cover the fee.</p>
+                  <p className="text-wgc-navy-500 leading-relaxed font-medium">WGC is built for nonprofits, churches, foundations, associations, schools, and other mission-driven organizations that want more than a giving page — it combines supporter management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, year-end statements, team accounts with role-based permissions, and accounting integrations in one platform, with a $0 processing cost option when supporters cover the fee.</p>
                 </div>
               </div>
+            </ScrollFade>
+          </div>
+        </section>
+
+        {/* INTEGRATIONS */}
+        <section className="py-20 bg-wgc-off border-y border-wgc-navy-100">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <ScrollFade>
+              <div className="inline-flex items-center px-6 py-3 rounded-xl bg-white text-wgc-navy-950 text-[11px] font-black uppercase tracking-widest border border-wgc-navy-100 font-mono mb-8">
+                Integrations
+              </div>
+              <h2 className="text-3xl md:text-5xl font-bold text-wgc-navy-950 mb-6 tracking-tight">
+                Connects to the tools you already use
+              </h2>
+              <p className="text-lg text-wgc-navy-500 max-w-2xl mx-auto leading-relaxed">
+                Sync giving and transactions directly into QuickBooks, with more accounting and CRM integrations on the way — no manual data entry required.
+              </p>
+            </ScrollFade>
+          </div>
+        </section>
+
+        {/* SOFTWARE PLATFORMS / ISV TEASER */}
+        <section className="py-20 bg-wgc-navy-950 border-b border-white/5">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <ScrollFade>
+              <div className="inline-flex items-center px-6 py-3 rounded-xl bg-white/5 text-white text-[11px] font-black uppercase tracking-widest border border-white/10 font-mono mb-8">
+                For Software Platforms
+              </div>
+              <h2 className="text-3xl md:text-5xl font-bold !text-white mb-6 tracking-tight">
+                Build payments into your own software
+              </h2>
+              <p className="text-lg text-white/70 max-w-2xl mx-auto leading-relaxed mb-10">
+                WGC serves organizations directly through our dashboard, and also provides payment infrastructure — APIs, onboarding, and webhooks — for software platforms that serve mission-driven organizations.
+              </p>
+              <Link href="/software-partners" className="bg-wgc-gold-500 text-wgc-navy-950 inline-flex items-center justify-center px-8 py-4 text-[13px] font-bold rounded-2xl shadow-xl transform transition-all hover:scale-105 hover:bg-white uppercase tracking-widest">
+                Explore Software Partnerships
+              </Link>
             </ScrollFade>
           </div>
         </section>
@@ -506,7 +604,7 @@ export default function Home() {
         <section className="bg-wgc-navy-950 pb-20 border-t border-white/5">
           <CTASection
             headline="Ready to give your team their time back?"
-            subheadline="Join the churches and nonprofits using WGC to run giving, donors, and operations from one place."
+            subheadline="Join the mission-driven organizations using WGC to run payments, supporters, and operations from one place."
             ctaText="Get Started"
             ctaLink="/start"
           />

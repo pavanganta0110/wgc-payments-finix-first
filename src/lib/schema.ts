@@ -20,7 +20,7 @@ export const organization = {
   logo: { "@type": "ImageObject", url: `${SITE}/wgc-brand-final.png` },
   email: "support@wgcpayments.com",
   description:
-    "Giving and payment management platform for churches and nonprofits — donor management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, team accounts with role-based permissions, and accounting integrations, all in one dashboard.",
+    "Giving and payment management platform for mission-driven organizations — nonprofits, churches and ministries, foundations, associations, schools, and community organizations — with supporter management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, team accounts with role-based permissions, and accounting integrations, all in one dashboard. WGC also provides payment infrastructure for software platforms.",
   // TODO(nap): add streetAddress / addressLocality / postalCode / telephone.
   // Required for local pack eligibility on the /kansas-city/* pages. Left out
   // deliberately rather than guessed — see ACTION-PLAN.md 3.4.
