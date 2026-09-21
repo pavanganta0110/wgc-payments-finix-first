@@ -151,7 +151,7 @@ export default function SoftwarePartnersPage() {
             </ScrollFade>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {['Church Management (ChMS)', 'Donation Platforms', 'Nonprofit CRMs', '501(c) Organization Software', 'Faith-based SaaS'].map((platform, i) => (
+              {['Church Management (ChMS)', 'Donation Platforms', 'Nonprofit CRMs', '501(c) Organization Software', 'Faith-based SaaS', 'Individual Fundraisers'].map((platform, i) => (
                 <ScrollFade key={platform} delay={i * 100}>
                   <div className="p-8 rounded-2xl bg-white border border-wgc-navy-100 shadow-sm hover:shadow-md transition-all group hover:-translate-y-1">
                      <div className="text-lg font-bold text-wgc-navy-900 group-hover:text-wgc-gold-600 transition-colors">{platform}</div>

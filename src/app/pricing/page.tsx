@@ -65,13 +65,13 @@ export default function PricingPage() {
               <ScrollFade className="lg:col-span-7 text-left">
                 <div className="inline-flex items-center gap-2 px-5 py-2 rounded-xl mb-10 border border-wgc-navy-100 bg-wgc-navy-50">
                   <div className="w-1.5 h-1.5 rounded-full bg-wgc-gold-600"></div>
-                  <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-navy-950 font-mono">Transparent Pricing</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-navy-950 font-mono">Mission Focused Pricing</span>
                 </div>
                 <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05] mb-8 text-wgc-navy-950">
                   <span className="text-wgc-gold-600 italic">$0</span> processing cost to your organization.
                 </h1>
                 <p className="text-lg sm:text-xl font-medium leading-relaxed mb-4 text-wgc-navy-500 max-w-2xl tracking-tight opacity-80">
-                  When a donor chooses to cover the processing fee, it costs your church or nonprofit nothing. Prefer to absorb the fee instead? We show that rate too, clearly, below.
+                  By default, donors can choose to cover the processing fee — so more of every gift goes straight to your mission, at no cost to your church or nonprofit. Prefer your organization to absorb the fee instead? We show that rate too, clearly, below.
                 </p>
                 <p className="text-lg sm:text-xl font-medium leading-relaxed mb-12 text-wgc-navy-500 max-w-2xl tracking-tight opacity-80">
                   The $10/month WGC platform fee isn&apos;t just for processing — it includes donor management, recurring giving, reporting, settlements, refunds, statements, and team accounts.
