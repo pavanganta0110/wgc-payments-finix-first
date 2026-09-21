@@ -33,7 +33,7 @@ const content: AudienceLandingContent = {
   useCases: [
     {
       title: "Membership dues & renewals",
-      description: "Collect one-time or recurring dues, with automatic renewal reminders and payment tracking so no member lapses by accident.",
+      description: "Collect one-time or recurring dues, billed automatically on the schedule you set, with clear payment history for every member.",
     },
     {
       title: "Event & conference invoicing",
@@ -47,11 +47,11 @@ const content: AudienceLandingContent = {
   featuresTitle: "Everything your association needs",
   featuresSubtitle: "A complete membership and payments platform, not just a dues collector.",
   features: [
-    { icon: HandCoins, title: "Membership dues & renewals", description: "Collect one-time or recurring dues with automatic renewal tracking." },
+    { icon: HandCoins, title: "Membership dues & renewals", description: "Collect one-time or recurring membership dues, billed on your schedule." },
     { icon: Repeat, title: "Recurring payments", description: "Turn annual dues into predictable recurring revenue, billed automatically." },
     { icon: FileText, title: "Invoicing", description: "Bill members for events, certifications, or special assessments and track payment status." },
     { icon: Users, title: "Member records", description: "A full member record — payment history, contact info, and notes in one place." },
-    { icon: BarChart3, title: "Reporting", description: "Real-time dashboards on membership revenue, renewal rates, and event income." },
+    { icon: BarChart3, title: "Reporting", description: "Real-time dashboards on membership revenue and event income, exportable to CSV." },
     { icon: ShieldCheck, title: "Secure onboarding", description: "Our PCI Level 1 compliant onboarding process verifies your association's data securely and swiftly." },
   ],
   teamSpotlightTitle: "Your entire team. One association account.",
@@ -66,7 +66,7 @@ const content: AudienceLandingContent = {
   faqs: [
     {
       question: "Can members set up automatic recurring dues?",
-      answer: "Yes — members can set up recurring monthly or annual dues, and WGC handles billing and renewal reminders automatically.",
+      answer: "Yes — members can set up recurring monthly or annual dues, and WGC bills them automatically on that schedule.",
     },
     {
       question: "Can we bill members for events separately from dues?",

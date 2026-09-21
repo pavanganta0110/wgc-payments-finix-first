@@ -208,8 +208,8 @@ export default function PricingPage() {
                       <CheckCircle2 className="w-6 h-6 text-wgc-gold-600" />
                     </div>
                     <div>
-                      <h4 className="text-lg font-bold text-wgc-navy-900 mb-2">No percentage gouging on ACH</h4>
-                      <p className="text-[15px] font-medium text-wgc-navy-500 leading-relaxed opacity-80">While others take 1% or more on large donations, we charge a flat 25¢. On a $1,000 donation, you keep $9.75 more with WGC.</p>
+                      <h4 className="text-lg font-bold text-wgc-navy-900 mb-2">No percentage fees on ACH</h4>
+                      <p className="text-[15px] font-medium text-wgc-navy-500 leading-relaxed opacity-80">While others take 1% or more on large transactions, we charge a flat 25¢. On a $1,000 gift or payment, you keep $9.75 more with WGC.</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-6">
@@ -240,7 +240,7 @@ export default function PricingPage() {
                   <div className="space-y-8">
                     <div className="flex justify-between items-end pb-8 border-b border-white/10">
                       <div>
-                        <div className="text-[10px] font-black text-white/70 uppercase tracking-widest mb-2 font-mono">Annual Donation Volume</div>
+                        <div className="text-[10px] font-black text-white/70 uppercase tracking-widest mb-2 font-mono">Annual Payment Volume</div>
                         <div className="text-3xl font-bold text-white tracking-tighter">$1.2M</div>
                       </div>
                       <div className="text-right">
