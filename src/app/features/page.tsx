@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  CreditCard, Heart, Repeat, Banknote, FileText, Users, BarChart3, Undo2, Plug, Code2, LucideIcon,
+  CreditCard, Heart, Repeat, Banknote, FileText, Users, BarChart3, Undo2, Plug, Code2, ArrowLeftRight,
+  LineChart, LayoutTemplate, Webhook, QrCode, Trophy, Ticket, Radio, LucideIcon,
 } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
@@ -10,12 +11,12 @@ import ScrollFade from "@/components/ui/ScrollFade";
 import { pageGraph, breadcrumbs } from "@/lib/schema";
 
 export const metadata: Metadata = {
-  title: "Features | Payments, Supporters, Reporting & More | WGC Payments",
-  description: "Every feature in the WGC platform: payments, supporter management, recurring giving, campaigns, invoicing, team accounts, reporting, settlements, refunds, integrations, and software infrastructure — all in one place.",
+  title: "Fundraising & Donor Management Features | WGC Payments",
+  description: "Every feature in the WGC fundraising platform: payments, donor profiles and donation history, recurring giving, campaigns, invoicing, external/offline donations, donor analytics, team accounts, reporting, settlements, refunds, and integrations — all in one place.",
   openGraph: {
     images: [{ url: "/og/verticals.png", width: 1200, height: 630 }],
-    title: "Features | Payments, Supporters, Reporting & More | WGC Payments",
-    description: "Every feature in the WGC platform, organized by category — payments, supporters, giving, team accounts, reporting, and more.",
+    title: "Fundraising & Donor Management Features | WGC Payments",
+    description: "Every feature in the WGC fundraising platform, organized by category — payments, donors, giving, team accounts, reporting, and more.",
     url: "https://www.wgcpayments.com/features",
   },
   alternates: { canonical: "/features" },
@@ -42,8 +43,10 @@ const CATEGORIES: FeatureCategory[] = [
     title: "Supporters & Donors",
     description: "One record for every person who gives, pays dues, or supports your mission.",
     items: [
-      { icon: Heart, title: "Supporter management", description: "Full giving history, contact info, and notes in one CRM record." },
+      { icon: Heart, title: "Donor profiles & donation history", description: "Full giving history, contact info, and notes in one CRM record." },
       { icon: Users, title: "Member & donor records", description: "Track individuals and organizations across every payment type." },
+      { icon: ArrowLeftRight, title: "External & offline donations", description: "Record cash, check, or other gifts given outside WGC so they appear in donor history and reporting." },
+      { icon: LineChart, title: "Donor analytics", description: "Lapsed-donor detection and top-donor tracking, beyond generic reporting." },
       { icon: FileText, title: "Year-end statements", description: "Auto-generated, tax-ready annual giving statements." },
     ],
   },
@@ -103,16 +106,31 @@ const CATEGORIES: FeatureCategory[] = [
   },
   {
     title: "Integrations",
-    description: "Connect WGC to the accounting and CRM tools you already use.",
+    description: "Connect WGC to the accounting and website tools you already use.",
     items: [
       { icon: Plug, title: "QuickBooks integration", description: "Sync giving and transactions directly into QuickBooks." },
+      { icon: Plug, title: "Aplos integration", description: "Full fund-accounting sync built for nonprofits." },
+      { icon: LayoutTemplate, title: "Embeddable giving forms", description: "Add a donate button or inline giving form to your own website." },
     ],
   },
   {
-    title: "Software / API Infrastructure",
-    description: "For software platforms that want to embed payments into their own product.",
+    title: "Software Partnerships",
+    description: "For software platforms that want to embed WGC's payment infrastructure into their own product.",
     items: [
-      { icon: Code2, title: "APIs, onboarding & webhooks", description: "Embed WGC's payment infrastructure into your own software.", },
+      { icon: Code2, title: "Guided platform integration", description: "Onboarding, payments, and recurring giving embedded into your platform today, through our team." },
+      { icon: Webhook, title: "Webhooks", description: "Event notifications delivered to your own systems.", badge: "Coming Soon" },
+      { icon: Code2, title: "Self-serve API access", description: "API keys software partners can use to build directly on WGC.", badge: "Coming Soon" },
+    ],
+  },
+  {
+    title: "Fundraising Tools",
+    description: "Beyond basic giving — tools for campaigns that involve more than one giving page.",
+    items: [
+      { icon: QrCode, title: "Peer-to-peer fundraising", description: "Individual and team fundraiser pages under one campaign, each with its own link and progress.", badge: "Coming Soon" },
+      { icon: Trophy, title: "Fundraiser & team leaderboards", description: "Rank individual fundraisers or teams by amount raised.", badge: "Coming Soon" },
+      { icon: Heart, title: "Donor walls & social sharing", description: "Publicly recognize supporters and make it easy to share a campaign.", badge: "Coming Soon" },
+      { icon: Radio, title: "Text-to-give & SMS donor engagement", description: "Give and receive updates by text message.", badge: "Coming Soon" },
+      { icon: Ticket, title: "Event fundraising", description: "Attendees, tickets, capacity, and check-in for fundraising events.", badge: "Coming Soon" },
     ],
   },
 ];
@@ -196,11 +214,15 @@ export default function FeaturesPage() {
 
         {/* SOFTWARE PLATFORMS CALLOUT */}
         <section className="py-16 bg-wgc-off border-t border-wgc-navy-100">
-          <div className="max-w-3xl mx-auto px-4 text-center">
+          <div className="max-w-3xl mx-auto px-4 text-center space-y-4">
             <ScrollFade>
               <p className="text-wgc-navy-500 leading-relaxed">
                 Building your own software and want to embed these features for the organizations you serve? See{" "}
                 <Link href="/software-partners" className="text-wgc-gold-600 font-bold hover:underline">WGC for Software Platforms</Link>.
+              </p>
+              <p className="text-wgc-navy-500 leading-relaxed">
+                Already using another fundraising or payment platform? See how to{" "}
+                <Link href="/switch" className="text-wgc-gold-600 font-bold hover:underline">switch to WGC without starting over</Link>.
               </p>
             </ScrollFade>
           </div>

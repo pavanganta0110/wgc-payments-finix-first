@@ -11,7 +11,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   alternates: { canonical: "/software-partners" },
   title: "Payment Infrastructure for Software Platforms | WGC for Partners",
-  description: "WGC serves mission-driven organizations directly through our platform, and also provides embedded payment infrastructure — APIs, onboarding, and webhooks — for software companies serving nonprofits, churches, and other 501(c) organizations.",
+  description: "WGC serves mission-driven organizations directly through our platform, and also provides embedded payment infrastructure — onboarding, payments, and recurring giving — for software companies serving nonprofits, churches, and other 501(c) organizations.",
   openGraph: {
     images: [{ url: "/og/default.png", width: 1200, height: 630 }],
     title: "Payment Infrastructure for Software Platforms | WGC for Partners",
@@ -44,7 +44,7 @@ const FEATURES = [
   },
   {
     title: "Merchant Orchestration",
-    description: "Onboard organizations, manage settlements, and handle payouts across your entire network from a single API.",
+    description: "Onboard organizations, manage settlements, and handle payouts across your entire network through one guided integration.",
     icon: BarChart3,
   },
   {
@@ -155,8 +155,8 @@ export default function SoftwarePartnersPage() {
               <ScrollFade delay={100}>
                 <div className="h-full p-10 rounded-3xl border border-wgc-navy-100 bg-wgc-off">
                   <div className="text-[10px] font-black text-wgc-gold-600 uppercase tracking-widest mb-4 font-mono">For Software Platforms</div>
-                  <h3 className="text-2xl font-bold text-wgc-navy-900 mb-4 tracking-tight">Embed WGC via our APIs</h3>
-                  <p className="text-wgc-navy-500 leading-relaxed mb-6">Software companies can embed WGC&apos;s payment infrastructure — onboarding, recurring payments, payouts, and webhooks — directly into their own product.</p>
+                  <h3 className="text-2xl font-bold text-wgc-navy-900 mb-4 tracking-tight">Embed WGC into your platform</h3>
+                  <p className="text-wgc-navy-500 leading-relaxed mb-6">Software companies can embed WGC&apos;s payment infrastructure — onboarding, recurring payments, and payouts — directly into their own product through a guided integration.</p>
                   <Link href="/contact" className="inline-flex items-center text-[13px] font-bold text-wgc-gold-600 hover:text-wgc-navy-900 transition-colors">
                     Apply for Partnership &rarr;
                   </Link>

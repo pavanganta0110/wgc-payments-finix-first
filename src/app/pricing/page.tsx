@@ -25,17 +25,18 @@ export const metadata: Metadata = {
 const INCLUDED_ITEMS = [
   "One-time & recurring payments",
   "Card, ACH, Apple Pay & Google Pay",
-  "Supporter management",
+  "Donor profiles & donation history",
+  "External & offline donation recording",
   "Giving & campaign pages",
   "Email giving campaigns",
   "Invoicing & payment requests",
-  "Reporting & analytics with CSV exports",
+  "Reporting & donor analytics with CSV exports",
   "Settlements & payouts",
   "Refunds & disputes",
   "Year-end statements",
   "Team accounts (Owner, Admin, Fundraiser, Viewer)",
   "Role-based permissions",
-  "QuickBooks integration",
+  "QuickBooks & Aplos integration",
 ];
 
 const TARGET_GROUPS = [
@@ -168,7 +169,8 @@ export default function PricingPage() {
                 <div className="bg-wgc-navy-950 text-white rounded-[2.5rem] shadow-2xl p-12 relative overflow-hidden group hover:-translate-y-2 transition-all duration-500">
                   <div className="text-[10px] font-black text-wgc-gold-500 uppercase tracking-[0.3em] mb-8 font-mono">WGC Platform Fee</div>
                   <h3 className="text-2xl font-bold !text-white mb-4 tracking-tight">Full platform access</h3>
-                  <p className="text-sm font-medium text-white/50 mb-10 leading-relaxed">Not a processing add-on — this is what unlocks the entire WGC dashboard: supporters, recurring giving, reporting, settlements, refunds, statements, and team accounts.</p>
+                  <p className="text-sm font-medium text-white/50 mb-6 leading-relaxed">Not a processing add-on — this is what unlocks the entire WGC dashboard: donors, recurring giving, reporting, settlements, refunds, statements, and team accounts.</p>
+                  <p className="text-sm font-bold text-wgc-gold-500/80 mb-10 leading-relaxed">Simple, flat, and predictable — no percentage-based WGC platform fee.</p>
                   <div className="flex items-baseline gap-2 mb-2">
                     <span className="text-6xl font-bold text-white tracking-tighter">$10</span>
                     <span className="text-2xl font-bold text-white/30">/mo</span>
@@ -187,6 +189,14 @@ export default function PricingPage() {
                   <p className="text-[11px] font-bold text-wgc-navy-400 mb-10 uppercase tracking-widest">Added per recurring charge</p>
                   <div className="w-12 h-1 bg-wgc-navy-900 rounded-full group-hover:w-full transition-all duration-700"></div>
                 </div>
+              </div>
+            </ScrollFade>
+            <ScrollFade>
+              <div className="mt-10 max-w-3xl mx-auto text-center p-8 rounded-3xl bg-wgc-gold-500/5 border border-wgc-gold-500/20">
+                <p className="text-wgc-navy-700 font-medium leading-relaxed">
+                  New to WGC? You may qualify for a limited-time <span className="font-bold text-wgc-navy-900">90-day free trial</span> before the $10/month platform fee begins.{" "}
+                  <Link href="/90-days-free" className="text-wgc-gold-600 font-bold hover:underline">See if you qualify</Link>.
+                </p>
               </div>
             </ScrollFade>
           </div>

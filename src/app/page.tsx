@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ShieldCheck, Users, BarChart3, Repeat, Heart, FileText, Banknote, Undo2, ClipboardList, Plug, Mail, MessageSquare, CreditCard, Landmark, Building2, GraduationCap, HandCoins, Building, Code2, LucideIcon } from "lucide-react";
+import { ShieldCheck, Users, BarChart3, Repeat, Heart, FileText, Banknote, Undo2, ClipboardList, Plug, Mail, MessageSquare, CreditCard, Landmark, Building2, GraduationCap, HandCoins, Building, Code2, ArrowLeftRight, LucideIcon } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import FeatureCard from "@/components/ui/FeatureCard";
@@ -38,18 +38,19 @@ const IMPACT_ITEMS = [
 
 const PLATFORM_FEATURES = [
   { icon: CreditCard, title: "Cards, ACH & Digital Wallets", description: "Accept one-time and recurring payments by card, ACH bank transfer, and Apple Pay / Google Pay where available." },
-  { icon: Heart, title: "Supporter Management", description: "A full donor and supporter CRM — giving history, contact info, and notes in one record." },
+  { icon: Heart, title: "Donor & Supporter Profiles", description: "A full donor CRM — giving history, donation history, contact info, and notes in one record." },
   { icon: Repeat, title: "Recurring Giving", description: "Turn one-time gifts or dues into sustaining recurring support automatically." },
   { icon: Banknote, title: "Giving & Campaign Pages", description: "Launch a branded giving or campaign page in minutes, no developer required." },
   { icon: Mail, title: "Email Giving Campaigns", description: "Send your giving link straight to a supporter list by email, with per-supporter tracking." },
   { icon: MessageSquare, title: "Text Campaigns", description: "Send your giving link to a supporter list by text message.", badge: "Coming Soon" },
   { icon: FileText, title: "Invoicing & Payment Requests", description: "Bill pledges, dues, tuition, or event fees and track payment status." },
-  { icon: BarChart3, title: "Reporting & CSV Exports", description: "Real-time dashboards on giving trends, retention, and campaign performance, exportable to CSV." },
+  { icon: ArrowLeftRight, title: "External & Offline Donations", description: "Record cash, check, or other gifts given outside WGC so they appear in donor history and reporting too." },
+  { icon: BarChart3, title: "Reporting & Donor Analytics", description: "Real-time dashboards, lapsed-donor detection, and top-donor tracking, exportable to CSV." },
   { icon: Banknote, title: "Settlements & Payouts", description: "Know exactly when funds hit your bank account, itemized to the transaction." },
   { icon: Undo2, title: "Refunds & Disputes", description: "Issue a refund or respond to a dispute directly from your dashboard." },
   { icon: ClipboardList, title: "Year-End Statements", description: "Auto-generated, tax-ready annual giving statements — no manual compiling." },
   { icon: Users, title: "Team Accounts & Roles", description: "Owner, Admin, Fundraiser, and Viewer access, scoped to what each person needs." },
-  { icon: Plug, title: "QuickBooks Integration", description: "Sync giving and transactions directly into QuickBooks and other accounting tools." },
+  { icon: Plug, title: "Accounting Integrations", description: "Sync giving and transactions directly into QuickBooks or Aplos." },
 ];
 
 const jsonLd = {
@@ -57,8 +58,8 @@ const jsonLd = {
   "@graph": [
     {
       "@type": "Product",
-      "name": "WGC Giving & Payment Management Platform",
-      "description": "An all-in-one giving and payment management platform for mission-driven organizations — nonprofits, churches and ministries, foundations, associations, schools, and community organizations — with supporter management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, year-end statements, team accounts with role-based permissions, and accounting integrations. WGC also provides payment infrastructure for software platforms.",
+      "name": "WGC Fundraising, Payments & Donor Management Platform",
+      "description": "WGC helps mission-driven organizations keep more of the money they raise and gives their teams time back by bringing payments, supporters, reporting, and financial operations into one platform. A fundraising, payments, and donor management platform for nonprofits, churches and ministries, foundations, associations, schools, and community organizations — with donor profiles, donation history, recurring giving, campaigns, invoicing, external/offline donation recording, reporting and donor analytics, settlements, refunds, year-end statements, team accounts with role-based permissions, and accounting integrations (QuickBooks, Aplos). WGC also partners with software platforms to embed this infrastructure into their own product.",
       "brand": { "@type": "Brand", "name": "WGC" },
       "offers": {
         "@type": "Offer",
@@ -83,7 +84,15 @@ const jsonLd = {
           "name": "Is WGC just a payment processor?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. WGC is a complete giving and payment management platform for mission-driven organizations. Beyond accepting card, ACH, and digital wallet payments, WGC includes supporter management, recurring giving, giving and campaign pages, invoicing, reporting and analytics with CSV exports, settlements and payouts, refunds, year-end statements, team accounts with role-based permissions (Owner, Admin, Fundraiser, Viewer), and accounting integrations — all in one dashboard, instead of piecing together separate tools. WGC also provides payment infrastructure for software platforms."
+            "text": "No. WGC is a fundraising, payments, and donor management platform for mission-driven organizations, not just a payment processor. Beyond accepting card, ACH, and digital wallet payments, WGC includes donor profiles and donation history, recurring giving, giving and campaign pages, invoicing, external and offline donation recording, reporting and donor analytics with CSV exports, settlements and payouts, refunds, year-end statements, team accounts with role-based permissions (Owner, Admin, Fundraiser, Viewer), and accounting integrations with QuickBooks and Aplos — all in one dashboard, instead of piecing together separate tools."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I switch to WGC from Givebutter, Zeffy, Donorbox, Stripe, or another platform?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. WGC helps organizations migrate donor and contact records, historical and external donation data, funds, and organization information from another fundraising or payment platform, including CSV imports and spreadsheet-based donor databases. Saved card or bank details generally can't be transferred automatically between processors — recurring giving is reviewed during migration, and we help determine the best path based on your current provider."
           }
         },
         {
@@ -141,13 +150,16 @@ export default function Home() {
               <ScrollFade className="lg:col-span-7">
                 <div className="inline-flex items-center gap-3 px-5 py-2 rounded-xl mb-10 border border-wgc-gold-500/20 bg-wgc-gold-500/5 backdrop-blur-sm">
                   <div className="w-2 h-2 rounded-full bg-wgc-gold-500 animate-pulse"></div>
-                  <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500/90 font-mono">Giving & Payments for Mission-Driven Organizations</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500/90 font-mono">Fundraising, Payments & Donor Management</span>
                 </div>
                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-8 !text-white">
                   Save money. Save staff time. <span className="text-wgc-gold-500 italic">Put more toward the mission.</span>
                 </h1>
+                <p className="text-lg sm:text-xl font-medium leading-relaxed mb-6 text-white/70 max-w-2xl tracking-tight">
+                  WGC is a fundraising, payments, and donor management platform built for nonprofits, churches, foundations, associations, schools, and other mission-driven organizations.
+                </p>
                 <p className="text-lg sm:text-xl font-medium leading-relaxed mb-12 text-white/70 max-w-2xl tracking-tight">
-                  WGC brings payments, supporters, giving pages, invoicing, reporting, settlements, refunds, and team accounts into one platform — so nonprofits, churches, foundations, associations, schools, and other mission-driven organizations spend less time managing operations and more time on their mission.
+                  Accept donations, manage donors, launch campaigns, automate recurring giving, send invoices, track every gift, and manage your organization — all from one dashboard.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 max-w-lg">
                   <Link href="/start" className="bg-wgc-gold-500 text-wgc-navy-950 inline-flex items-center justify-center px-8 py-4 text-[13px] font-bold rounded-2xl shadow-[0_20px_40px_rgba(234,179,8,0.2)] transform transition-all hover:scale-105 hover:bg-white uppercase tracking-widest w-full sm:w-auto">
@@ -325,7 +337,7 @@ export default function Home() {
                 { icon: Landmark, title: "Foundations", desc: "Grant-ready reporting, recurring giving, and multi-fund tracking in one dashboard.", href: "/for/foundations" },
                 { icon: HandCoins, title: "Associations & Membership Organizations", desc: "Membership dues, renewals, invoicing, and member records, fully automated.", href: "/for/associations" },
                 { icon: Building, title: "Community Organizations", desc: "Payments, supporter records, and reporting for community and civic groups.", href: "/for/christian-nonprofits" },
-                { icon: Code2, title: "Software Platforms & ISVs", desc: "Embed WGC's payment infrastructure into your own software with APIs and webhooks.", href: "/software-partners" },
+                { icon: Code2, title: "Software Platforms & ISVs", desc: "Embed WGC's payment infrastructure into your own software through a guided partnership.", href: "/software-partners" },
               ].map((v, i) => (
                 <ScrollFade key={v.title} delay={i * 60}>
                   <Link href={v.href} className="group block h-full p-6 bg-wgc-off rounded-2xl border border-wgc-navy-100 hover:border-wgc-gold-500/40 hover:shadow-lg transition-all">
@@ -533,6 +545,34 @@ export default function Home() {
           </div>
         </section>
 
+        {/* SWITCH TO WGC / MIGRATION */}
+        <section className="py-24 bg-wgc-navy-950 border-y border-white/5">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <ScrollFade>
+              <div className="inline-flex items-center px-6 py-3 rounded-xl bg-white/5 text-white text-[11px] font-black uppercase tracking-widest border border-white/10 font-mono mb-8">
+                Already Using Another Platform?
+              </div>
+              <h2 className="text-3xl md:text-5xl font-bold !text-white mb-6 tracking-tight">
+                Switch to WGC without starting over
+              </h2>
+              <p className="text-lg text-white/70 max-w-2xl mx-auto leading-relaxed mb-4">
+                Bring your donor records, giving history, funds, and organization data with you. Moving from Givebutter, Zeffy, Donorbox, Stripe, another church platform, or a spreadsheet doesn&apos;t mean starting from zero.
+              </p>
+              <p className="text-sm text-white/50 max-w-2xl mx-auto leading-relaxed mb-10">
+                Recurring giving can be reviewed during migration, and we&apos;ll help determine the best path based on your current provider.
+              </p>
+              <div className="flex flex-col sm:flex-row justify-center gap-4">
+                <Link href="/switch" className="bg-wgc-gold-500 text-wgc-navy-950 inline-flex items-center justify-center px-8 py-4 text-[13px] font-bold rounded-2xl shadow-xl transform transition-all hover:scale-105 hover:bg-white uppercase tracking-widest">
+                  Start Your Migration
+                </Link>
+                <Link href="/contact" className="bg-white/10 text-white inline-flex items-center justify-center px-8 py-4 text-[13px] font-bold rounded-2xl border border-white/20 transition-all hover:bg-white hover:text-wgc-navy-950 uppercase tracking-widest">
+                  Talk to Us About Migrating
+                </Link>
+              </div>
+            </ScrollFade>
+          </div>
+        </section>
+
         {/* FREQUENTLY ASKED QUESTIONS (SEO) */}
         <section className="py-24 bg-white relative">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -544,7 +584,11 @@ export default function Home() {
               <div className="space-y-8">
                 <div className="bg-wgc-off p-8 rounded-3xl border border-wgc-navy-50">
                   <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">Is WGC just a payment processor?</h3>
-                  <p className="text-wgc-navy-500 leading-relaxed font-medium">No. WGC is a complete giving and payment management platform for mission-driven organizations — nonprofits, churches and ministries, foundations, associations, schools, and community organizations. Beyond accepting card, ACH, and digital wallet payments, WGC includes supporter management, recurring giving, giving and campaign pages, invoicing, reporting and analytics with CSV exports, settlements and payouts, refunds, year-end statements, team accounts with role-based permissions (Owner, Admin, Fundraiser, Viewer), and accounting integrations — all in one dashboard, instead of piecing together separate tools. WGC also provides payment infrastructure for software platforms that serve these organizations.</p>
+                  <p className="text-wgc-navy-500 leading-relaxed font-medium">No. WGC is a fundraising, payments, and donor management platform for mission-driven organizations — nonprofits, churches and ministries, foundations, associations, schools, and community organizations. Beyond accepting card, ACH, and digital wallet payments, WGC includes donor profiles and donation history, recurring giving, giving and campaign pages, invoicing, external and offline donation recording, reporting and donor analytics with CSV exports, settlements and payouts, refunds, year-end statements, team accounts with role-based permissions (Owner, Admin, Fundraiser, Viewer), and accounting integrations with QuickBooks and Aplos — all in one dashboard, instead of piecing together separate tools.</p>
+                </div>
+                <div className="bg-wgc-off p-8 rounded-3xl border border-wgc-navy-50">
+                  <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">Can I switch to WGC from Givebutter, Zeffy, Donorbox, Stripe, or another platform?</h3>
+                  <p className="text-wgc-navy-500 leading-relaxed font-medium">Yes. WGC helps you migrate donor and contact records, historical and external donation data, funds, and organization information from another fundraising or payment platform — including CSV imports and spreadsheet-based donor databases. Saved card or bank details generally can&apos;t be transferred automatically between processors; recurring giving is reviewed during migration, and we&apos;ll help determine the best path based on your current provider. See our <Link href="/switch" className="text-wgc-gold-600 font-bold hover:underline">migration guide</Link> for details.</p>
                 </div>
                 <div className="bg-wgc-off p-8 rounded-3xl border border-wgc-navy-50">
                   <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">How much does WGC cost for a nonprofit, church, or other organization?</h3>
@@ -573,9 +617,12 @@ export default function Home() {
               <h2 className="text-3xl md:text-5xl font-bold text-wgc-navy-950 mb-6 tracking-tight">
                 Connects to the tools you already use
               </h2>
-              <p className="text-lg text-wgc-navy-500 max-w-2xl mx-auto leading-relaxed">
-                Sync giving and transactions directly into QuickBooks, with more accounting and CRM integrations on the way — no manual data entry required.
+              <p className="text-lg text-wgc-navy-500 max-w-2xl mx-auto leading-relaxed mb-8">
+                Sync giving and transactions directly into QuickBooks or Aplos, embed a giving form on your own website, and accept cards, ACH, Apple Pay, and Google Pay — no manual data entry required.
               </p>
+              <Link href="/integrations" className="inline-flex items-center text-[13px] font-bold text-wgc-gold-600 hover:text-wgc-navy-950 transition-colors">
+                See all integrations &rarr;
+              </Link>
             </ScrollFade>
           </div>
         </section>
@@ -591,7 +638,7 @@ export default function Home() {
                 Build payments into your own software
               </h2>
               <p className="text-lg text-white/70 max-w-2xl mx-auto leading-relaxed mb-10">
-                WGC serves organizations directly through our dashboard, and also provides payment infrastructure — APIs, onboarding, and webhooks — for software platforms that serve mission-driven organizations.
+                WGC serves organizations directly through our dashboard, and also partners with software platforms that serve mission-driven organizations to embed our payment infrastructure into their own product.
               </p>
               <Link href="/software-partners" className="bg-wgc-gold-500 text-wgc-navy-950 inline-flex items-center justify-center px-8 py-4 text-[13px] font-bold rounded-2xl shadow-xl transform transition-all hover:scale-105 hover:bg-white uppercase tracking-widest">
                 Explore Software Partnerships
