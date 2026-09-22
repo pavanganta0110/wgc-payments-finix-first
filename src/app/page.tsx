@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ShieldCheck, Users, BarChart3, Repeat, Heart, FileText, Banknote, Undo2, ClipboardList, Plug, Mail, MessageSquare, CreditCard, Landmark, Building2, GraduationCap, HandCoins, Building, Code2, ArrowLeftRight, LucideIcon } from "lucide-react";
+import { ShieldCheck, Users, BarChart3, Repeat, Heart, FileText, Banknote, Undo2, ClipboardList, Plug, Mail, MessageSquare, CreditCard, Landmark, Building2, GraduationCap, HandCoins, Building, Code2, ArrowLeftRight, QrCode, LucideIcon } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import FeatureCard from "@/components/ui/FeatureCard";
@@ -42,7 +42,8 @@ const PLATFORM_FEATURES = [
   { icon: Repeat, title: "Recurring Giving", description: "Turn one-time gifts or dues into sustaining recurring support automatically." },
   { icon: Banknote, title: "Giving & Campaign Pages", description: "Launch a branded giving or campaign page in minutes, no developer required." },
   { icon: Mail, title: "Email Giving Campaigns", description: "Send your giving link straight to a supporter list by email, with per-supporter tracking." },
-  { icon: MessageSquare, title: "Text Campaigns", description: "Send your giving link to a supporter list by text message.", badge: "Coming Soon" },
+  { icon: MessageSquare, title: "Text-to-Give & Text Campaigns", description: "Send your giving link to a supporter list by text message.", badge: "Coming Soon" },
+  { icon: QrCode, title: "Peer-to-Peer Fundraising", description: "Individual and team fundraiser pages under one campaign, each with its own link and progress.", badge: "Coming Soon" },
   { icon: FileText, title: "Invoicing & Payment Requests", description: "Bill pledges, dues, tuition, or event fees and track payment status." },
   { icon: ArrowLeftRight, title: "External & Offline Donations", description: "Record cash, check, or other gifts given outside WGC so they appear in donor history and reporting too." },
   { icon: BarChart3, title: "Reporting & Donor Analytics", description: "Real-time dashboards, lapsed-donor detection, and top-donor tracking, exportable to CSV." },
