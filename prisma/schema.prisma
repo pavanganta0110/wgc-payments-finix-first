@@ -5023,3 +5023,253 @@ model AuthSmsSendLog {
   @@index([phone, createdAt])
   @@index([providerMessageId])
 }
+
+// =============================================================================
+// INTEGRATION FOUNDATION — outbound events, webhook delivery, and the
+// public/partner API. One event abstraction (WebhookEvent, written by
+// emitEvent() in src/lib/events/emitEvent.ts) backs webhook delivery,
+// analytics, and — later — Zapier/Make triggers, instead of scattering
+// direct HTTP calls through business logic. See src/lib/events/types.ts
+// for the full event-type catalog and src/lib/webhooks/deliverWebhook.ts
+// for the delivery engine.
+// =============================================================================
+
+/// A merchant-configured outbound webhook destination. One row per endpoint
+/// URL; a merchant can have several, each subscribed to a different subset
+/// of event types (e.g. one endpoint for accounting events, another for a
+/// Zapier/Make connection).
+model WebhookEndpoint {
+  id          String  @id @default(cuid())
+  churchId    String
+  url         String
+  description String?
+
+  // ACTIVE | DISABLED (merchant-toggled) | DISABLED_AUTO (auto-disabled by
+  // the retry cron after too many consecutive delivery failures, distinct
+  // from DISABLED so the UI can explain *why* it stopped delivering).
+  status String @default("ACTIVE")
+
+  // Array of WgcEventType strings (see src/lib/events/types.ts) this
+  // endpoint receives. An empty array subscribes to nothing — deliberately
+  // never "all events" implicitly, so adding a new event type in the
+  // future never silently starts delivering to an existing endpoint that
+  // never asked for it.
+  subscribedEventsJson Json
+
+  // AES-256-GCM envelope (see src/lib/webhooks/encryption.ts), same
+  // versioned-envelope scheme as the QuickBooks/Aplos/Printful integration
+  // credentials — reversible, because the raw secret is needed at delivery
+  // time to compute the HMAC signature. Never returned to the client after
+  // creation; only signingSecretLast4 is shown in the dashboard afterward.
+  signingSecretEncrypted String
+  signingSecretLast4     String
+
+  createdByUserId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  disabledAt      DateTime?
+  disabledReason  String?
+
+  // Consecutive failed deliveries since the last success — reset to 0 on
+  // any successful delivery. The retry cron auto-disables an endpoint once
+  // this crosses a threshold (see webhookRetryPolicy.ts) rather than
+  // retrying a dead URL forever.
+  consecutiveFailures Int       @default(0)
+  lastDeliveryAt      DateTime?
+  lastSuccessAt       DateTime?
+
+  @@index([churchId])
+  @@index([status])
+}
+
+/// A durable, immutable record of something that happened — the "source of
+/// truth" event, written once by emitEvent() regardless of whether any
+/// webhook endpoint is even subscribed to it yet. This id is what's sent
+/// as the event's unique ID in every webhook payload (for idempotent
+/// receipt on the merchant's side) and is what a future Zapier/Make
+/// polling trigger or partner-API "list events" endpoint would read from.
+model WebhookEvent {
+  id       String @id @default(cuid())
+  churchId String
+  // See src/lib/events/types.ts WgcEventType — intentionally a plain
+  // string, not a Prisma enum, so adding a new event type is a one-line
+  // TypeScript change with no migration.
+  type     String
+  dataJson Json
+
+  createdAt DateTime @default(now())
+
+  @@index([churchId, type])
+  @@index([churchId, createdAt])
+}
+
+/// One delivery attempt tracking row per (event, endpoint) pair. Mirrors
+/// FinixWebhookEvent's processingStatus/errorMessage shape (this codebase's
+/// existing inbound-webhook convention) for the outbound direction.
+model WebhookDelivery {
+  id                String @id @default(cuid())
+  webhookEventId    String
+  webhookEndpointId String
+  churchId          String
+
+  // PENDING (queued, not yet attempted or awaiting retry) | SUCCEEDED |
+  // FAILED (will retry, see nextRetryAt) | ABANDONED (exhausted retries).
+  status       String    @default("PENDING")
+  attemptCount Int       @default(0)
+  nextRetryAt  DateTime?
+  lastAttemptAt DateTime?
+
+  responseStatusCode Int?
+  // Truncated to a few KB — never the full response body, this is for
+  // debugging a misconfigured endpoint, not general storage.
+  responseBodySnippet String?
+  errorMessage        String?
+
+  // The exact unix timestamp embedded in this attempt's HMAC signature
+  // (`timestamp=<t>,sig=<hex>` header, same scheme as the inbound Finix
+  // webhook signature) — stored so a re-delivery / "view payload" action
+  // in the dashboard can show exactly what was signed, and so replay
+  // protection is auditable after the fact.
+  signedAtTimestamp Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([churchId, webhookEndpointId])
+  @@index([status, nextRetryAt])
+  @@index([webhookEventId])
+}
+
+/// A merchant-issued API key for the public/partner API (/api/v1/*).
+/// Scoped, not all-or-nothing — see src/lib/api/scopes.ts for the full
+/// scope catalog. Never grants access to processor/admin-sensitive
+/// functionality (Finix credentials, bank account numbers, other
+/// organizations' data) regardless of scopes granted.
+model ApiKey {
+  id       String @id @default(cuid())
+  churchId String
+  name     String
+
+  // Shown in the dashboard list to help a merchant recognize which key is
+  // which without ever displaying the full secret again — e.g.
+  // "wgc_live_4f2a...". The full key is shown exactly once, at creation.
+  keyPrefix String
+
+  // SHA-256 hash of the full API key — one-way, never decrypted. A
+  // request's Authorization header is hashed and looked up by this column;
+  // there is deliberately no reversible storage of the key itself, unlike
+  // WebhookEndpoint's signing secret (which must be reversible to compute
+  // an outgoing signature — an API key only ever needs to be verified,
+  // never re-displayed or re-derived).
+  hashedKey String @unique
+
+  // Array of scope strings, e.g. ["donors:read", "campaigns:write"] — see
+  // src/lib/api/scopes.ts for the full catalog. Never includes anything
+  // that would expose Finix processor credentials or cross-tenant data.
+  scopesJson Json
+
+  status String @default("ACTIVE") // ACTIVE | REVOKED
+
+  createdByUserId String?
+  createdAt       DateTime  @default(now())
+  lastUsedAt      DateTime?
+  revokedAt       DateTime?
+  revokedByUserId String?
+
+  @@index([churchId])
+}
+
+/// One row per authenticated /api/v1/* request — the API usage log
+/// referenced by the dashboard's "last used" column and available for a
+/// future usage-analytics view. Never logs request/response bodies
+/// (which could contain donor PII); only routing/outcome metadata.
+model ApiRequestLog {
+  id       String @id @default(cuid())
+  apiKeyId String
+  churchId String
+
+  method     String
+  path       String
+  statusCode Int
+  // Unique per request — returned to the caller as the `X-Request-Id`
+  // response header for support/debugging correlation.
+  requestId String @unique
+  // Client-supplied Idempotency-Key header on a write request, if any —
+  // stored so a retried request with the same key can be detected and
+  // short-circuited to the original response rather than double-processed.
+  idempotencyKey String?
+
+  createdAt DateTime @default(now())
+
+  @@index([churchId, createdAt])
+  @@index([apiKeyId, createdAt])
+  @@index([idempotencyKey])
+}
+
+/// A cached response for one (API key, Idempotency-Key) pair on a write
+/// request to /api/v1 — a retried POST/PATCH with the same key returns the
+/// original response verbatim instead of re-processing, the standard
+/// idempotent-write pattern. Expires after 24h (checked against createdAt
+/// at lookup time, no separate cleanup job needed at this data volume).
+model ApiIdempotencyRecord {
+  id             String @id @default(cuid())
+  apiKeyId       String
+  idempotencyKey String
+  method         String
+  path           String
+
+  responseStatus Int
+  responseBodyJson Json
+
+  createdAt DateTime @default(now())
+
+  @@unique([apiKeyId, idempotencyKey])
+}
+
+/// A generic connection record for FUTURE native integrations (Salesforce,
+/// HubSpot, Planning Center, Bloomerang, Virtuous, HighLevel, etc.) so each
+/// new provider doesn't need its own bespoke table + dashboard redesign,
+/// the way QuickBooks/Aplos/Printful currently each have their own model.
+/// QuickBooks and Aplos are NOT migrated onto this table — they already
+/// have dedicated, working, tested connection models; this table is
+/// intentionally unused by them and only comes into play once a new
+/// provider is actually built on top of it.
+model IntegrationConnection {
+  id       String @id @default(cuid())
+  churchId String
+
+  // e.g. "SALESFORCE" | "HUBSPOT" | "PLANNING_CENTER" | "BLOOMERANG" |
+  // "VIRTUOUS" | "HIGHLEVEL" — see src/lib/integrations/catalog.ts for the
+  // full provider catalog and category grouping.
+  provider String
+
+  status String @default("NOT_CONNECTED") // NOT_CONNECTED | CONNECTING | CONNECTED | REAUTHENTICATION_REQUIRED | ERROR | DISCONNECTED
+
+  // AES-256-GCM envelope JSON strings (same scheme as
+  // src/lib/webhooks/encryption.ts) — never plaintext, never returned to
+  // the client. credentialsEncrypted covers API-key-style auth;
+  // oauthTokensEncrypted covers OAuth access/refresh tokens. A given
+  // provider uses one or the other, never both.
+  credentialsEncrypted  String?
+  oauthTokensEncrypted  String?
+  oauthTokenExpiresAt   DateTime?
+
+  connectedAt  DateTime?
+  lastSyncAt   DateTime?
+  // IDLE | SYNCING | ERROR
+  syncStatus   String    @default("IDLE")
+  lastSyncError String?
+
+  // Provider-specific settings (e.g. which objects to sync) and
+  // field-mapping configuration (e.g. "WGC Fund" -> "Salesforce Campaign")
+  // — free-form JSON since every provider's shape differs.
+  configurationJson Json?
+  fieldMappingsJson Json?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([churchId, provider])
+  @@index([churchId])
+}

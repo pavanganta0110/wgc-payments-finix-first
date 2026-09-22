@@ -18,7 +18,10 @@ export async function provisionCampaignGivingLink(params: {
   churchId: string;
   internalName: string;
   publicTitle: string;
-  ownerUserId: string;
+  // Null when provisioned by a machine actor (e.g. the /api/v1 campaigns
+  // API) rather than a logged-in staff member — GivingLink.ownerUserId/
+  // createdByUserId are both nullable for exactly this case.
+  ownerUserId: string | null;
   fundraisingCampaignId: string;
   campaignTeamId?: string | null;
   campaignFundraiserId?: string | null;

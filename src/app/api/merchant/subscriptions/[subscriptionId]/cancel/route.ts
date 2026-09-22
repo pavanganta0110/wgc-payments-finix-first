@@ -6,6 +6,7 @@ import { resolveSubscriptionDisplayStatus } from "@/lib/subscriptions/subscripti
 import { logDashboardAction } from "@/lib/dashboardAudit";
 import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { isAuthError } from "@/lib/auth/errors";
+import { emitEvent } from "@/lib/events/emitEvent";
 
 /** Cancel is the one Finix subscriptions API mutation genuinely supported (DELETE). Only ACTIVE/PAST_DUE/UNKNOWN schedules can be canceled — already-canceled or completed ones are rejected rather than silently re-processed. */
 export async function POST(req: Request, { params }: { params: Promise<{ subscriptionId: string }> }) {
@@ -84,6 +85,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ subscri
       metadata: { reason: reason || null },
       req,
     });
+
+    try {
+      await emitEvent({ type: "recurring.cancelled", churchId, data: { finixSubscriptionId: subscription.finixSubscriptionId, donorId: subscription.donorId, reason: reason || null } });
+    } catch (err) {
+      console.error("Failed to emit recurring.cancelled event:", err);
+    }
 
     return NextResponse.json({ subscription: { id: updated.id, canceledAt: updated.canceledAt } });
   } catch (err: any) {

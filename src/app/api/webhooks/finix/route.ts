@@ -23,6 +23,7 @@ import { syncPaymentToQuickBooks } from "@/lib/integrations/quickbooks/sync";
 import { deriveFundingSpeedFromOperationKey } from "@/lib/depositColumns";
 import { isSettlementTerminalStatus } from "@/lib/finix/settlementStatus";
 import type { InvoiceStatus } from "@/lib/invoices/invoiceStatus";
+import { emitEvent } from "@/lib/events/emitEvent";
 
 // Credentials pasted into a dashboard env editor routinely pick up a trailing
 // newline or a wrapping pair of quotes (this repo's own .env.local stores these
@@ -400,6 +401,11 @@ export async function syncFinixDataFromWebhookEvent(
           } catch (err) {
             console.error("Failed to sync payment to QuickBooks:", err);
           }
+          try {
+            await emitEvent({ type: "donation.created", churchId, data: { paymentId: priorPayment.id, donorId: priorPayment.donorId } });
+          } catch (err) {
+            console.error("Failed to emit donation.created event (async):", err);
+          }
         }
       }
     }
@@ -553,6 +559,11 @@ export async function syncFinixDataFromWebhookEvent(
                 } catch (err) {
                   console.error("Failed to send receipt/notify merchant for recurring charge:", err);
                 }
+                try {
+                  await emitEvent({ type: "donation.created", churchId, data: { paymentId: newRecurringPayment.id, donorId: newRecurringPayment.donorId, recurring: true } });
+                } catch (err) {
+                  console.error("Failed to emit donation.created event (recurring charge):", err);
+                }
               }
             }
           }
@@ -655,6 +666,18 @@ export async function syncFinixDataFromWebhookEvent(
         } catch (err) {
           console.error("Failed to reconcile invoice payment refund:", err);
         }
+        if (churchId) {
+          try {
+            const refundedPayment = await prisma.payment.findFirst({ where: { finixTransferId: data.parent_transfer }, select: { id: true, donorId: true } });
+            await emitEvent({
+              type: "donation.refunded",
+              churchId,
+              data: { paymentId: refundedPayment?.id ?? null, donorId: refundedPayment?.donorId ?? null, amountCents: data.amount ?? 0, givingLinkId: originalGivingLinkId ?? null },
+            });
+          } catch (err) {
+            console.error("Failed to emit donation.refunded event:", err);
+          }
+        }
       }
     }
 
@@ -750,6 +773,18 @@ export async function syncFinixDataFromWebhookEvent(
             await reconcileInvoicePaymentReversal(originalTransferId, data.amount ?? 0, "ACH_RETURN");
           } catch (err) {
             console.error("Failed to reconcile invoice payment ACH return:", err);
+          }
+          if (churchId) {
+            try {
+              const returnedPayment = await prisma.payment.findFirst({ where: { finixTransferId: originalTransferId }, select: { id: true, donorId: true } });
+              await emitEvent({
+                type: "donation.returned",
+                churchId,
+                data: { paymentId: returnedPayment?.id ?? null, donorId: returnedPayment?.donorId ?? null, amountCents: data.amount ?? 0, givingLinkId: originalGivingLinkId ?? null },
+              });
+            } catch (err) {
+              console.error("Failed to emit donation.returned event:", err);
+            }
           }
         }
       }
@@ -861,6 +896,7 @@ export async function syncFinixDataFromWebhookEvent(
     // no separate refund_amount/dispute_amount at the settlement level.
     const churchId = await resolveChurchIdForMerchant(data.merchant_id);
     const priorSettlement = await prisma.finixSettlement.findUnique({ where: { finixSettlementId: data.id }, select: { state: true, updatedAtFinix: true } });
+    const isNewSettlement = !priorSettlement;
 
     // An out-of-order webhook delivery must never overwrite a newer,
     // already-applied state with an older one.
@@ -920,6 +956,14 @@ export async function syncFinixDataFromWebhookEvent(
       await recomputeSettlementAggregates(data.id);
     } catch (err) {
       console.error("Failed to link transfers to settlement:", err);
+    }
+
+    if (churchId && isNewSettlement) {
+      try {
+        await emitEvent({ type: "settlement.created", churchId, data: { settlementId: data.id, totalAmountCents: data.total_amount ?? null, netAmountCents: data.net_amount ?? null } });
+      } catch (err) {
+        console.error("Failed to emit settlement.created event:", err);
+      }
     }
 
     if (churchId && isSettlementTerminalStatus(data.status) && !isSettlementTerminalStatus(priorSettlement?.state)) {
@@ -1117,6 +1161,19 @@ export async function syncFinixDataFromWebhookEvent(
       ? (await prisma.finixPaymentInstrumentSnapshot.findUnique({ where: { finixPaymentInstrumentId: instrumentId }, select: { donorId: true } }))?.donorId ?? null
       : null;
 
+    // Prior-state read so a genuine state TRANSITION (e.g. into cancelled)
+    // can be distinguished from a routine resync that just reports the
+    // same state again — this webhook is a state-sync/backup path, not the
+    // primary creation point (that's donate/route.ts's subscription upsert
+    // and the admin "create subscription" action, both of which already
+    // emit recurring.created themselves), so this block never emits
+    // recurring.created itself even on a first-sighting upsert, to avoid a
+    // duplicate event for the same subscription.
+    const priorSubscription = await prisma.finixSubscription.findUnique({
+      where: { finixSubscriptionId: data.id },
+      select: { state: true },
+    });
+
     await prisma.finixSubscription.upsert({
       where: { finixSubscriptionId: data.id },
       create: {
@@ -1152,6 +1209,23 @@ export async function syncFinixDataFromWebhookEvent(
         lastSyncedAt: new Date(),
       },
     });
+
+    if (churchId && priorSubscription) {
+      const priorState = (priorSubscription.state || "").toUpperCase();
+      const newState = (data.state || "").toUpperCase();
+      const isCancelState = (s: string) => s === "CANCELED" || s === "CANCELLED";
+      if (priorState !== newState) {
+        try {
+          if (!isCancelState(priorState) && isCancelState(newState)) {
+            await emitEvent({ type: "recurring.cancelled", churchId, data: { finixSubscriptionId: data.id, donorId: resolvedDonorId } });
+          } else {
+            await emitEvent({ type: "recurring.updated", churchId, data: { finixSubscriptionId: data.id, donorId: resolvedDonorId, state: data.state ?? null } });
+          }
+        } catch (err) {
+          console.error("Failed to emit recurring state-change event:", err);
+        }
+      }
+    }
     return;
   }
 

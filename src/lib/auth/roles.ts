@@ -170,7 +170,13 @@ export type PermissionKey =
   | "canCreateFundraisingCampaign"
   | "canEditFundraisingCampaign"
   | "canArchiveFundraisingCampaign"
-  | "canManageCampaignRoster";
+  | "canManageCampaignRoster"
+  // Developer platform (Settings -> Developers): webhooks and API keys are
+  // separate gates since a merchant might delegate webhook configuration
+  // to a technical volunteer without also handing out API key creation
+  // (which carries broader read/write access to the organization's data).
+  | "canManageWebhooks"
+  | "canManageApiKeys";
 
 export type PermissionMatrix = Record<PermissionKey, boolean>;
 
@@ -242,6 +248,8 @@ const ALL_FALSE: PermissionMatrix = {
   canEditFundraisingCampaign: false,
   canArchiveFundraisingCampaign: false,
   canManageCampaignRoster: false,
+  canManageWebhooks: false,
+  canManageApiKeys: false,
 };
 
 /** Base permission matrix per normalized role, per the approved Checkpoint 2 spec. */
@@ -316,6 +324,8 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     canEditFundraisingCampaign: true,
     canArchiveFundraisingCampaign: true,
     canManageCampaignRoster: true,
+    canManageWebhooks: true,
+    canManageApiKeys: true,
   },
   admin: {
     ...ALL_FALSE,
@@ -371,6 +381,11 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     canCreateFundraisingCampaign: true,
     canEditFundraisingCampaign: true,
     canManageCampaignRoster: true,
+    canManageWebhooks: true,
+    // canManageApiKeys: false by default, override-able — an API key grants
+    // broad programmatic read/write access to the organization's data, same
+    // trust tier as canManageBankAccount/canManageBilling, not a routine
+    // developer-settings toggle.
     // canResendEmails: false by default, override-able — an outbound
     // donor-facing action, same trust tier as canVoidExternalDonation /
     // canRefundInvoicePayments.

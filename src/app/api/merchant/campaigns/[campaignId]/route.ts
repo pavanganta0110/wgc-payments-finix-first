@@ -5,6 +5,7 @@ import { requirePermission } from "@/lib/auth/permissions";
 import { isAuthError } from "@/lib/auth/errors";
 import { logDashboardAction } from "@/lib/dashboardAudit";
 import { getCampaignRaisedCents } from "@/lib/campaigns/campaignTotals";
+import { emitEvent } from "@/lib/events/emitEvent";
 
 const VALID_STATUSES = ["DRAFT", "ACTIVE", "PAUSED", "COMPLETED"];
 
@@ -76,6 +77,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ campai
     req,
   });
 
+  try {
+    const justCompleted = status === "COMPLETED" && existing.status !== "COMPLETED";
+    await emitEvent({
+      type: justCompleted ? "campaign.completed" : "campaign.updated",
+      churchId: auth.churchId,
+      data: { campaignId, changes: Object.keys(body) },
+    });
+  } catch (err) {
+    console.error("Failed to emit campaign update event:", err);
+  }
+
   return NextResponse.json({ campaign: updated });
 }
 
@@ -108,6 +120,13 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ campa
     entityId: campaignId,
     req,
   });
+
+  try {
+    const justCompleted = existing.status !== "COMPLETED";
+    await emitEvent({ type: justCompleted ? "campaign.completed" : "campaign.updated", churchId: auth.churchId, data: { campaignId, archived: true } });
+  } catch (err) {
+    console.error("Failed to emit campaign archive event:", err);
+  }
 
   return NextResponse.json({ ok: true });
 }

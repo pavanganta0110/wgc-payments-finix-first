@@ -18,6 +18,7 @@ import { resolvePaymentAttributionFromGivingLink } from "@/lib/auth/attributionS
 import { resolveDonorSelectedFund, FundAssignmentError } from "@/lib/giving/fundAssignment";
 import { resolveOrCreateDonor } from "@/lib/donors/resolveOrCreateDonor";
 import { cleanAddressInput, hasAnyAddressField, applyDonorAddressUpdate } from "@/lib/donors/donorAddress";
+import { emitEvent } from "@/lib/events/emitEvent";
 import { resolveEmbedCorsOrigin, embedCorsHeaders, embedPreflightResponse } from "@/lib/giving/embedCors";
 import { assertNonprofitApproved } from "@/lib/onboarding/nonprofitVerificationGuard";
 import { checkDonationRateLimit } from "@/lib/giving/donationRateLimit";
@@ -321,6 +322,12 @@ async function handleDonate(req: Request, slug: string) {
         phone: donor.phone || null,
         companyName: fieldSettings.companyName !== "HIDDEN" ? donor.companyName?.trim() || null : null,
       });
+      try {
+        if (donorRecord.created) await emitEvent({ type: "donor.created", churchId: church.id, data: { donorId: donorRecord.id } });
+        else if (donorRecord.updated) await emitEvent({ type: "donor.updated", churchId: church.id, data: { donorId: donorRecord.id } });
+      } catch (err) {
+        console.error("Failed to emit donor event:", err);
+      }
     } else {
       const [firstName, ...rest] = fullName.trim().split(" ");
       const lastName = rest.join(" ") || firstName;
@@ -446,6 +453,12 @@ async function handleDonate(req: Request, slug: string) {
         phone: donor.phone || null,
         companyName: fieldSettings.companyName !== "HIDDEN" ? donor.companyName?.trim() || null : null,
       });
+      try {
+        if (donorRecord.created) await emitEvent({ type: "donor.created", churchId: church.id, data: { donorId: donorRecord.id } });
+        else if (donorRecord.updated) await emitEvent({ type: "donor.updated", churchId: church.id, data: { donorId: donorRecord.id } });
+      } catch (err) {
+        console.error("Failed to emit donor event:", err);
+      }
 
       try {
         await syncPaymentInstrument(instrumentId, { churchId: church.id, donorId: donorRecord.id });
@@ -672,6 +685,19 @@ async function handleDonate(req: Request, slug: string) {
         },
       });
 
+      try {
+        // A subscription.id fresh off finixClient.createSubscription() a
+        // few lines above can never already exist in our DB, so this
+        // upsert is always effectively a create.
+        await emitEvent({
+          type: "recurring.created",
+          churchId: church.id,
+          data: { finixSubscriptionId: subscription.id, donorId: donorRecord.id, amountCents: totalCents, billingInterval: interval, givingLinkId: link.id },
+        });
+      } catch (err) {
+        console.error("Failed to emit recurring.created event:", err);
+      }
+
       await prisma.paymentAttempt.update({
         where: { id: attempt.id },
         data: { status: "SUCCEEDED", donorId: donorRecord.id },
@@ -849,6 +875,18 @@ async function handleDonate(req: Request, slug: string) {
         await syncPaymentToQuickBooks(newPayment.id);
       } catch (err) {
         console.error("Failed to sync payment to QuickBooks:", err);
+      }
+    }
+
+    if (succeeded) {
+      try {
+        await emitEvent({
+          type: "donation.created",
+          churchId: church.id,
+          data: { paymentId: newPayment.id, donorId: donorRecord.id, amountCents: totalCents, donationAmountCents, givingLinkId: link.id },
+        });
+      } catch (err) {
+        console.error("Failed to emit donation.created event:", err);
       }
     }
 

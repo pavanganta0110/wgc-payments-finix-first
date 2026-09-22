@@ -7,6 +7,7 @@ import { logDashboardAction } from "@/lib/dashboardAudit";
 import { generateUniqueSlug } from "@/lib/campaigns/slugs";
 import { provisionCampaignGivingLink } from "@/lib/campaigns/campaignGivingLinks";
 import { getCampaignRaisedCents } from "@/lib/campaigns/campaignTotals";
+import { emitEvent } from "@/lib/events/emitEvent";
 
 export async function GET(req: Request) {
   let auth;
@@ -101,6 +102,12 @@ export async function POST(req: Request) {
     metadata: { name: campaign.name, slug: campaign.slug },
     req,
   });
+
+  try {
+    await emitEvent({ type: "campaign.created", churchId, data: { campaignId: campaign.id, name: campaign.name, slug: campaign.slug, goalAmountCents: campaign.goalAmountCents } });
+  } catch (err) {
+    console.error("Failed to emit campaign.created event:", err);
+  }
 
   return NextResponse.json({ campaign: updated });
 }

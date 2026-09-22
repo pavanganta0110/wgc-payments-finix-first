@@ -78,6 +78,8 @@ export const OVERRIDABLE_PERMISSION_KEYS: readonly PermissionKey[] = [
   "canEditFundraisingCampaign",
   "canArchiveFundraisingCampaign",
   "canManageCampaignRoster",
+  "canManageWebhooks",
+  "canManageApiKeys",
 ];
 
 /**
@@ -192,6 +194,8 @@ export function resolveEffectivePermissions(
       canEditFundraisingCampaign: false,
       canArchiveFundraisingCampaign: false,
       canManageCampaignRoster: false,
+      canManageWebhooks: false,
+      canManageApiKeys: false,
     };
   }
 

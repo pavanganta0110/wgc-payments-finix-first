@@ -7,6 +7,7 @@ import { logDashboardAction } from "@/lib/dashboardAudit";
 import { generateUniqueSlug } from "@/lib/campaigns/slugs";
 import { provisionCampaignGivingLink } from "@/lib/campaigns/campaignGivingLinks";
 import { getFundraiserRaisedCents } from "@/lib/campaigns/campaignTotals";
+import { emitEvent } from "@/lib/events/emitEvent";
 
 export async function GET(req: Request, { params }: { params: Promise<{ campaignId: string }> }) {
   const { campaignId } = await params;
@@ -111,6 +112,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ campaig
     metadata: { displayName: fundraiser.displayName, campaignId },
     req,
   });
+
+  try {
+    await emitEvent({ type: "fundraiser.created", churchId, data: { fundraiserId: fundraiser.id, displayName: fundraiser.displayName, campaignId, campaignTeamId: team?.id ?? null } });
+  } catch (err) {
+    console.error("Failed to emit fundraiser.created event:", err);
+  }
 
   return NextResponse.json({ fundraiser: updated });
 }

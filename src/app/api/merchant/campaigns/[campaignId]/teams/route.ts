@@ -7,6 +7,7 @@ import { logDashboardAction } from "@/lib/dashboardAudit";
 import { generateUniqueSlug } from "@/lib/campaigns/slugs";
 import { provisionCampaignGivingLink } from "@/lib/campaigns/campaignGivingLinks";
 import { getTeamRaisedCents } from "@/lib/campaigns/campaignTotals";
+import { emitEvent } from "@/lib/events/emitEvent";
 
 export async function GET(req: Request, { params }: { params: Promise<{ campaignId: string }> }) {
   const { campaignId } = await params;
@@ -98,6 +99,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ campaig
     metadata: { name: team.name, campaignId },
     req,
   });
+
+  try {
+    await emitEvent({ type: "team.created", churchId, data: { teamId: team.id, name: team.name, campaignId } });
+  } catch (err) {
+    console.error("Failed to emit team.created event:", err);
+  }
 
   return NextResponse.json({ team: updated });
 }
