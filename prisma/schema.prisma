@@ -4597,6 +4597,11 @@ model FundraisingCampaign {
   // noindex meta tag and are omitted from the sitemap — for a campaign an
   // organization wants reachable only by direct link, not search-indexed.
   publiclyIndexable  Boolean @default(true)
+  // When true, a fundraiser on this campaign may log into /fundraiser and
+  // edit their own story/goal/image — never anything financial, never the
+  // merchant dashboard. Off by default so an organization opts in per
+  // campaign rather than every fundraiser suddenly gaining edit access.
+  fundraiserSelfEditEnabled Boolean @default(false)
 
   // The campaign's own "give directly, undesignated" GivingLink — always
   // auto-created alongside the campaign. Plain string, no relation
@@ -5435,5 +5440,85 @@ model SubscriptionRecoveryAttempt {
   createdAt DateTime @default(now())
 
   @@index([churchId, finixSubscriptionId])
+  @@index([churchId, createdAt])
+}
+
+/// A single-use, expiring magic-link token emailed to a CampaignFundraiser
+/// to log into /fundraiser — the only authentication method for the
+/// portal (no password). Mirrors SubscriptionSetupLink's hashed-token
+/// pattern; consumedAt is set the moment it's exchanged for a
+/// FundraiserPortalSession, never reusable after.
+model FundraiserLoginToken {
+  id                   String    @id @default(cuid())
+  campaignFundraiserId String
+  tokenHash            String    @unique
+  expiresAt            DateTime
+  consumedAt           DateTime?
+  createdAt            DateTime  @default(now())
+
+  @@index([campaignFundraiserId])
+}
+
+/// The fundraiser portal's own session — deliberately a separate model
+/// from every merchant/admin session concept in this schema, so a
+/// fundraiser session can never be mistaken for or upgraded into
+/// dashboard access. DB-backed (not a bare signed cookie) so a merchant
+/// can revoke a fundraiser's portal access on demand.
+model FundraiserPortalSession {
+  id                   String    @id @default(cuid())
+  campaignFundraiserId String
+  tokenHash            String    @unique
+  expiresAt            DateTime
+  lastActiveAt         DateTime?
+  revokedAt            DateTime?
+  createdAt            DateTime  @default(now())
+
+  @@index([campaignFundraiserId])
+}
+
+/// A merchant-configured Text to Give keyword (Project 9). Sending is
+/// gated the same way src/lib/sms/sendText.ts already gates all donor-
+/// facing SMS: inert until TWILIO_DONOR_FROM_NUMBER is deliberately set
+/// alongside its own carrier-approved A2P 10DLC campaign — this model and
+/// its admin UI are safe to ship ahead of that, since nothing here sends
+/// or receives a real message until that separate approval exists.
+model TextToGiveKeyword {
+  id                    String  @id @default(cuid())
+  churchId              String
+  // Globally unique, not per-church: the likely MVP path is one shared
+  // WGC number across every organization (the same model most Text to
+  // Give products use), where the keyword itself — not the destination
+  // number — is what disambiguates the organization. If WGC instead gives
+  // each church its own dedicated number later, global uniqueness is
+  // still safe, just stricter than required. Never assume per-church
+  // scoping here without confirming the number-provisioning model first.
+  keyword               String  @unique // normalized upper-case, e.g. "BUILDING"
+  fundraisingCampaignId String?
+  givingLinkId          String?
+  replyMessageTemplate  String?
+  status                String  @default("ACTIVE") // ACTIVE | PAUSED
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([churchId])
+}
+
+/// Audit log of every inbound text matched (or not) against a keyword —
+/// populated only once a real Twilio inbound number/campaign exists; the
+/// model ships now so the webhook handler and reporting have somewhere to
+/// write to the moment that happens.
+model TextToGiveInboundMessage {
+  id               String   @id @default(cuid())
+  churchId         String?
+  fromPhone        String
+  toPhone          String
+  body             String
+  matchedKeywordId String?
+  replySent        Boolean  @default(false)
+  replyError       String?
+  createdAt        DateTime @default(now())
+
   @@index([churchId, createdAt])
 }

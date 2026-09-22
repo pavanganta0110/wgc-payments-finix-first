@@ -30,6 +30,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
         status: campaign.status,
         goalAmountCents: campaign.goalAmountCents,
         leaderboardEnabled: campaign.leaderboardEnabled,
+        fundraiserSelfEditEnabled: campaign.fundraiserSelfEditEnabled,
       }}
       canEdit={hasPermission(auth, "canEditFundraisingCampaign")}
       canManageRoster={hasPermission(auth, "canManageCampaignRoster")}

@@ -14,6 +14,7 @@ interface CampaignSummary {
   status: string;
   goalAmountCents: number | null;
   leaderboardEnabled: boolean;
+  fundraiserSelfEditEnabled: boolean;
 }
 
 interface Overview {
@@ -428,6 +429,20 @@ export default function CampaignDetailClient({
               <option value="COMPLETED">Completed</option>
             </select>
             <p className="text-xs text-slate-400 mt-1">Only Active campaigns are reachable on their public page and live wall.</p>
+          </div>
+          <div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={campaign.fundraiserSelfEditEnabled}
+                disabled={!canEdit}
+                onChange={(e) => updateCampaign({ fundraiserSelfEditEnabled: e.target.checked })}
+              />
+              Allow fundraisers to log in and edit their own story, goal, and photo
+            </label>
+            <p className="text-xs text-slate-400 mt-1 ml-6">
+              Fundraisers never get access to this dashboard, donor payment details, or payouts — only their own public page.
+            </p>
           </div>
           {canArchive && (
             <button

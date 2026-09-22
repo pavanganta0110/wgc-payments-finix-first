@@ -46,7 +46,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ campai
   if (!existing) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
 
   const body = await req.json();
-  const { name, description, imageUrl, startDate, endDate, goalAmountCents, status, leaderboardEnabled, publiclyIndexable } = body;
+  const { name, description, imageUrl, startDate, endDate, goalAmountCents, status, leaderboardEnabled, publiclyIndexable, fundraiserSelfEditEnabled } = body;
 
   if (status !== undefined && !VALID_STATUSES.includes(status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
@@ -64,6 +64,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ campai
       ...(status !== undefined ? { status } : {}),
       ...(leaderboardEnabled !== undefined ? { leaderboardEnabled: !!leaderboardEnabled } : {}),
       ...(publiclyIndexable !== undefined ? { publiclyIndexable: !!publiclyIndexable } : {}),
+      ...(fundraiserSelfEditEnabled !== undefined ? { fundraiserSelfEditEnabled: !!fundraiserSelfEditEnabled } : {}),
     },
   });
 

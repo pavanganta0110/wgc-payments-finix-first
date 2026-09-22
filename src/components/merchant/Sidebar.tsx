@@ -31,6 +31,7 @@ import {
   Send,
   Megaphone,
   UploadCloud,
+  MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import GatewayIcon from "@/components/ui/GatewayIcon";
@@ -108,6 +109,7 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   { name: "Fundraising Campaigns", href: "/merchant/campaigns", icon: Megaphone, section: "Giving" },
+  { name: "Text to Give", href: "/merchant/text-to-give", icon: MessageSquare, section: "Giving" },
   { name: "Migration Center", href: "/merchant/migrations", icon: UploadCloud, organizationOnly: true, section: "Giving" },
   {
     name: "Invoices",
