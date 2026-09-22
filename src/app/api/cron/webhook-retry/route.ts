@@ -4,11 +4,17 @@ import { attemptWebhookDelivery } from "@/lib/webhooks/deliverWebhook";
 import { alertCronMisconfiguration } from "@/lib/cron/alertCronMisconfiguration";
 
 /**
- * Runs every 15 minutes (see vercel.json) — retries any webhook delivery
- * whose nextRetryAt has passed. The immediate first attempt happens inline
- * from emitEvent(); this cron is purely the backstop for deliveries that
- * failed and are waiting on backoff, or for a delivery whose inline
- * attempt never got the chance to run (e.g. the process was recycled).
+ * Runs once daily (see vercel.json) — retries any webhook delivery whose
+ * nextRetryAt has passed. Daily, not every 15 minutes as originally
+ * designed: this project's Vercel plan only allows once-per-day cron
+ * schedules (a more frequent expression fails at deploy time), so a
+ * failed delivery's automated retry can now be delayed up to ~24h behind
+ * its computed backoff time. This does NOT affect the primary delivery
+ * path — emitEvent() still attempts every delivery immediately and inline
+ * regardless of this cron's cadence; this cron is purely the backstop for
+ * deliveries that failed and are waiting on backoff, or for a delivery
+ * whose inline attempt never got the chance to run (e.g. the process was
+ * recycled). Upgrading the Vercel plan would let this run far more often.
  * Same CRON_SECRET bearer-auth pattern as every other cron in this app.
  */
 export async function GET(req: Request) {
