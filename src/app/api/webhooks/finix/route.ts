@@ -24,6 +24,7 @@ import { deriveFundingSpeedFromOperationKey } from "@/lib/depositColumns";
 import { isSettlementTerminalStatus } from "@/lib/finix/settlementStatus";
 import type { InvoiceStatus } from "@/lib/invoices/invoiceStatus";
 import { emitEvent } from "@/lib/events/emitEvent";
+import { emitRecurringPaymentOutcomeEvent } from "@/lib/events/recurringPaymentEvents";
 
 // Credentials pasted into a dashboard env editor routinely pick up a trailing
 // newline or a wrapping pair of quotes (this repo's own .env.local stores these
@@ -375,10 +376,19 @@ export async function syncFinixDataFromWebhookEvent(
         where: { finixTransferId: data.id },
       });
       if (priorPayment && priorPayment.status !== (data.state || "PENDING").toUpperCase()) {
+        const newStatus = (data.state || "PENDING").toUpperCase();
         await prisma.payment.updateMany({
           where: { finixTransferId: data.id },
-          data: { status: (data.state || "PENDING").toUpperCase() },
+          data: { status: newStatus },
         });
+
+        if (newStatus === "SUCCEEDED" || newStatus === "FAILED") {
+          try {
+            await emitRecurringPaymentOutcomeEvent({ ...priorPayment, status: newStatus });
+          } catch (err) {
+            console.error("Failed to emit recurring payment outcome event (async):", err);
+          }
+        }
 
         if (
           priorPayment.status !== "SUCCEEDED" &&
@@ -564,6 +574,11 @@ export async function syncFinixDataFromWebhookEvent(
                 } catch (err) {
                   console.error("Failed to emit donation.created event (recurring charge):", err);
                 }
+              }
+              try {
+                await emitRecurringPaymentOutcomeEvent(newRecurringPayment);
+              } catch (err) {
+                console.error("Failed to emit recurring payment outcome event:", err);
               }
             }
           }

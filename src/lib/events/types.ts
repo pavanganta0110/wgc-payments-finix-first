@@ -19,6 +19,8 @@ export const WGC_EVENT_TYPES = [
   "recurring.created",
   "recurring.updated",
   "recurring.cancelled",
+  "recurring.payment_failed",
+  "recurring.payment_recovered",
   "invoice.created",
   "invoice.paid",
   "settlement.created",
@@ -26,7 +28,9 @@ export const WGC_EVENT_TYPES = [
   "campaign.updated",
   "campaign.completed",
   "fundraiser.created",
+  "fundraiser.updated",
   "team.created",
+  "team.updated",
 ] as const;
 
 export type WgcEventType = (typeof WGC_EVENT_TYPES)[number];
@@ -45,6 +49,8 @@ export const WGC_EVENT_DESCRIPTIONS: Record<WgcEventType, string> = {
   "recurring.created": "A new recurring giving subscription was created.",
   "recurring.updated": "A recurring giving subscription's state changed.",
   "recurring.cancelled": "A recurring giving subscription was cancelled.",
+  "recurring.payment_failed": "A recurring charge failed to process.",
+  "recurring.payment_recovered": "A recurring charge succeeded after a prior failure on the same subscription.",
   "invoice.created": "A new invoice was created.",
   "invoice.paid": "An invoice was paid in full.",
   "settlement.created": "A new settlement was recorded.",
@@ -52,5 +58,7 @@ export const WGC_EVENT_DESCRIPTIONS: Record<WgcEventType, string> = {
   "campaign.updated": "A fundraising campaign was updated.",
   "campaign.completed": "A fundraising campaign was marked completed.",
   "fundraiser.created": "A new individual fundraiser was added to a campaign.",
+  "fundraiser.updated": "A fundraiser's profile, goal, or team assignment was updated.",
   "team.created": "A new fundraising team was created.",
+  "team.updated": "A team's name or goal was updated.",
 };
