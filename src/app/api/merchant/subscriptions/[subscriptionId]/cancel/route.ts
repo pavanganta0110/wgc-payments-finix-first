@@ -87,9 +87,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ subscri
     });
 
     try {
-      await emitEvent({ type: "recurring.cancelled", churchId, data: { finixSubscriptionId: subscription.finixSubscriptionId, donorId: subscription.donorId, reason: reason || null } });
+      // A subscription cancelled while already PAST_DUE is a recovery
+      // outcome (the donor never fixed their payment method in time), not
+      // a voluntary cancellation — distinguished so a webhook subscriber
+      // doesn't have to separately look up prior state to tell them apart.
+      const eventType = displayStatus === "PAST_DUE" ? "recurring.cancelled_after_failure" : "recurring.cancelled";
+      await emitEvent({ type: eventType, churchId, data: { finixSubscriptionId: subscription.finixSubscriptionId, donorId: subscription.donorId, reason: reason || null } });
     } catch (err) {
-      console.error("Failed to emit recurring.cancelled event:", err);
+      console.error("Failed to emit recurring cancellation event:", err);
     }
 
     return NextResponse.json({ subscription: { id: updated.id, canceledAt: updated.canceledAt } });

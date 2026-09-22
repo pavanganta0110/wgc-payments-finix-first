@@ -82,7 +82,16 @@ export const NAV_ITEMS: NavItem[] = [
   { name: "Disputes", href: "/merchant/disputes", icon: ShieldAlert, section: "Money" },
   { name: "Settlements", href: "/merchant/settlements", icon: Landmark, organizationOnly: true, section: "Money" },
   { name: "Deposits", href: "/merchant/deposits", icon: PiggyBank, organizationOnly: true, section: "Money" },
-  { name: "Recurring Donors", href: "/merchant/recurring-donors", icon: Repeat, section: "Money" },
+  {
+    name: "Recurring Donors",
+    href: "/merchant/recurring-donors",
+    icon: Repeat,
+    section: "Money",
+    children: [
+      { name: "All Recurring Donors", href: "/merchant/recurring-donors" },
+      { name: "Recovery", href: "/merchant/recurring-giving/recovery" },
+    ],
+  },
   { name: "Subscriptions", href: "/merchant/subscriptions", icon: RefreshCw, section: "Money" },
   { name: "Donors", href: "/merchant/donors", icon: Users, section: "Giving" },
   { name: "Giving Links", href: "/merchant/giving-links", icon: HeartHandshake, section: "Giving" },

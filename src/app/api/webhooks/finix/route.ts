@@ -25,6 +25,7 @@ import { isSettlementTerminalStatus } from "@/lib/finix/settlementStatus";
 import type { InvoiceStatus } from "@/lib/invoices/invoiceStatus";
 import { emitEvent } from "@/lib/events/emitEvent";
 import { emitRecurringPaymentOutcomeEvent } from "@/lib/events/recurringPaymentEvents";
+import { triggerRecoveryOnPaymentFailure } from "@/lib/subscriptions/recoveryAutomation";
 
 // Credentials pasted into a dashboard env editor routinely pick up a trailing
 // newline or a wrapping pair of quotes (this repo's own .env.local stores these
@@ -388,6 +389,11 @@ export async function syncFinixDataFromWebhookEvent(
           } catch (err) {
             console.error("Failed to emit recurring payment outcome event (async):", err);
           }
+          try {
+            await triggerRecoveryOnPaymentFailure({ ...priorPayment, status: newStatus, failureCode: data.failure_code ?? null, failureMessage: data.failure_message ?? null });
+          } catch (err) {
+            console.error("Failed to trigger recurring payment recovery (async):", err);
+          }
         }
 
         if (
@@ -579,6 +585,11 @@ export async function syncFinixDataFromWebhookEvent(
                 await emitRecurringPaymentOutcomeEvent(newRecurringPayment);
               } catch (err) {
                 console.error("Failed to emit recurring payment outcome event:", err);
+              }
+              try {
+                await triggerRecoveryOnPaymentFailure({ ...newRecurringPayment, failureCode: data.failure_code ?? null, failureMessage: data.failure_message ?? null });
+              } catch (err) {
+                console.error("Failed to trigger recurring payment recovery:", err);
               }
             }
           }

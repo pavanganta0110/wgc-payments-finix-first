@@ -5407,3 +5407,33 @@ model MigrationError {
   @@index([migrationJobId])
   @@index([churchId])
 }
+
+/// Auditable log of the automated recovery flow triggered when a recurring
+/// charge fails — one row per failure event processed, whether or not it
+/// resulted in an email actually going out. Deliberately does NOT attempt
+/// or schedule a re-charge: Finix's subscriptions API has no documented
+/// account-updater/dunning behavior we could safely build on top of, so
+/// recovery here means "get the donor a payment-update link," never
+/// "retry the charge ourselves" (see recoveryAutomation.ts doc comment).
+model SubscriptionRecoveryAttempt {
+  id                   String  @id @default(cuid())
+  churchId             String
+  finixSubscriptionId  String
+  donorId              String?
+
+  // PAYMENT_FAILED — the only trigger today.
+  trigger String
+
+  // UPDATE_LINK_SENT | UPDATE_LINK_SEND_FAILED | SKIPPED_NO_DONOR_EMAIL |
+  // SKIPPED_NOT_ACTIVE_OR_PAST_DUE | SKIPPED_RECENTLY_SENT
+  action String
+
+  // Set only when action is UPDATE_LINK_SENT/UPDATE_LINK_SEND_FAILED —
+  // links back to the actual SubscriptionSetupLink row for detail.
+  setupLinkId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([churchId, finixSubscriptionId])
+  @@index([churchId, createdAt])
+}
