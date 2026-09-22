@@ -29,6 +29,7 @@ import {
   Target,
   Mail,
   Send,
+  Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import GatewayIcon from "@/components/ui/GatewayIcon";
@@ -96,6 +97,7 @@ export const NAV_ITEMS: NavItem[] = [
       { name: "Campaigns", href: "/merchant/pledge-campaigns" },
     ],
   },
+  { name: "Fundraising Campaigns", href: "/merchant/campaigns", icon: Megaphone, section: "Giving" },
   {
     name: "Invoices",
     href: "/merchant/invoices",

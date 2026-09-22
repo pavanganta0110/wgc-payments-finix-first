@@ -159,7 +159,18 @@ export type PermissionKey =
   // email type from that page, rather than each category's own existing,
   // inconsistent permission.
   | "canViewEmailLogs"
-  | "canResendEmails";
+  | "canResendEmails"
+  // Fundraising Campaigns (peer-to-peer) — mirrors the Pledges permission
+  // shape above: canCreate/canEdit/canArchive gate the campaign itself
+  // (goal, dates, status); canManageCampaignRoster gates creating/editing
+  // the teams and individual fundraisers under it. canViewFundraisingCampaigns
+  // is separate so a read-only role can see campaign data without any
+  // mutation rights.
+  | "canViewFundraisingCampaigns"
+  | "canCreateFundraisingCampaign"
+  | "canEditFundraisingCampaign"
+  | "canArchiveFundraisingCampaign"
+  | "canManageCampaignRoster";
 
 export type PermissionMatrix = Record<PermissionKey, boolean>;
 
@@ -226,6 +237,11 @@ const ALL_FALSE: PermissionMatrix = {
   canExportPledges: false,
   canViewEmailLogs: false,
   canResendEmails: false,
+  canViewFundraisingCampaigns: false,
+  canCreateFundraisingCampaign: false,
+  canEditFundraisingCampaign: false,
+  canArchiveFundraisingCampaign: false,
+  canManageCampaignRoster: false,
 };
 
 /** Base permission matrix per normalized role, per the approved Checkpoint 2 spec. */
@@ -295,6 +311,11 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     canExportPledges: true,
     canViewEmailLogs: true,
     canResendEmails: true,
+    canViewFundraisingCampaigns: true,
+    canCreateFundraisingCampaign: true,
+    canEditFundraisingCampaign: true,
+    canArchiveFundraisingCampaign: true,
+    canManageCampaignRoster: true,
   },
   admin: {
     ...ALL_FALSE,
@@ -346,13 +367,17 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     canRecordPledgeFulfillment: true,
     canExportPledges: true,
     canViewEmailLogs: true,
+    canViewFundraisingCampaigns: true,
+    canCreateFundraisingCampaign: true,
+    canEditFundraisingCampaign: true,
+    canManageCampaignRoster: true,
     // canResendEmails: false by default, override-able — an outbound
     // donor-facing action, same trust tier as canVoidExternalDonation /
     // canRefundInvoicePayments.
-    // canArchivePledgeCampaign, canCancelPledge: false by default,
-    // override-able — archiving a campaign and canceling a pledge are
-    // treated like canVoidExternalDonation/canVoidInvoices, not a
-    // routine edit.
+    // canArchivePledgeCampaign, canCancelPledge, canArchiveFundraisingCampaign:
+    // false by default, override-able — archiving a campaign and canceling
+    // a pledge are treated like canVoidExternalDonation/canVoidInvoices,
+    // not a routine edit.
     // canManageTeam, canIssueRefunds, canManageBankAccount, canManageBilling,
     // canViewAsUser, canVoidExternalDonation, canViewExternalDonationProof:
     // false by default, override-able — voiding a donation record and
@@ -405,8 +430,10 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     canViewPledges: true,
     canCreatePledge: true, // same rationale as canCreateExternalDonation — front-line entry for pledge cards/phone calls
     canRecordPledgeFulfillment: true,
-    // No campaign creation/management, no editing/canceling an existing
-    // pledge, no export by default — override-able.
+    // No pledge campaign creation/management, no editing/canceling an
+    // existing pledge, no export by default — override-able. Same for
+    // fundraising campaigns: no create/edit/archive/roster-management, and
+    // canViewFundraisingCampaigns is false by default too — override-able.
     // canViewEmailLogs/canResendEmails: false by default, override-able —
     // no existing "owns donor communications" precedent for this role
     // (unlike invoices, which fundraisers create themselves, these emails

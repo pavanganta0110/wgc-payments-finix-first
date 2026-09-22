@@ -2598,7 +2598,27 @@ model GivingLink {
   merchandiseEnabled      Boolean @default(false)
   merchandiseSettingsJson Json?
 
+  // Peer-to-peer fundraising attribution (see the Fundraising Campaigns
+  // section below) — set when this GivingLink is the dedicated "give"
+  // link auto-provisioned for a FundraisingCampaign, CampaignTeam, or
+  // CampaignFundraiser's public page. Purely additive: a normal,
+  // non-campaign giving link never sets any of these, and the entire
+  // existing checkout/payment/refund/webhook flow is completely
+  // unaffected — a campaign-linked GivingLink is processed exactly like
+  // any other. All three are set together when applicable
+  // (fundraisingCampaignId is always set if campaignTeamId or
+  // campaignFundraiserId is), so a campaign-level total never has to walk
+  // down through team/fundraiser rows. "Amount raised" for a campaign/
+  // team/fundraiser is always computed by summing
+  // totalCollectedCents/refundedCents/returnedCents across its tagged
+  // GivingLink(s) — see src/lib/campaigns/campaignTotals.ts — never
+  // stored redundantly here or on the campaign row itself.
+  fundraisingCampaignId String?
+  campaignTeamId        String?
+  campaignFundraiserId  String?
+
   @@index([churchId, ownerUserId])
+  @@index([fundraisingCampaignId])
 }
 
 model GivingLinkShare {
@@ -3043,6 +3063,20 @@ model ExternalDonation {
   // no existing invariant of this model changes when set.
   pledgeId String?
 
+  // Peer-to-peer fundraising attribution (see the Fundraising Campaigns
+  // section below) — set when a manually-recorded offline gift (cash,
+  // check, etc.) should count toward a FundraisingCampaign's total. All
+  // three are set together when applicable (fundraisingCampaignId is
+  // always set if campaignTeamId or campaignFundraiserId is), so a
+  // campaign-level rollup never has to walk down through team/fundraiser
+  // rows — see src/lib/campaigns/campaignTotals.ts. Distinct from the
+  // pre-existing free-text `campaign` label above, which has no relation
+  // to any campaign record and is left untouched for ad-hoc offline gifts
+  // with no formal FundraisingCampaign.
+  fundraisingCampaignId String?
+  campaignTeamId        String?
+  campaignFundraiserId  String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -3056,6 +3090,7 @@ model ExternalDonation {
   @@index([churchId, importFingerprint])
   @@index([importBatchId])
   @@index([churchId, pledgeId])
+  @@index([churchId, fundraisingCampaignId])
 }
 
 /// A single CSV/spreadsheet upload of external donations. One batch per
@@ -4507,6 +4542,140 @@ model Pledge {
   @@index([churchId, donorId])
   @@index([churchId, status])
   @@index([churchId, attributedUserId])
+}
+
+// ---------------------------------------------------------------------------
+// FUNDRAISING CAMPAIGNS (peer-to-peer)
+//
+// Distinct from PledgeCampaign above: a PledgeCampaign tracks promises
+// fulfilled over time (capital/building funds, "$X per mile" walkathons
+// with a formal pledge step). A FundraisingCampaign tracks live totals
+// raised toward a goal for peer-to-peer style drives (galas, giving days,
+// team fundraisers), broken down by team and individual fundraiser, where
+// every gift counts immediately — no separate pledge/commitment step.
+//
+// "Amount raised" is never stored on these rows. It's always computed by
+// summing the already-correct, webhook-maintained
+// GivingLink.totalCollectedCents/refundedCents/returnedCents counters (plus
+// tagged ExternalDonation rows) — see src/lib/campaigns/campaignTotals.ts.
+// This means a refund/chargeback that already updates GivingLink via the
+// existing Finix webhook handler automatically keeps every campaign total
+// correct, with zero changes to the payment/refund/webhook code path.
+//
+// Every campaign, team, and fundraiser gets its own dedicated GivingLink for
+// "give here" — donors always check out through the exact same, already
+// battle-tested public giving flow (/g/[slug]) as any other giving link.
+// ---------------------------------------------------------------------------
+
+model FundraisingCampaign {
+  id          String  @id @default(cuid())
+  churchId    String
+  name        String
+  description String?
+  imageUrl    String?
+
+  // Public-facing vanity slug (e.g. "spring-gala-2026"), globally unique
+  // across the platform — human-readable, distinct from
+  // GivingLink.publicSlug's random-token convention, since this is the URL
+  // shared on flyers/social media/QR codes. See src/lib/campaigns/slugs.ts.
+  slug String @unique
+
+  startDate DateTime?
+  endDate   DateTime?
+
+  goalAmountCents Int?
+
+  // DRAFT | ACTIVE | PAUSED | COMPLETED. Only ACTIVE campaigns are
+  // reachable on their public page/wall; DRAFT/PAUSED/COMPLETED all 404
+  // publicly, mirroring GivingLink's status-gate convention. Reaching the
+  // goal never auto-completes a campaign — always an explicit action,
+  // same rationale as PledgeCampaign.status above.
+  status String @default("DRAFT")
+
+  leaderboardEnabled Boolean @default(true)
+  // When false, the public campaign/team/fundraiser pages render a
+  // noindex meta tag and are omitted from the sitemap — for a campaign an
+  // organization wants reachable only by direct link, not search-indexed.
+  publiclyIndexable  Boolean @default(true)
+
+  // The campaign's own "give directly, undesignated" GivingLink — always
+  // auto-created alongside the campaign. Plain string, no relation
+  // (matches this schema's established GivingLink-cross-reference
+  // convention, e.g. PledgeCampaign.givingLinkId above).
+  givingLinkId String?
+
+  createdByUserId String?
+  archivedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  teams       CampaignTeam[]
+  fundraisers CampaignFundraiser[]
+
+  @@index([churchId, status])
+}
+
+model CampaignTeam {
+  id                    String  @id @default(cuid())
+  churchId              String
+  fundraisingCampaignId String
+  name                  String
+  slug                  String  @unique
+  goalAmountCents       Int?
+  imageUrl              String?
+
+  // The team's own "give to this team" GivingLink (undesignated to a
+  // specific member). Plain string, no relation — see FundraisingCampaign
+  // .givingLinkId above for the same convention.
+  givingLinkId String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  campaign    FundraisingCampaign  @relation(fields: [fundraisingCampaignId], references: [id])
+  fundraisers CampaignFundraiser[]
+
+  @@index([churchId, fundraisingCampaignId])
+}
+
+/// An individual's personal fundraiser page under a FundraisingCampaign,
+/// optionally part of a CampaignTeam. Deliberately NOT modeled as a User —
+/// most peer-to-peer fundraisers are volunteers, students, alumni, or
+/// donors with no dashboard login at all, not organization staff. donorId
+/// is an optional soft link (no relation, same convention as elsewhere)
+/// for a future self-service fundraiser portal to authenticate against;
+/// unused until that portal is built. Do not confuse with the "fundraiser"
+/// NormalizedOrgRole in src/lib/auth/roles.ts, an unrelated concept (an
+/// organization staff member's dashboard permission level).
+model CampaignFundraiser {
+  id                    String  @id @default(cuid())
+  churchId              String
+  fundraisingCampaignId String
+  campaignTeamId        String?
+
+  displayName   String
+  slug          String  @unique
+  email         String?
+  personalStory String?
+  imageUrl      String?
+  goalAmountCents Int?
+
+  donorId String?
+
+  // The fundraiser's own personal "give to me" GivingLink. Plain string,
+  // no relation — see FundraisingCampaign.givingLinkId above.
+  givingLinkId String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  campaign FundraisingCampaign @relation(fields: [fundraisingCampaignId], references: [id])
+  team     CampaignTeam?       @relation(fields: [campaignTeamId], references: [id])
+
+  @@index([churchId, fundraisingCampaignId])
+  @@index([campaignTeamId])
 }
 
 model QuickBooksConnection {
