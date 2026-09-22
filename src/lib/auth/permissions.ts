@@ -80,6 +80,7 @@ export const OVERRIDABLE_PERMISSION_KEYS: readonly PermissionKey[] = [
   "canManageCampaignRoster",
   "canManageWebhooks",
   "canManageApiKeys",
+  "canManageMigrations",
 ];
 
 /**
@@ -196,6 +197,7 @@ export function resolveEffectivePermissions(
       canManageCampaignRoster: false,
       canManageWebhooks: false,
       canManageApiKeys: false,
+      canManageMigrations: false,
     };
   }
 

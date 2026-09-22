@@ -2,7 +2,7 @@ import { isValidEmail, isValidPhone, normalizeEmail, normalizePhone } from "@/li
 
 export const IMPORT_ROW_CAP = 2000;
 
-const HEADER_ALIASES: Record<string, keyof ImportRowInput> = {
+export const HEADER_ALIASES: Record<string, keyof ImportRowInput> = {
   name: "name",
   "donor name": "name",
   "full name": "name",

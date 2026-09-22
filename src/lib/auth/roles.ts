@@ -176,7 +176,13 @@ export type PermissionKey =
   // to a technical volunteer without also handing out API key creation
   // (which carries broader read/write access to the organization's data).
   | "canManageWebhooks"
-  | "canManageApiKeys";
+  | "canManageApiKeys"
+  // Migration Center: bulk-creates/updates donors, donation history, and
+  // funds from an external source in one job — kept as its own gate since
+  // it's higher blast-radius than either single-purpose importer it builds
+  // on (canImportExternalDonations, and the donor importer which has no
+  // gate of its own today).
+  | "canManageMigrations";
 
 export type PermissionMatrix = Record<PermissionKey, boolean>;
 
@@ -250,6 +256,7 @@ const ALL_FALSE: PermissionMatrix = {
   canManageCampaignRoster: false,
   canManageWebhooks: false,
   canManageApiKeys: false,
+  canManageMigrations: false,
 };
 
 /** Base permission matrix per normalized role, per the approved Checkpoint 2 spec. */
@@ -326,6 +333,7 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     canManageCampaignRoster: true,
     canManageWebhooks: true,
     canManageApiKeys: true,
+    canManageMigrations: true,
   },
   admin: {
     ...ALL_FALSE,
@@ -402,6 +410,9 @@ export const ROLE_PERMISSIONS: Record<NormalizedOrgRole, PermissionMatrix> = {
     // CSV import can create/modify hundreds of financial records and donor
     // profiles in one action, treated like canManageBankAccount, not like
     // the single-record canCreateExternalDonation admin already has.
+    // canManageMigrations: false by default, override-able — a Migration
+    // Center job is a superset of canImportExternalDonations (donors +
+    // donation history + funds in one bulk action), same trust tier.
     // canVoidInvoices, canRecordOfflineInvoicePayments,
     // canRefundInvoicePayments: false by default, override-able, for the
     // same reason — voiding an invoice, recording a manual payment, and

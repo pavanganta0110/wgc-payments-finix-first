@@ -5273,3 +5273,137 @@ model IntegrationConnection {
   @@unique([churchId, provider])
   @@index([churchId])
 }
+
+/// The WGC Migration Center's orchestration record. One job represents one
+/// organization's attempt to bring data in from an outside system. v1 only
+/// implements sourceSystem = "CSV_GENERIC" (zero vendor dependency); every
+/// other source is a placeholder pending that vendor's OAuth app
+/// registration (see MigrationSourceSystem doc in src/lib/migrations/types.ts).
+/// Deliberately reuses the same chunked, cursor-based resumability
+/// convention as BulkReceiptJob/AnnualStatementJob rather than a cron
+/// worker — this project's Vercel plan only allows daily cron jobs, so a
+/// client-driven "process the next chunk" loop is the only fit for
+/// anything needing finer-grained progress.
+model MigrationJob {
+  id       String @id @default(cuid())
+  churchId String
+
+  // CSV_GENERIC | STRIPE | AUTHORIZE_NET | PLANNING_CENTER | GIVEBUTTER |
+  // PUSHPAY | SUBSPLASH | PAYPAL — only CSV_GENERIC is implemented.
+  sourceSystem String
+
+  // DRAFT | MAPPING | VALIDATING | READY | IMPORTING | COMPLETED |
+  // COMPLETED_WITH_ERRORS | FAILED | CANCELLED
+  status String @default("DRAFT")
+
+  // Which WGC entities this job creates/updates — a job may cover more
+  // than one, e.g. ["DONOR", "DONATION_HISTORY"] for a combined CSV.
+  // DONOR | DONATION_HISTORY | FUND
+  entityTypesJson Json
+
+  fileName String?
+
+  totalRecords     Int @default(0)
+  processedRecords Int @default(0)
+  succeededRecords Int @default(0)
+  failedRecords    Int @default(0)
+  skippedRecords   Int @default(0)
+
+  // Raw source rows the job will process, keyed by entity type — set once
+  // at commit time and never mutated; processing only ever advances the
+  // processedRecords cursor, mirroring BulkReceiptJob's targetIds pattern.
+  sourceDataJson Json?
+
+  createdByUserId String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  mappings MigrationMapping[]
+  records  MigrationRecord[]
+  errors   MigrationError[]
+
+  @@index([churchId])
+  @@index([churchId, status])
+  @@index([churchId, createdAt])
+}
+
+/// The confirmed source-column -> WGC-field mapping for one entity type
+/// within a job. Kept as its own row (rather than one JSON blob on the
+/// job) so a multi-entity job can carry a distinct mapping per entity type.
+model MigrationMapping {
+  id             String @id @default(cuid())
+  migrationJobId String
+
+  // DONOR | DONATION_HISTORY | FUND
+  entityType String
+
+  // rawHeader -> canonical field key or null (skip), same shape as
+  // externalDonationImport.ts's ColumnMapping.
+  columnMappingJson Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  job MigrationJob @relation(fields: [migrationJobId], references: [id], onDelete: Cascade)
+
+  @@unique([migrationJobId, entityType])
+  @@index([migrationJobId])
+}
+
+/// One outcome row per source record, generalizing ExternalDonationImportRow
+/// across entity types so donors/donations/funds share one reconciliation
+/// model instead of three.
+model MigrationRecord {
+  id             String @id @default(cuid())
+  migrationJobId String
+  churchId       String
+
+  // DONOR | DONATION_HISTORY | FUND
+  entityType String
+  rowNumber  Int
+
+  // Post-mapping, pre-validation field values — never the untouched raw
+  // CSV text, matching ExternalDonationImportRow's convention.
+  rawDataJson Json
+
+  fingerprint String
+
+  // PENDING | VALID | WARNING | INVALID | DUPLICATE | IMPORTED | SKIPPED | FAILED
+  status String @default("PENDING")
+
+  // Id of the WGC record this row resolved to (donorId / externalDonationId
+  // / fundId) once imported.
+  resultEntityId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  job MigrationJob @relation(fields: [migrationJobId], references: [id], onDelete: Cascade)
+
+  @@unique([migrationJobId, entityType, rowNumber])
+  @@index([migrationJobId])
+  @@index([churchId])
+  @@index([fingerprint])
+}
+
+/// Structured, queryable error log for a job's reconciliation report —
+/// richer than a JSON array on the row so the report can filter/group by
+/// error type without deserializing every record.
+model MigrationError {
+  id             String @id @default(cuid())
+  migrationJobId String
+  churchId       String
+
+  entityType String
+  rowNumber  Int
+  message    String
+
+  createdAt DateTime @default(now())
+
+  job MigrationJob @relation(fields: [migrationJobId], references: [id], onDelete: Cascade)
+
+  @@index([migrationJobId])
+  @@index([churchId])
+}
