@@ -1717,7 +1717,46 @@ export async function POST(req: Request) {
         const onboardingState = data?.onboarding_state;
         const status = data?.status;
 
-        if (onboardingState === "APPROVED" || status === "APPROVED") {
+        if (data?.is_terminated) {
+          // Finix tracks termination separately from onboarding_state — a
+          // terminated merchant's onboarding_state can still read APPROVED
+          // in the very same payload (confirmed 2026-09-23: Springfield
+          // Area Collegiate Ministry's termination event had
+          // onboarding_state: "APPROVED" alongside is_terminated: true).
+          // This check must come before the APPROVED branch below, or a
+          // churn event gets misread as a fresh approval and re-sends the
+          // dashboard-access invite for an account that's being closed.
+          const wasAlreadyTerminated = app.onboardingStatus === "TERMINATED";
+          updateData.onboardingStatus = "TERMINATED";
+          if (!wasAlreadyTerminated) {
+            updateData.lastStatusChangedAt = new Date();
+          }
+
+          const terminationReason: string | null =
+            data?.termination_details?.description || data?.termination_details?.reason || null;
+          const terminatedAt = data?.termination_details?.terminated_at ? new Date(data.termination_details.terminated_at) : new Date();
+
+          const church = await prisma.church.findFirst({ where: { onboardingApplicationId: app.id } });
+          if (church && church.status !== "TERMINATED") {
+            await prisma.church.update({
+              where: { id: church.id },
+              data: { status: "TERMINATED", terminatedAt, terminationReason },
+            });
+          }
+
+          if (!wasAlreadyTerminated) {
+            await sendWgcAdminEmail({
+              merchantName: safeOrgName,
+              contactEmail,
+              finixMerchantId: app.finixMerchantId || data.id,
+              newStatus: "TERMINATED",
+              whatHappened: `Finix terminated this merchant's account.${terminationReason ? ` Reason: ${terminationReason}` : ""}`,
+              actionNeeded: "Confirm the organization's records reflect the closed account. No dashboard-access email is sent for a termination.",
+              adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications",
+              onboardingApplicationId: app.id,
+            });
+          }
+        } else if (onboardingState === "APPROVED" || status === "APPROVED") {
           const wasAlreadyApproved = app.onboardingStatus === "APPROVED";
           updateData.onboardingStatus = "APPROVED";
           updateData.onboardingState = "APPROVED";

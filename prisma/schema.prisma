@@ -341,7 +341,13 @@ model Church {
   // cross-references (see User.invitedByUserId/disabledByUserId) and to keep
   // this migration additive-only.
   primaryOwnerUserId            String?
+  // ACTIVE | TERMINATED. Set to TERMINATED only when Finix itself reports
+  // the merchant account terminated (merchant.updated/underwritten with
+  // is_terminated: true) — see the webhook handler. terminatedAt/
+  // terminationReason are only meaningful when status is TERMINATED.
   status                        String
+  terminatedAt                  DateTime?
+  terminationReason             String?
   // Organization identity used on annual donation statements and the
   // organization profile — not required by onboarding/payments, so all
   // nullable. Intentionally not backfilled from OnboardingApplication:

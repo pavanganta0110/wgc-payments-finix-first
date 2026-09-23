@@ -100,7 +100,18 @@ export default async function MerchantOverviewPage({ params }: { params: Promise
             }`}>
               {church.finixMerchantId ? "Finix Activated" : "Pending Activation"}
             </span>
+            {church.status === "TERMINATED" && (
+              <span className="inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-semibold bg-rose-100 text-rose-800">
+                Account Terminated
+              </span>
+            )}
           </div>
+          {church.status === "TERMINATED" && (
+            <p className="mt-2 text-sm text-rose-700">
+              Finix closed this merchant&rsquo;s account{church.terminatedAt ? ` on ${new Date(church.terminatedAt).toLocaleDateString()}` : ""}.
+              {church.terminationReason ? ` Reason: ${church.terminationReason}` : ""}
+            </p>
+          )}
         </div>
         {session.role === "wgc_super_admin" && church.status === "ACTIVE" && (
           <OpenMerchantDashboardButton churchId={church.id} />

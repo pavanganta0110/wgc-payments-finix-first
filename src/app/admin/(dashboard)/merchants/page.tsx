@@ -111,6 +111,7 @@ export default function MerchantsDirectoryPage() {
       case "DISABLED":
       case "REJECTED":
       case "FAILED":
+      case "TERMINATED":
         return "bg-rose-100 text-rose-800 border-rose-200";
       default:
         return "bg-slate-100 text-slate-700 border-slate-200";
@@ -164,6 +165,7 @@ export default function MerchantsDirectoryPage() {
                 <option value="ACTIVE">Active</option>
                 <option value="PENDING">Pending</option>
                 <option value="DISABLED">Disabled</option>
+                <option value="TERMINATED">Terminated</option>
               </select>
             </div>
           </div>
