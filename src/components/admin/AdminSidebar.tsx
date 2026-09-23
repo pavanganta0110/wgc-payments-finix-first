@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Inbox, FileText, Users, UserCircle, Mail, LifeBuoy, Building, CreditCard, RefreshCw, UserCheck } from "lucide-react";
+import { LayoutDashboard, Inbox, FileText, Users, UserCircle, Mail, LifeBuoy, Building, CreditCard, RefreshCw, UserCheck, Webhook } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { name: "Inquiries", href: "/admin/inquiries", icon: Inbox },
   { name: "501(c)(3) Documents", href: "/admin/documents", icon: FileText },
   { name: "Email Logs", href: "/admin/email-logs", icon: Mail },
+  { name: "Finix Webhook Events", href: "/admin/finix-webhook-events", icon: Webhook },
   { name: "My Profile", href: "/admin/profile", icon: UserCircle },
 ];
 

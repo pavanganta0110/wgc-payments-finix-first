@@ -193,8 +193,16 @@ export default async function MerchantOverviewPage({ params }: { params: Promise
             </div>
             <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt className="text-sm font-medium text-gray-900">Finix Merchant ID</dt>
-              <dd className="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0 font-mono">
+              <dd className="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0 font-mono flex items-center gap-3">
                 {church.finixMerchantId || "Not assigned"}
+                {church.finixMerchantId && (
+                  <Link
+                    href={`/admin/finix-webhook-events?merchantId=${encodeURIComponent(church.finixMerchantId)}`}
+                    className="font-sans text-xs font-semibold text-blue-600 hover:underline"
+                  >
+                    View Webhook Events
+                  </Link>
+                )}
               </dd>
             </div>
             <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
