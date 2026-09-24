@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatCents } from "@/lib/format";
 import { checkNonprofitVerificationStatus } from "@/lib/onboarding/nonprofitVerificationGuard";
 import OpenMerchantDashboardButton from "@/components/admin/OpenMerchantDashboardButton";
+import ResyncFinixTerminationButton from "@/components/admin/ResyncFinixTerminationButton";
 
 export default async function MerchantOverviewPage({ params }: { params: Promise<{ churchId: string }> | { churchId: string } }) {
   const session = await getAdminSession();
@@ -214,6 +215,7 @@ export default async function MerchantOverviewPage({ params }: { params: Promise
                     View Webhook Events
                   </Link>
                 )}
+                {church.finixMerchantId && <ResyncFinixTerminationButton churchId={church.id} />}
               </dd>
             </div>
             <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">

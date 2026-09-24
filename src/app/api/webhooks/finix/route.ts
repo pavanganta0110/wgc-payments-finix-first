@@ -26,6 +26,7 @@ import type { InvoiceStatus } from "@/lib/invoices/invoiceStatus";
 import { emitEvent } from "@/lib/events/emitEvent";
 import { emitRecurringPaymentOutcomeEvent } from "@/lib/events/recurringPaymentEvents";
 import { triggerRecoveryOnPaymentFailure } from "@/lib/subscriptions/recoveryAutomation";
+import { handleMerchantTermination } from "@/lib/onboarding/handleMerchantTermination";
 
 // Credentials pasted into a dashboard env editor routinely pick up a trailing
 // newline or a wrapping pair of quotes (this repo's own .env.local stores these
@@ -1726,36 +1727,22 @@ export async function POST(req: Request) {
           // This check must come before the APPROVED branch below, or a
           // churn event gets misread as a fresh approval and re-sends the
           // dashboard-access invite for an account that's being closed.
-          const wasAlreadyTerminated = app.onboardingStatus === "TERMINATED";
-          updateData.onboardingStatus = "TERMINATED";
-          if (!wasAlreadyTerminated) {
-            updateData.lastStatusChangedAt = new Date();
-          }
-
-          const terminationReason: string | null =
-            data?.termination_details?.description || data?.termination_details?.reason || null;
-          const terminatedAt = data?.termination_details?.terminated_at ? new Date(data.termination_details.terminated_at) : new Date();
-
+          // Delegated to the same shared function the admin "Resync from
+          // Finix" backfill action uses, so there's exactly one place
+          // this logic lives.
           const church = await prisma.church.findFirst({ where: { onboardingApplicationId: app.id } });
-          if (church && church.status !== "TERMINATED") {
-            await prisma.church.update({
-              where: { id: church.id },
-              data: { status: "TERMINATED", terminatedAt, terminationReason },
-            });
-          }
-
-          if (!wasAlreadyTerminated) {
-            await sendWgcAdminEmail({
-              merchantName: safeOrgName,
+          await handleMerchantTermination({
+            church: church ? { id: church.id, status: church.status } : null,
+            onboardingApplication: {
+              id: app.id,
+              onboardingStatus: app.onboardingStatus,
               contactEmail,
-              finixMerchantId: app.finixMerchantId || data.id,
-              newStatus: "TERMINATED",
-              whatHappened: `Finix terminated this merchant's account.${terminationReason ? ` Reason: ${terminationReason}` : ""}`,
-              actionNeeded: "Confirm the organization's records reflect the closed account. No dashboard-access email is sent for a termination.",
-              adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications",
-              onboardingApplicationId: app.id,
-            });
-          }
+              organizationName: app.organizationName,
+              legalBusinessName: app.legalBusinessName,
+            },
+            finixMerchantId: app.finixMerchantId || data.id,
+            terminationDetails: data?.termination_details ?? null,
+          });
         } else if (onboardingState === "APPROVED" || status === "APPROVED") {
           const wasAlreadyApproved = app.onboardingStatus === "APPROVED";
           updateData.onboardingStatus = "APPROVED";
