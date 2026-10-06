@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { getAdminSession } from "@/lib/auth/session";
-import { isAdminMfaEnforced } from "@/lib/auth/adminMfaPolicy";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import AdminSidebar from "@/components/admin/AdminSidebar";
@@ -20,7 +19,7 @@ export default async function AdminDashboardLayout({ children }: { children: Rea
   // Mandatory MFA gate — an admin who hasn't completed enrollment gets no
   // dashboard functionality at all (impersonation included) until they do,
   // but isn't locked out of signing in entirely (see mfa-setup/page.tsx).
-  if (isAdminMfaEnforced() && !session.mfaEnabled) {
+  if (!session.mfaEnabled) {
     redirect("/admin/mfa-setup");
   }
 
