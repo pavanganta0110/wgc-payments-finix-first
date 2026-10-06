@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { formFieldForFinixField, type FormFieldKey, type UpdateDataRequest } from '@/lib/finix/parseVerificationOutcomes';
 
 // Finix underwriting requests come in two shapes (see the "Requested Items"
 // list above this form): "Upload File" (handled by the file input(s)
@@ -41,7 +42,17 @@ function readableFileType(fileType: string): string {
   return fileType.toLowerCase().replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 }
 
-export default function UpdateForm({ token, fileUploadRequests }: { token: string; fileUploadRequests: FileUploadRequest[] }) {
+// Small badge shown next to an input Finix specifically asked about, so a merchant can see which fields matter.
+function RequestedBadge({ show }: { show: boolean }) {
+  if (!show) return null;
+  return <span className="ml-2 inline-block rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800 align-middle">Requested</span>;
+}
+
+export default function UpdateForm({ token, fileUploadRequests, dataRequests = [] }: { token: string; fileUploadRequests: FileUploadRequest[]; dataRequests?: UpdateDataRequest[] }) {
+  const requested = new Set<FormFieldKey>(dataRequests.map((d) => formFieldForFinixField(d.fieldName)).filter((k): k is FormFieldKey => k !== null));
+  // Finix asked about a field this form has no input for: list it and let the merchant describe the correction.
+  const unmapped = dataRequests.filter((d) => formFieldForFinixField(d.fieldName) === null);
+  const [note, setNote] = useState("");
   // Keyed by fileType (or "" for the generic single-slot fallback when
   // Finix didn't give us any typed FILE_UPLOAD outcomes at all).
   const [files, setFiles] = useState<Record<string, File>>({});
@@ -49,6 +60,17 @@ export default function UpdateForm({ token, fileUploadRequests }: { token: strin
   const [businessType, setBusinessType] = useState("");
   const [mcc, setMcc] = useState("");
   const [email, setEmail] = useState("");
+  // Other corrections Finix commonly asks for. The SSN lives only in this component's state and the
+  // submit request: it is never persisted client-side, and is cleared as soon as it has been sent.
+  const [website, setWebsite] = useState("");
+  const [businessPhone, setBusinessPhone] = useState("");
+  const [principalSsn, setPrincipalSsn] = useState("");
+  const [addressLine1, setAddressLine1] = useState("");
+  const [addressLine2, setAddressLine2] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [removeOwnership, setRemoveOwnership] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -79,7 +101,22 @@ export default function UpdateForm({ token, fileUploadRequests }: { token: strin
     setFiles((prev) => ({ ...prev, [key]: selected }));
   };
 
-  const hasAnyFieldUpdate = Boolean(doingBusinessAs.trim() || businessType || mcc.trim() || email.trim());
+  const hasAnyFieldUpdate = Boolean(
+    doingBusinessAs.trim() ||
+      businessType ||
+      mcc.trim() ||
+      email.trim() ||
+      website.trim() ||
+      businessPhone.trim() ||
+      principalSsn.trim() ||
+      addressLine1.trim() ||
+      addressLine2.trim() ||
+      city.trim() ||
+      state.trim() ||
+      postalCode.trim() ||
+      removeOwnership ||
+      note.trim(),
+  );
   const hasAnyFile = Object.keys(files).length > 0;
   const canSubmit = Boolean(hasAnyFile || hasAnyFieldUpdate);
 
@@ -103,6 +140,16 @@ export default function UpdateForm({ token, fileUploadRequests }: { token: strin
       if (businessType) formData.append("businessType", businessType);
       if (mcc.trim()) formData.append("mcc", mcc.trim());
       if (email.trim()) formData.append("email", email.trim());
+      if (website.trim()) formData.append("website", website.trim());
+      if (businessPhone.trim()) formData.append("businessPhone", businessPhone.trim());
+      if (principalSsn.trim()) formData.append("principalSsn", principalSsn.trim());
+      if (addressLine1.trim()) formData.append("addressLine1", addressLine1.trim());
+      if (addressLine2.trim()) formData.append("addressLine2", addressLine2.trim());
+      if (city.trim()) formData.append("city", city.trim());
+      if (state.trim()) formData.append("state", state.trim());
+      if (postalCode.trim()) formData.append("postalCode", postalCode.trim());
+      if (removeOwnership) formData.append("removeOwnership", "true");
+      if (note.trim()) formData.append("note", note.trim());
 
       const res = await fetch("/api/onboarding/upload", {
         method: "POST",
@@ -111,6 +158,7 @@ export default function UpdateForm({ token, fileUploadRequests }: { token: strin
 
       const data = await res.json();
 
+      setPrincipalSsn("");
       if (data.success) {
         setSuccess(true);
       } else {
@@ -145,7 +193,7 @@ export default function UpdateForm({ token, fileUploadRequests }: { token: strin
       <div className="mb-6 space-y-4">
         <div>
           <label htmlFor="dba-input" className="block text-sm font-bold text-gray-700 mb-1">
-            Doing Business As (DBA)
+            Doing Business As (DBA)<RequestedBadge show={requested.has('dba')} />
           </label>
           <input
             id="dba-input"
@@ -159,7 +207,7 @@ export default function UpdateForm({ token, fileUploadRequests }: { token: strin
 
         <div>
           <label htmlFor="business-type-select" className="block text-sm font-bold text-gray-700 mb-1">
-            Ownership Type
+            Ownership Type<RequestedBadge show={requested.has('businessType')} />
           </label>
           <select
             id="business-type-select"
@@ -175,7 +223,7 @@ export default function UpdateForm({ token, fileUploadRequests }: { token: strin
 
         <div>
           <label htmlFor="mcc-input" className="block text-sm font-bold text-gray-700 mb-1">
-            Business MCC
+            Business MCC<RequestedBadge show={requested.has('mcc')} />
           </label>
           <input
             id="mcc-input"
@@ -190,7 +238,7 @@ export default function UpdateForm({ token, fileUploadRequests }: { token: strin
 
         <div>
           <label htmlFor="email-input" className="block text-sm font-bold text-gray-700 mb-1">
-            Business Email
+            Business Email<RequestedBadge show={requested.has('email')} />
           </label>
           <input
             id="email-input"
@@ -200,6 +248,80 @@ export default function UpdateForm({ token, fileUploadRequests }: { token: strin
             placeholder="Leave blank if not requested"
             className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+        </div>
+
+        <div className="rounded-xl border border-gray-200 p-4 space-y-4">
+          <div>
+            <h4 className="text-sm font-bold text-gray-800">Other corrections</h4>
+            <p className="text-xs text-gray-600">Fill in only what the requested items above ask for. Everything here is optional.</p>
+          </div>
+
+          <div>
+            <label htmlFor="website-input" className="block text-sm font-bold text-gray-700 mb-1">Website or social page<RequestedBadge show={requested.has('website')} /></label>
+            <input id="website-input" type="url" inputMode="url" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://yourchurch.org" className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+
+          <div>
+            <label htmlFor="phone-input" className="block text-sm font-bold text-gray-700 mb-1">Business phone number<RequestedBadge show={requested.has('businessPhone')} /></label>
+            <input id="phone-input" type="tel" inputMode="tel" autoComplete="tel" value={businessPhone} onChange={(e) => setBusinessPhone(e.target.value)} placeholder="(816) 555-0142" className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+
+          <div>
+            <label htmlFor="ssn-input" className="block text-sm font-bold text-gray-700 mb-1">Principal&apos;s Social Security Number<RequestedBadge show={requested.has('ssn')} /></label>
+            <input
+              id="ssn-input"
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              spellCheck={false}
+              data-ph-no-capture
+              value={principalSsn}
+              onChange={(e) => setPrincipalSsn(e.target.value)}
+              placeholder="___-__-____"
+              className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="mt-1 text-xs text-gray-500">Use the principal&apos;s own SSN, not the organization&apos;s EIN. It is sent securely to our payment processor and is never stored by WGC.</p>
+          </div>
+
+          <fieldset className="space-y-3">
+            <legend className="block text-sm font-bold text-gray-700 mb-1">Principal&apos;s residential address<RequestedBadge show={requested.has('address')} /></legend>
+            <input aria-label="Street address" autoComplete="address-line1" value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} placeholder="Street address" className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <input aria-label="Apartment, suite or unit" autoComplete="address-line2" value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} placeholder="Apt, suite (optional)" className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <div className="grid grid-cols-6 gap-3">
+              <input aria-label="City" autoComplete="address-level2" value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" className="col-span-3 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <input aria-label="State (2 letters)" autoComplete="address-level1" maxLength={2} value={state} onChange={(e) => setState(e.target.value.toUpperCase())} placeholder="MO" className="col-span-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <input aria-label="ZIP code" autoComplete="postal-code" inputMode="numeric" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="ZIP" className="col-span-2 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </fieldset>
+
+          <label className="flex items-start gap-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={removeOwnership} onChange={(e) => setRemoveOwnership(e.target.checked)} className="mt-0.5 h-4 w-4" />
+            <span>
+              <span className="font-bold">We are a nonprofit and have no owners.</span><RequestedBadge show={requested.has('ownership')} /> Remove the ownership percentage from the principal.
+              <span className="block text-xs text-gray-500 mt-0.5">If other people are listed as owners, reply to our email and we will remove them for you.</span>
+            </span>
+          </label>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+          {unmapped.length > 0 && (
+            <div className="rounded-lg bg-orange-50 border border-orange-100 p-3 text-xs text-orange-900">
+              <p className="font-bold mb-1">Our processor also asked about:</p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {unmapped.map((d, i) => (
+                  <li key={i}>
+                    <span className="font-semibold">{d.fieldName.replace(/_/g, ' ')}</span>
+                    {d.message ? <> &mdash; {d.message}</> : null}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1">There is no box for these, so please describe the correction in the note below.</p>
+            </div>
+          )}
+          <div>
+            <label htmlFor="note-input" className="block text-sm font-bold text-gray-700 mb-1">Anything else we should know?</label>
+            <textarea id="note-input" rows={3} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Describe any correction that has no box above, or explain a request. Please don't include your SSN or bank numbers here." className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
         </div>
       </div>
 

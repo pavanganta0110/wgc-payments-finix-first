@@ -102,3 +102,53 @@ export function extractFileUploadRequests(verification: unknown): FileUploadRequ
 export function extractRequestedFileType(verification: unknown): string | null {
   return extractFileUploadRequests(verification)[0]?.fileType ?? null;
 }
+
+export interface UpdateDataRequest {
+  /** Finix Identity field Finix asked to be corrected, e.g. "entity.url" or "tax_id" (as given in remediation_details.field_name). */
+  fieldName: string;
+  /** The underwriter's note for this correction, when Finix provided one. */
+  message: string | null;
+}
+
+/**
+ * Extracts every "update this field" outcome (anything with a remediation_details.field_name that is not a
+ * file upload) so the merchant form can mark the matching inputs as requested and list the ones it has no
+ * input for. Deduped by field name + message because Finix can repeat the same note (e.g. once per owner).
+ */
+export function extractUpdateDataRequests(verification: unknown): UpdateDataRequest[] {
+  const outcomesRaw = (verification as { outcomes?: unknown })?.outcomes;
+  const outcomes: unknown[] = Array.isArray(outcomesRaw) ? outcomesRaw : [];
+  const seen = new Set<string>();
+  const out: UpdateDataRequest[] = [];
+  for (const o of outcomes) {
+    const outcome = o as { outcome_message?: unknown; remediation_details?: { type?: unknown; field_name?: unknown } };
+    const rd = outcome?.remediation_details;
+    if (!rd || rd.type === "FILE_UPLOAD" || typeof rd.field_name !== "string" || !rd.field_name) continue;
+    const message = typeof outcome.outcome_message === "string" ? outcome.outcome_message.trim().replace(/\s+/g, " ") || null : null;
+    const key = `${rd.field_name}|${message ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ fieldName: rd.field_name, message });
+  }
+  return out;
+}
+
+/** Which of this form's inputs a Finix field name maps to (null when the form has no input for it). */
+export type FormFieldKey = "dba" | "businessType" | "mcc" | "email" | "website" | "businessPhone" | "ssn" | "address" | "ownership";
+const FIELD_TO_FORM: Record<string, FormFieldKey> = {
+  doing_business_as: "dba",
+  business_type: "businessType",
+  mcc: "mcc",
+  email: "email",
+  url: "website",
+  business_phone: "businessPhone",
+  phone: "businessPhone",
+  tax_id: "ssn",
+  personal_address: "address",
+  principal_percentage_ownership: "ownership",
+  ownership_type: "ownership",
+};
+export function formFieldForFinixField(fieldName: string): FormFieldKey | null {
+  const last = fieldName.split(".").pop() ?? fieldName;
+  return FIELD_TO_FORM[last] ?? null;
+}

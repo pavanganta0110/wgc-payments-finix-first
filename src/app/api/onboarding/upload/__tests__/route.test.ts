@@ -227,3 +227,73 @@ describe("POST /api/onboarding/upload — multiple, distinctly-typed document up
     expect(mockCreateVerification).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("POST /api/onboarding/upload — website, phone, principal SSN/address, ownership and note", () => {
+  it("maps every extra field to Finix's entity fields in one updateIdentity call and triggers one verification", async () => {
+    const { POST } = await load();
+    const res = await POST(
+      postReq({
+        website: "lighthousebaptist.org",
+        businessPhone: "(816) 555-0142",
+        principalSsn: "123-45-6789",
+        addressLine1: "12 Elm St",
+        city: "Kansas City",
+        state: "mo",
+        postalCode: "64101",
+        removeOwnership: "true",
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockUpdateIdentity).toHaveBeenCalledTimes(1);
+    expect(mockUpdateIdentity).toHaveBeenCalledWith("ID123", {
+      entity: {
+        url: "https://lighthousebaptist.org",
+        business_phone: "8165550142",
+        tax_id: "123456789",
+        personal_address: { line1: "12 Elm St", city: "Kansas City", region: "MO", postal_code: "64101", country: "USA" },
+        principal_percentage_ownership: null,
+      },
+    });
+    expect(mockCreateVerification).toHaveBeenCalledTimes(1);
+  });
+
+  it("never puts the SSN in the admin email, the merchant email, the database or the response", async () => {
+    const { POST } = await load();
+    const res = await POST(postReq({ principalSsn: "123-45-6789", website: "lighthousebaptist.org" }));
+    const everything = JSON.stringify([await res.json(), mockSendWgcEmail.mock.calls, mockSendWgcAdminEmail.mock.calls, mockPrisma.onboardingApplication.update.mock.calls, mockPrisma.merchantDocument.create.mock.calls]);
+    expect(everything).not.toContain("123-45-6789");
+    expect(everything).not.toContain("123456789");
+    expect(everything).toContain("Principal SSN"); // the field NAME is audited, never the value
+  });
+
+  it("rejects an EIN-shaped value in the SSN field and sends nothing to Finix", async () => {
+    const { POST } = await load();
+    const res = await POST(postReq({ principalSsn: "12-3456789" }));
+    expect(res.status).toBe(400);
+    expect(mockUpdateIdentity).not.toHaveBeenCalled();
+    expect(mockCreateVerification).not.toHaveBeenCalled();
+  });
+
+  it("redacts an SSN echoed back in a Finix error before it can be returned or logged", async () => {
+    mockUpdateIdentity.mockRejectedValue(new Error("tax_id 123456789 is invalid"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { POST } = await load();
+    const res = await POST(postReq({ principalSsn: "123-45-6789" }));
+    const body = JSON.stringify(await res.json());
+    expect(res.status).toBe(500);
+    expect(body).not.toContain("123456789");
+    expect(JSON.stringify(errSpy.mock.calls)).not.toContain("123456789");
+    errSpy.mockRestore();
+  });
+
+  it("accepts a note-only submission (no Finix identity change), escapes it in the admin email and still triggers verification", async () => {
+    const { POST } = await load();
+    const res = await POST(postReq({ note: "Our <b>treasurer</b> changed" }));
+    expect(res.status).toBe(200);
+    expect(mockUpdateIdentity).not.toHaveBeenCalled();
+    expect(mockCreateVerification).toHaveBeenCalledTimes(1);
+    const admin = JSON.stringify(mockSendWgcAdminEmail.mock.calls);
+    expect(admin).toContain("&lt;b&gt;treasurer&lt;/b&gt;");
+    expect(admin).not.toContain("<b>treasurer</b>");
+  });
+});
