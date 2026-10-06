@@ -6,9 +6,7 @@ import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import ClosePanelButton from "@/components/merchant/ClosePanelButton";
 import {
   PanelNavArrows,
-  PaymentMoreMenu,
   PinButton,
-  ComingSoonAction,
 } from "@/components/merchant/PaymentDetailActions";
 import ViewAllDetailsLink from "@/components/merchant/ViewAllDetailsLink";
 import IssueRefundButton from "@/components/merchant/IssueRefundButton";
@@ -225,7 +223,6 @@ export default async function PaymentDetailPanel({
           </div>
           <StateBadge state={displayStatus} />
         </div>
-        <PaymentMoreMenu />
         <div className="mt-3 space-y-1.5 text-sm">
           {refund.refundStatus !== "NONE" && (
             <>
@@ -609,7 +606,6 @@ export default async function PaymentDetailPanel({
 
       <Section
         title="Tags"
-        action={<ComingSoonAction label="Edit" feature="Tag editing" className="text-sm font-semibold text-blue-600 hover:underline" />}
         last
       >
         {transfer.tagsJson && typeof transfer.tagsJson === "object" && !Array.isArray(transfer.tagsJson) && Object.keys(transfer.tagsJson).length > 0 ? (
