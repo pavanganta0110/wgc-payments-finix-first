@@ -6,7 +6,6 @@ import Footer from "@/components/layout/Footer";
 import FeatureCard from "@/components/ui/FeatureCard";
 import CTASection from "@/components/ui/CTASection";
 import ScrollFade from "@/components/ui/ScrollFade";
-import TimeBack from "@/components/marketing/time-back/TimeBack";
 
 import type { Metadata } from "next";
 
@@ -253,9 +252,6 @@ export default function Home() {
             </ScrollFade>
           </div>
         </section>
-
-        {/* FOUNDER VIDEO + TIME-BACK CALCULATOR */}
-        <TimeBack />
 
         {/* EVERYTHING IN ONE PLACE */}
         <section className="py-32 bg-white relative overflow-hidden">
