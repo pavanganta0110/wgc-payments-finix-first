@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import GivingLinkForm from "@/components/giving/GivingLinkForm";
 import MerchandiseGivingExperience from "@/components/giving/MerchandiseGivingExperience";
-import OrganizationLogo from "@/components/merchant/OrganizationLogo";
+import OrganizationBrandHeader from "@/components/merchant/OrganizationBrandHeader";
+import PoweredByWgc from "@/components/merchant/PoweredByWgc";
 import { loadPublicGivingPageData } from "@/lib/givingLinks/loadPublicGivingPageData";
 import { recordGivingLinkShareOpened } from "@/lib/givingLinks/recordShareOpened";
 
@@ -10,10 +11,10 @@ export default async function GivingLinkPublicPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ pledgeId?: string; share?: string }>;
+  searchParams: Promise<{ pledgeId?: string; share?: string; give?: string; amount?: string }>;
 }) {
   const { slug } = await params;
-  const { pledgeId, share } = await searchParams;
+  const { pledgeId, share, give, amount } = await searchParams;
 
   const data = await loadPublicGivingPageData(slug);
 
@@ -54,7 +55,7 @@ export default async function GivingLinkPublicPage({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={branding.campaignImageUrl} alt="" className="w-full h-32 object-cover rounded-xl mb-6" />
         )}
-        <OrganizationLogo logoUrl={logoUrl} churchName={church.name} mode="main" />
+        <OrganizationBrandHeader logoUrl={logoUrl} organizationName={church.name} kind="Secure Giving" nameColor={light.headingColor} kindColor={light.bodyTextColor} />
         <h1 className="text-lg font-bold text-center mb-1" style={{ color: light.headingColor }}>
           {link.publicTitle}
         </h1>
@@ -97,8 +98,14 @@ export default async function GivingLinkPublicPage({
             quantityItemLabel={link.quantityItemLabel}
             recurringEnabled={link.recurringEnabled}
             allowedFrequencies={allowedFrequencies}
-            defaultDonationType={link.defaultDonationType}
-            defaultRecurringAmountCents={link.defaultRecurringAmountCents}
+            // ?give=monthly&amount=2500 opens the form on a monthly gift of that
+            // amount (e.g. from an event registration's "make it monthly"
+            // option) — only a starting point the donor can change, and only
+            // when this page actually offers recurring giving.
+            defaultDonationType={give === "monthly" && link.recurringEnabled ? "RECURRING" : link.defaultDonationType}
+            defaultRecurringAmountCents={
+              give === "monthly" && link.recurringEnabled && /^\d{3,9}$/.test(amount ?? "") && Number(amount) >= 100 ? Number(amount) : link.defaultRecurringAmountCents
+            }
             allowedPaymentMethods={allowedPaymentMethods}
             feeCoverEnabled={link.feeCoverEnabled}
             feeCoverDefaultOn={link.feeCoverDefaultOn}
@@ -117,29 +124,7 @@ export default async function GivingLinkPublicPage({
           />
         )}
 
-        {(() => {
-          const wgcUrl = (() => {
-            const url = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://www.wgcpayments.com";
-            if (url.includes("vercel.app") || url.includes("localhost") || url.includes("sandbox")) {
-              return "https://www.wgcpayments.com";
-            }
-            return url;
-          })();
-          return (
-            branding.showPoweredByWgc !== false && (
-              <div className="text-center mt-6">
-                <a
-                  href={wgcUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  Powered by WGC
-                </a>
-              </div>
-            )
-          );
-        })()}
+        {branding.showPoweredByWgc !== false && <PoweredByWgc />}
       </div>
     </div>
   );

@@ -28,6 +28,8 @@ interface WgcEmailOptions {
    * and capped by the caller (see resend routes); passed straight through
    * to Resend's own `cc` field. */
   cc?: string[];
+  /** Extra message headers, e.g. List-Unsubscribe on bulk campaign email. */
+  headers?: Record<string, string>;
 
   /** Overrides the WGC Payments logo in the header — used for donor-facing
    * emails sent on behalf of a specific church (Giving Campaigns), so the
@@ -61,6 +63,9 @@ interface WgcEmailOptions {
       | "MERCHANDISE_ORDER"
       | "SUBSCRIPTION_SETUP_LINK"
       | "MERCHANT_NOTIFICATION"
+      | "EVENT_CONFIRMATION"
+      | "EVENT_REMINDER"
+      | "EVENT_THANK_YOU"
       | "OTHER";
     relatedEntityType?: string | null;
     relatedEntityId?: string | null;
@@ -234,6 +239,7 @@ support@wgcpayments.com
       text,
       ...(options.attachments ? { attachments: options.attachments } : {}),
       ...(options.cc && options.cc.length > 0 ? { cc: options.cc } : {}),
+      ...(options.headers ? { headers: options.headers } : {}),
     });
 
     if (response.error) {
