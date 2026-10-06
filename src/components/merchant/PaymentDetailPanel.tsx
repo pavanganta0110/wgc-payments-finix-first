@@ -252,7 +252,13 @@ export default async function PaymentDetailPanel({
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Donor</span>
             <span className="font-semibold text-slate-700">
-              {formatPersonName(contactName, instrument?.accountHolderName)}
+              {donor ? (
+                <Link href={`/merchant/donors/${donor.id}`} className="text-blue-600 hover:underline">
+                  {formatPersonName(contactName, instrument?.accountHolderName)}
+                </Link>
+              ) : (
+                formatPersonName(contactName, instrument?.accountHolderName)
+              )}
             </span>
           </div>
           <div className="flex items-center justify-between">
@@ -432,7 +438,18 @@ export default async function PaymentDetailPanel({
       </Section>
 
       <Section title="Donor">
-        <Row label="Name" value={formatPersonName(contactName, instrument?.accountHolderName)} />
+        <Row
+          label="Name"
+          value={
+            donor ? (
+              <Link href={`/merchant/donors/${donor.id}`} className="text-blue-600 hover:underline">
+                {formatPersonName(contactName, instrument?.accountHolderName)}
+              </Link>
+            ) : (
+              formatPersonName(contactName, instrument?.accountHolderName)
+            )
+          }
+        />
         <Row label="Email" value={contactEmail || "—"} />
         <Row label="Phone" value={contactPhone || "—"} />
       </Section>
@@ -647,7 +664,7 @@ function Section({
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-center justify-between text-sm py-1">
       <span className="text-slate-500">{label}</span>
