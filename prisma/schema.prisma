@@ -5038,6 +5038,30 @@ model SmsAddonOverageCharge {
   @@index([organizationId])
 }
 
+model MerchantLifecycleEmail {
+  id        String @id @default(cuid())
+  churchId  String
+  // ACCOUNT_ACTIVATION | GIVING_LINK_SETUP | GIVING_LINK_NO_PAYMENTS | TEXTING_ANNOUNCEMENT
+  emailType String
+
+  // How many nudges have gone out for this church/type — indexes into the
+  // cadence schedule (day 1, 3, 7, 14, 30, then every 30 days) in
+  // merchantLifecycleEmails.ts. 0 = none sent yet.
+  sequenceStep Int       @default(0)
+  lastSentAt   DateTime?
+  // Set once the milestone is reached (login happened / giving link created /
+  // first payment succeeded) — the cron skips any row with this set. Also
+  // set immediately for TEXTING_ANNOUNCEMENT after its one send, since that
+  // one is a one-time announcement rather than milestone-driven.
+  completedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([churchId, emailType])
+  @@index([churchId])
+}
+
 // =============================================================================
 // SMS 2FA consent audit trail — append-only record of every grant/withdrawal
 // of consent to receive SMS authentication codes, required for Twilio A2P

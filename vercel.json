@@ -42,6 +42,10 @@
       "schedule": "0 19 * * *"
     },
     {
+      "path": "/api/cron/merchant-lifecycle-emails",
+      "schedule": "0 15 * * *"
+    },
+    {
       "path": "/api/cron/webhook-retry",
       "schedule": "20 19 * * *"
     },
