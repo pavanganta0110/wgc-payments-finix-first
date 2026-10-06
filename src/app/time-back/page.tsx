@@ -35,32 +35,34 @@ export default function TimeBackPage() {
           </div>
         </section>
 
-        <section id="book" className="bg-wgc-navy-950 text-white px-4 pb-20 pt-12 border-t border-white/10 scroll-mt-4">
-          <div className="max-w-5xl mx-auto grid gap-6">
-            <span className="justify-self-start text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500 border border-white/15 rounded-full px-4 py-2">
-              Book a live demo
-            </span>
-            <h2 className="!text-white text-3xl md:text-4xl font-bold tracking-tight max-w-3xl">
-              Want your hours back sooner? <em className="text-wgc-gold-500">Pick a time.</em>
-            </h2>
-            <p className="text-white/70 max-w-2xl">
-              Already using another platform? You get a step-by-step switch plan and the tools to move your recurring donors on your timeline.
-            </p>
-            <div className="rounded-2xl overflow-hidden bg-white">
-              <iframe
-                src={CALENDLY_EMBED_URL}
-                title="Book a WGC live demo"
-                loading="lazy"
-                className="w-full border-0 h-[700px]"
-              />
+        <TimeBack
+          betweenVideoAndCalculator={
+          <section id="book" className="bg-wgc-navy-950 text-white px-4 py-20 scroll-mt-4">
+            <div className="max-w-5xl mx-auto grid gap-6">
+              <span className="justify-self-start text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500 border border-white/15 rounded-full px-4 py-2">
+                Book a live demo
+              </span>
+              <h2 className="!text-white text-3xl md:text-4xl font-bold tracking-tight max-w-3xl">
+                Want your hours back sooner? <em className="text-wgc-gold-500">Pick a time.</em>
+              </h2>
+              <p className="text-white/70 max-w-2xl">
+                Already using another platform? You get a step-by-step switch plan and the tools to move your recurring donors on your timeline.
+              </p>
+              <div className="rounded-2xl overflow-hidden bg-white">
+                <iframe
+                  src={CALENDLY_EMBED_URL}
+                  title="Book a WGC live demo"
+                  loading="lazy"
+                  className="w-full border-0 h-[700px]"
+                />
+              </div>
+              <Link href="/demo" className="justify-self-start text-sm font-bold text-wgc-gold-500 hover:underline">
+                Or explore the interactive demo →
+              </Link>
             </div>
-            <Link href="/demo" className="justify-self-start text-sm font-bold text-wgc-gold-500 hover:underline">
-              Or explore the interactive demo →
-            </Link>
-          </div>
-        </section>
-
-        <TimeBack />
+          </section>
+          }
+        />
       </main>
       <Footer />
     </>
