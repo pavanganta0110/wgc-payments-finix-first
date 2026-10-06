@@ -22,7 +22,7 @@ export default function TimeBackPage() {
             <span className="justify-self-start text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500 border border-white/15 rounded-full px-4 py-2">
               Time-back calculator for churches
             </span>
-            <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight leading-[1.05]">
+            <h1 className="text-white text-4xl md:text-6xl font-extrabold tracking-tight leading-[1.05]">
               Your books are eating <em className="text-wgc-gold-500">ministry hours.</em>
             </h1>
             <p className="text-lg text-white/70 max-w-2xl">
