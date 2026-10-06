@@ -121,3 +121,54 @@ export function parseUpdateRequestFields(input: UpdateRequestFieldInput): Parsed
 export function redactSsnLike(message: string): string {
   return message.replace(/\b\d{3}-?\d{2}-?\d{4}\b/g, "[REDACTED]");
 }
+
+export interface BankAccountInput {
+  holderName?: string | null;
+  accountType?: string | null;
+  routingNumber?: string | null;
+  accountNumber?: string | null;
+  accountNumberConfirm?: string | null;
+}
+
+export interface ParsedBankAccount {
+  /** Payload for Finix's POST /payment_instruments (identity is added by the caller). Null when no bank fields were given. */
+  payload: { type: "BANK_ACCOUNT"; name: string; account_type: "CHECKING" | "SAVINGS"; bank_code: string; account_number: string } | null;
+  last4: string | null;
+  error: string | null;
+}
+
+/** ABA routing number checksum (3-7-1 weighting). */
+export function isValidRoutingNumber(routing: string): boolean {
+  if (!/^\d{9}$/.test(routing)) return false;
+  const d = routing.split("").map(Number);
+  const sum = 3 * (d[0] + d[3] + d[6]) + 7 * (d[1] + d[4] + d[7]) + (d[2] + d[5] + d[8]);
+  return sum % 10 === 0;
+}
+
+/**
+ * Validates a replacement payout bank account. All four fields are required together; the account number must be
+ * entered twice. Only the last 4 digits ever leave this function for storage; the full numbers go to Finix and nowhere else.
+ */
+export function parseBankAccount(input: BankAccountInput): ParsedBankAccount {
+  const holder = trim(input.holderName);
+  const type = trim(input.accountType).toUpperCase();
+  const routing = trim(input.routingNumber).replace(/\s/g, "");
+  const account = trim(input.accountNumber).replace(/\s/g, "");
+  const confirm = trim(input.accountNumberConfirm).replace(/\s/g, "");
+  const none = { payload: null, last4: null, error: null };
+  if (!holder && !type && !routing && !account && !confirm) return none;
+
+  const fail = (error: string): ParsedBankAccount => ({ payload: null, last4: null, error });
+  if (!holder || !type || !routing || !account || !confirm) return fail("Please complete every bank account field (name, account type, routing number and the account number twice).");
+  if (holder.length < 2 || holder.length > 100) return fail("Please enter the name on the bank account.");
+  if (type !== "CHECKING" && type !== "SAVINGS") return fail("Please choose checking or savings.");
+  if (!isValidRoutingNumber(routing)) return fail("That routing number doesn't look right. It should be 9 digits; please check it against your check or bank statement.");
+  if (!/^\d{4,17}$/.test(account)) return fail("Please enter the account number using digits only (4 to 17 digits).");
+  if (account !== confirm) return fail("The two account numbers don't match.");
+  return { payload: { type: "BANK_ACCOUNT", name: holder, account_type: type, bank_code: routing, account_number: account }, last4: account.slice(-4), error: null };
+}
+
+/** Removes long digit runs (account/routing/SSN numbers) from a message before it can be logged or returned. */
+export function redactLongDigits(message: string): string {
+  return message.replace(/\d[\d-]{5,}\d/g, "[REDACTED]");
+}

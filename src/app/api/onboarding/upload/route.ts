@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { finixClient } from "@/lib/finix/client";
 import { extractRequestedFileType } from "@/lib/finix/parseVerificationOutcomes";
 import { sendWgcEmail, sendWgcAdminEmail } from "@/lib/email";
-import { parseUpdateRequestFields, redactSsnLike } from "@/lib/onboarding/updateRequestFields";
+import { parseBankAccount, parseUpdateRequestFields, redactLongDigits, redactSsnLike } from "@/lib/onboarding/updateRequestFields";
 
 // Matches UpdateForm.tsx's field-naming convention: each upload slot is
 // submitted as `file__<finixFileType>` (finixFileType may be the empty
@@ -72,9 +72,19 @@ export async function POST(req: Request) {
     }
     // Free-text note for any correction the form has no input for. Goes to the admin email only (HTML-escaped).
     const note = ((formData.get("note") as string | null) ?? "").trim().slice(0, 2000) || undefined;
+    const bank = parseBankAccount({
+      holderName: field("bankHolderName"),
+      accountType: field("bankAccountType"),
+      routingNumber: field("bankRoutingNumber"),
+      accountNumber: field("bankAccountNumber"),
+      accountNumberConfirm: field("bankAccountNumberConfirm"),
+    });
+    if (bank.error) {
+      return NextResponse.json({ error: bank.error }, { status: 400 });
+    }
     const hasFieldUpdates = Boolean(doingBusinessAs || businessType || mcc || email || extra.fieldNames.length > 0);
 
-    if (!token || (filesToUpload.length === 0 && !hasFieldUpdates && !note)) {
+    if (!token || (filesToUpload.length === 0 && !hasFieldUpdates && !bank.payload && !note)) {
       return NextResponse.json({ error: "Missing token, and no file or field update provided" }, { status: 400 });
     }
 
@@ -98,7 +108,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Configuration error: Merchant missing." }, { status: 400 });
     }
 
-    if (hasFieldUpdates && !app.finixIdentityId) {
+    if ((hasFieldUpdates || bank.payload) && !app.finixIdentityId) {
       return NextResponse.json({ error: "Configuration error: Identity missing." }, { status: 400 });
     }
 
@@ -122,6 +132,32 @@ export async function POST(req: Request) {
     // rather than forwarding an unvalidated string to Finix's Identity API.
     if (businessType && businessType !== "TAX_EXEMPT_ORGANIZATION" && businessType !== "CORPORATION") {
       return NextResponse.json({ error: "Invalid ownership type." }, { status: 400 });
+    }
+
+    // 0. Replacement payout bank account: a new BANK_ACCOUNT Payment Instrument on the same Identity (the same call the
+    // original signup makes). Done first so a rejected account number fails the whole submission cleanly, before anything
+    // else is changed. The full numbers go to Finix only; only the last 4 digits and the new instrument id are kept.
+    if (bank.payload && app.finixIdentityId) {
+      let instrument: { id?: string; enabled?: boolean };
+      try {
+        instrument = await finixClient.createPaymentInstrument({ ...bank.payload, identity: app.finixIdentityId });
+      } catch (err) {
+        const detail = err instanceof Error ? redactLongDigits(err.message) : "";
+        console.error("Secure update: bank account was rejected by Finix:", detail);
+        return NextResponse.json({ error: "We couldn't link that bank account. Please check the routing and account numbers and try again." }, { status: 400 });
+      }
+      if (!instrument?.id) {
+        return NextResponse.json({ error: "We couldn't link that bank account. Please try again." }, { status: 502 });
+      }
+      await prisma.onboardingApplication.update({
+        where: { id: app.id },
+        data: {
+          finixPaymentInstrumentId: instrument.id,
+          bankInstrumentEnabled: instrument.enabled ?? false,
+          bankLast4: bank.last4,
+          bankAccountType: bank.payload.account_type,
+        },
+      });
     }
 
     // 1. Push any requested field corrections to the Finix Identity first —
@@ -222,6 +258,7 @@ export async function POST(req: Request) {
       mcc ? "MCC" : null,
       email ? "Email" : null,
       ...extra.fieldNames,
+      bank.payload ? "Payout bank account" : null,
     ].filter((f): f is string => Boolean(f));
     const whatChanged = [
       uploadedDocuments.length > 0 ? `document(s): ${uploadedDocuments.map((d) => d.file.name).join(", ")}` : null,
@@ -244,7 +281,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, message: "Information submitted successfully." });
   } catch (error: unknown) {
-    const message = error instanceof Error ? redactSsnLike(error.message) : "Internal Server Error";
+    const message = error instanceof Error ? redactLongDigits(redactSsnLike(error.message)) : "Internal Server Error";
     console.error("Secure upload error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }

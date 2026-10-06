@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizePhone, normalizeSsn, normalizeWebsite, parseUpdateRequestFields, redactSsnLike } from "../updateRequestFields";
+import { isValidRoutingNumber, normalizePhone, normalizeSsn, normalizeWebsite, parseBankAccount, parseUpdateRequestFields, redactLongDigits, redactSsnLike } from "../updateRequestFields";
 
 describe("normalizers", () => {
   it("normalizes websites and rejects junk", () => {
@@ -72,5 +72,40 @@ describe("parseUpdateRequestFields", () => {
 describe("redactSsnLike", () => {
   it("removes SSN-shaped numbers from messages", () => {
     expect(redactSsnLike("bad tax_id 123-45-6789 and 987654321")).toBe("bad tax_id [REDACTED] and [REDACTED]");
+  });
+});
+
+describe("bank account", () => {
+  const good = { holderName: "Lighthouse Baptist Church", accountType: "checking", routingNumber: "021000021", accountNumber: "123456789012", accountNumberConfirm: "123456789012" };
+
+  it("validates ABA routing numbers with the checksum", () => {
+    expect(isValidRoutingNumber("021000021")).toBe(true); // a real, valid ABA number
+    expect(isValidRoutingNumber("021000022")).toBe(false);
+    expect(isValidRoutingNumber("12345")).toBe(false);
+  });
+
+  it("returns nothing when no bank field is filled in", () => {
+    expect(parseBankAccount({})).toEqual({ payload: null, last4: null, error: null });
+  });
+
+  it("builds Finix's BANK_ACCOUNT payload and exposes only the last 4 digits", () => {
+    const r = parseBankAccount(good);
+    expect(r.error).toBeNull();
+    expect(r.payload).toEqual({ type: "BANK_ACCOUNT", name: "Lighthouse Baptist Church", account_type: "CHECKING", bank_code: "021000021", account_number: "123456789012" });
+    expect(r.last4).toBe("9012");
+  });
+
+  it("requires every field, a valid routing number, digits only, and matching account numbers", () => {
+    expect(parseBankAccount({ ...good, holderName: "" }).error).toMatch(/complete every bank account field/);
+    expect(parseBankAccount({ ...good, routingNumber: "123456789" }).error).toMatch(/routing number/);
+    expect(parseBankAccount({ ...good, accountType: "money" }).error).toMatch(/checking or savings/);
+    expect(parseBankAccount({ ...good, accountNumber: "12ab", accountNumberConfirm: "12ab" }).error).toMatch(/digits only/);
+    expect(parseBankAccount({ ...good, accountNumberConfirm: "999999999999" }).error).toMatch(/don't match/);
+  });
+});
+
+describe("redactLongDigits", () => {
+  it("removes account/routing-length digit runs but leaves short numbers", () => {
+    expect(redactLongDigits("account 123456789012 failed with code 400")).toBe("account [REDACTED] failed with code 400");
   });
 });
