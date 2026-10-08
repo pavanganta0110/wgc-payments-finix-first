@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getAdminSession } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import { formatCents, formatSignedCents } from "@/lib/format";
 import { loadSettlementsList } from "@/lib/finix/settlementsList";
 import StateBadge from "@/components/merchant/StateBadge";
@@ -8,6 +9,9 @@ import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import { resolveSettlementDisplayStatus, getSettlementStatusLabel } from "@/lib/finix/settlementStatus";
 import { formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
 import SettlementQueuePanel from "@/components/admin/SettlementQueuePanel";
+import { computeSettlementBaseline, evaluateSettlementRisk } from "@/lib/finix/settlementRiskChecks";
+
+const BASELINE_HISTORY_SIZE = 12;
 
 const PAGE_SIZE = 25;
 
@@ -40,6 +44,29 @@ export default async function AdminSettlementsPage({
   );
   const pageCount = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
+  // Baseline for the risk checks below: this merchant's own recent
+  // settlement history, not a sitewide number — see settlementRiskChecks.ts.
+  // Read-only decision support, built ahead of the Finix settlement-approval
+  // addendum so the checks can be calibrated against real history before
+  // any actual approve/reject responsibility moves to us.
+  const baselineHistory = await prisma.finixSettlement.findMany({
+    where: { churchId },
+    orderBy: { createdAtFinix: "desc" },
+    take: BASELINE_HISTORY_SIZE,
+    select: {
+      finixSettlementId: true,
+      totalAmountCents: true,
+      netAmountCents: true,
+      feeAmountCents: true,
+      refundAmountCents: true,
+      returnAmountCents: true,
+      disputeAmountCents: true,
+      transactionCount: true,
+      refundCount: true,
+    },
+  });
+  const baseline = computeSettlementBaseline(baselineHistory);
+
   return (
     <div>
       <div>
@@ -68,11 +95,13 @@ export default async function AdminSettlementsPage({
                     <th scope="col" className="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">Net</th>
                     <th scope="col" className="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">Transactions</th>
                     <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Deposit</th>
+                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Risk Checks</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {rows.map(({ settlement, deposit }) => {
                     const displayStatus = resolveSettlementDisplayStatus(settlement);
+                    const riskFlags = evaluateSettlementRisk(settlement, baseline);
                     return (
                       <tr key={settlement.id}>
                         <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-0">
@@ -103,6 +132,27 @@ export default async function AdminSettlementsPage({
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                           {deposit ? <StateBadge state={deposit.state} /> : <span className="text-gray-400">Not Yet Linked</span>}
+                        </td>
+                        <td className="px-3 py-4 text-sm">
+                          {riskFlags.length === 0 ? (
+                            <span className="text-xs text-gray-400">
+                              {baseline ? "No flags" : "No flags (not enough history to baseline yet)"}
+                            </span>
+                          ) : (
+                            <div className="flex flex-col gap-1">
+                              {riskFlags.map((flag) => (
+                                <span
+                                  key={flag.code}
+                                  title={flag.message}
+                                  className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                    flag.severity === "high" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"
+                                  }`}
+                                >
+                                  {flag.code.replace(/_/g, " ")}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
