@@ -10,6 +10,8 @@ import ScrollFade from "@/components/ui/ScrollFade";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
+  title: "Payment Processing for Churches & Nonprofits | WGC",
+  description: "Payment processing and giving platform for churches and nonprofits: 2.3% + 25¢ per card, 25¢ ACH, $10/month, no contracts.",
   alternates: { canonical: "/" },
 };
 
@@ -154,7 +156,7 @@ export default function Home() {
                   <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500/90 font-mono">Fundraising, Payments & Donor Management</span>
                 </div>
                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-8 !text-white">
-                  Save money. Save staff time. <span className="text-wgc-gold-500 italic">Put more toward the mission.</span>
+                  Payment processing for churches and nonprofits. <span className="text-wgc-gold-500 italic">Put more toward the mission.</span>
                 </h1>
                 <p className="text-lg sm:text-xl font-medium leading-relaxed mb-6 text-white/70 max-w-2xl tracking-tight">
                   WGC is a fundraising, payments, and donor management platform built for nonprofits, churches, foundations, associations, schools, and other mission-driven organizations.

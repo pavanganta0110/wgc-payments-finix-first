@@ -3,12 +3,12 @@ import { CreditCard, Repeat, ShieldCheck, LayoutDashboard, Landmark, Smartphone,
 import AudienceLandingPage, { type AudienceLandingContent } from "@/components/marketing/AudienceLandingPage";
 
 export const metadata: Metadata = {
-  title: "Giving & Church Management Platform | Donor Management, Tithing & Reporting",
-  description: "More than online giving: donor management, recurring tithing, giving campaigns, invoicing, reporting, settlements, refunds, donor statements, team accounts with role-based permissions, and QuickBooks integration — all in one platform built for churches.",
+  title: "Church Payment Processing: 2.3% + 25¢ Cards, 25¢ ACH | WGC",
+  description: "Church payment processing and giving platform: 2.3% + 25¢ per card, 25¢ flat ACH, $10/month, no contracts. Donors can cover the fee.",
   openGraph: {
     images: [{ url: "/og/verticals.png", width: 1200, height: 630 }],
-    title: "Giving & Church Management Platform | Donor Management, Tithing & Reporting",
-    description: "Donor management, recurring tithing, giving campaigns, invoicing, reporting, settlements, refunds, donor statements, and team accounts — all in one platform.",
+    title: "Church Payment Processing: 2.3% + 25¢ Cards, 25¢ ACH | WGC",
+    description: "Church payment processing and giving platform: 2.3% + 25¢ per card, 25¢ flat ACH, $10/month, no contracts. Donors can cover the fee.",
     url: "https://www.wgcpayments.com/for/churches",
   },
   alternates: { canonical: "/for/churches" },
@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 
 const content: AudienceLandingContent = {
   eyebrow: "For Churches",
-  headline: "Save time. Save money.",
-  headlineAccent: "Put more toward the mission.",
+  headline: "Church payment processing and online giving",
+  headlineAccent: "that puts more toward the mission.",
   intro: "WGC brings tithing, donor management, recurring giving, giving campaigns, invoicing, reporting, payouts, refunds, and staff access into one platform — so your church spends less time piecing together tools and more time on ministry.",
   whoWeServeTitle: "Built for congregations of every size",
   whoWeServe: [

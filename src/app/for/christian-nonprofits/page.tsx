@@ -3,12 +3,12 @@ import { Globe2, Repeat, ShieldCheck, LayoutDashboard, Plane, CalendarDays, Hear
 import AudienceLandingPage, { type AudienceLandingContent } from "@/components/marketing/AudienceLandingPage";
 
 export const metadata: Metadata = {
-  title: "Giving & Donor Management Platform for Nonprofits",
-  description: "More than donation processing: donor management, recurring giving, giving campaigns, invoicing, reporting, settlements, refunds, donor statements, team accounts with role-based permissions, and QuickBooks integration — all in one platform for nonprofits and ministries.",
+  title: "Nonprofit Payment Processing: 2.3% + 25¢, 25¢ ACH | WGC",
+  description: "Payment processing and donor management for nonprofits and 501(c)(3)s: 2.3% + 25¢ per card, 25¢ flat ACH, $10/month, no contracts.",
   openGraph: {
     images: [{ url: "/og/verticals.png", width: 1200, height: 630 }],
-    title: "Giving & Donor Management Platform for Nonprofits",
-    description: "Donor management, recurring giving, giving campaigns, invoicing, reporting, settlements, refunds, donor statements, and team accounts — all in one platform.",
+    title: "Nonprofit Payment Processing: 2.3% + 25¢, 25¢ ACH | WGC",
+    description: "Payment processing and donor management for nonprofits and 501(c)(3)s: 2.3% + 25¢ per card, 25¢ flat ACH, $10/month, no contracts.",
     url: "https://www.wgcpayments.com/for/christian-nonprofits",
   },
   alternates: { canonical: "/for/christian-nonprofits" },
@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 
 const content: AudienceLandingContent = {
   eyebrow: "For Nonprofits & Ministries",
-  headline: "Save time. Save money.",
-  headlineAccent: "Put more toward the mission.",
+  headline: "Nonprofit payment processing and donor management",
+  headlineAccent: "that puts more toward the mission.",
   intro: "Whether you're a nonprofit, a missions organization, a community charity, or any other 501(c) organization, WGC brings donor management, recurring giving, campaigns, invoicing, reporting, payouts, refunds, and staff access into one platform — so more of your time and every gift goes toward the cause.",
   whoWeServeTitle: "Built for nonprofits, ministries, and mission-driven organizations",
   whoWeServe: [],

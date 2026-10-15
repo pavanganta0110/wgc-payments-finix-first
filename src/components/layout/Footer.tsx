@@ -84,7 +84,7 @@ export default function Footer() {
             <p className="text-[11px] font-bold text-wgc-navy-700 uppercase tracking-widest">
               &copy; 2026 Waypoint Gateway Collective.
             </p>
-            <p className="text-[10px] text-wgc-navy-700 font-medium italic">A Kingdom-First White Label Payment Platform.</p>
+            <p className="text-[10px] text-wgc-navy-700 font-medium italic">Payment processing for churches, nonprofits and 501(c)(3) organizations.</p>
           </div>
           <div className="flex items-center gap-8">
             <Link href="/legal/privacy" className="text-[10px] font-bold text-wgc-navy-700 hover:text-black transition-all uppercase tracking-[0.2em]">Privacy</Link>

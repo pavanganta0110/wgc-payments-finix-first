@@ -1,3 +1,25 @@
+# AI and search crawlers are explicitly welcome on public marketing pages.
+# A crawler obeys only its own named group, so the private-path Disallow
+# rules are repeated in the AI-crawler group below.
+User-agent: GPTBot
+User-agent: ChatGPT-User
+User-agent: OAI-SearchBot
+User-agent: ClaudeBot
+User-agent: Claude-Web
+User-agent: PerplexityBot
+User-agent: Google-Extended
+User-agent: Bingbot
+User-agent: CCBot
+Allow: /
+Disallow: /merchant/
+Disallow: /admin/
+Disallow: /api/
+Disallow: /onboarding/
+Disallow: /fundraiser/
+Disallow: /invoice/
+Disallow: /setup/
+Disallow: /activate-subscription/
+
 User-agent: *
 Allow: /
 
