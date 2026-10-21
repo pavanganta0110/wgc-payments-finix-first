@@ -41,6 +41,7 @@ All configuration is via environment variables (no separate config-file system b
 | `ALLOW_SETTLEMENT_BACKFILL` | Guards a manual settlement-backfill admin action |
 | `FINIX_WGC_BILLING_MERCHANT_ID` / `FINIX_WGC_BILLING_IDENTITY_ID` | The Finix identifiers for WGC's *own* platform-billing merchant (separate from any client church's) |
 | `WGC_DONOR_COVERED_ZERO_FEE_PROFILE_ID` / `WGC_ORGANIZATION_PAID_FEE_PROFILE_ID` | Finix fee-profile ids selected based on who covers the processing fee |
+| `WGC_MERCHANT_DEFAULT_FEE_PROFILE_ID` | Finix fee profile assigned to every newly onboarded merchant's merchant profile (`PUT /merchant_profiles/{id}`). Carries merchant-level fees, notably the $0.50 per-payout settlement fee; unset = the merchant keeps the Finix application default. Per-transfer fee profiles above still set transaction pricing. |
 
 ## Wallets (Apple Pay / Google Pay)
 

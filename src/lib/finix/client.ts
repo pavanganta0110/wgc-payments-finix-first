@@ -456,6 +456,21 @@ export class FinixClient {
     return this.fetchApi(`/payout_profiles/${payoutProfileId}`);
   }
 
+  /**
+   * Sets the merchant's default Fee Profile. Per docs.finix.com (Merchant
+   * Fee Profiles): PUT the merchant's *merchant profile* (not the merchant)
+   * with { fee_profile }; it applies to new transactions and payouts only.
+   * This is the profile Finix uses for merchant-level fees such as the
+   * per-payout settlement fee; per-transfer `fee_profile` still overrides
+   * transaction pricing.
+   */
+  async setMerchantProfileFeeProfile(merchantProfileId: string, feeProfileId: string) {
+    return this.fetchApi(`/merchant_profiles/${merchantProfileId}`, {
+      method: "PUT",
+      body: JSON.stringify({ fee_profile: feeProfileId }),
+    });
+  }
+
   async listFeeProfiles() {
     return this.fetchApi("/fee_profiles");
   }
