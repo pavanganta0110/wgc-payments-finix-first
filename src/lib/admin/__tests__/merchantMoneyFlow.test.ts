@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-// $queryRaw call order inside loadMerchantMoneyFlow: charges, fees, deposits.
+// $queryRaw call order inside loadMerchantMoneyFlow: charges, fees, deposits, fee-payer coverage.
 const rawResults: unknown[][] = [
   [
     { church_id: "a", amount: BigInt(498774), count: BigInt(33) },
@@ -14,6 +14,11 @@ const rawResults: unknown[][] = [
     // "a": 23 payouts pushed to the bank, plus small fee settlements pulled back from it.
     { church_id: "a", amount: BigInt(481250), count: BigInt(23), pulled: BigInt(450) },
     { church_id: "b", amount: BigInt(1050), count: BigInt(2), pulled: null },
+  ],
+  [
+    // "a": 32 of 33 donors covered the fee, 1 org absorbed it. "b": its charge has no payment record.
+    { church_id: "a", covered: BigInt(32), org_paid: BigInt(1) },
+    { church_id: "ghost", covered: BigInt(5), org_paid: BigInt(0) }, // no charges in period → ignored
   ],
 ];
 let rawCall = 0;
@@ -44,6 +49,9 @@ describe("loadMerchantMoneyFlow", () => {
       depositedCents: 481250,
       depositCount: 23,
       pulledBackCents: 450,
+      donorCoveredCount: 32,
+      orgPaidCount: 1,
+      noFeeRecordCount: 0,
     });
     // Money pulled back from the bank for fees is NOT a deposit: the bank received
     // 481250 − 450 = 480800, so 498774 − 15386 − 480800 = 2588 is still accruing.
@@ -52,6 +60,9 @@ describe("loadMerchantMoneyFlow", () => {
     // Beta was deposited more than expected (1000 − 50 = 950 vs 1050): shown negative, not hidden.
     const b = flow.rows.find((r) => r.churchId === "b")!;
     expect(b.awaitingDepositCents).toBe(-100);
+    // A charge with no WGC payment record is reported as unknown, never guessed as donor- or org-paid.
+    expect(b).toMatchObject({ donorCoveredCount: 0, orgPaidCount: 0, noFeeRecordCount: 1 });
+    expect(flow.totals).toMatchObject({ donorCoveredCount: 32, orgPaidCount: 1, noFeeRecordCount: 1 });
 
     expect(flow.rows.map((r) => r.churchId)).toEqual(["a", "b"]); // biggest collector first
     expect(flow.totals.collectedCents).toBe(499774);
