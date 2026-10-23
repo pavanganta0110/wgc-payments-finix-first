@@ -47,10 +47,12 @@ function Bar({ rows, total }: { rows: BreakdownRow[]; total: number }) {
 }
 
 function Rows({ rows, total, drillKey, onDrill }: { rows: BreakdownRow[]; total: number; drillKey?: string; onDrill?: () => void }) {
+  const totalCount = rows.reduce((s, r) => s + r.count, 0);
   return (
     <ul className="mt-4 space-y-1">
       {rows.map((r) => {
         const share = total > 0 ? (r.amountCents / total) * 100 : 0;
+        const countShare = totalCount > 0 ? (r.count / totalCount) * 100 : 0;
         const drillable = r.key === drillKey && r.amountCents > 0;
         const inner = (
           <>
@@ -58,11 +60,17 @@ function Rows({ rows, total, drillKey, onDrill }: { rows: BreakdownRow[]; total:
             <span className="min-w-0 text-left">
               <span className="block font-medium text-slate-700">{r.label}</span>
               <span className="block text-xs text-slate-500">
-                {r.count.toLocaleString("en-US")} payment{r.count === 1 ? "" : "s"} · {r.hint}
+                {r.count.toLocaleString("en-US")} payment{r.count === 1 ? "" : "s"}{" "}
+                <span className="font-semibold text-slate-600" title="Share of the number of payments">
+                  ({percent(countShare)})
+                </span>{" "}
+                · {r.hint}
               </span>
             </span>
             <span className="ml-auto font-bold tabular-nums text-slate-900">{formatCents(r.amountCents)}</span>
-            <span className="w-10 text-right text-xs tabular-nums text-slate-500">{percent(share)}</span>
+            <span className="w-10 text-right text-xs tabular-nums text-slate-500" title="Share of the dollar volume">
+              {percent(share)}
+            </span>
             {drillable && <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-indigo-600" aria-hidden />}
           </>
         );
@@ -83,6 +91,9 @@ function Rows({ rows, total, drillKey, onDrill }: { rows: BreakdownRow[]; total:
           </li>
         );
       })}
+      <li className="px-2 pt-2 text-xs text-slate-500">
+        Percentage in brackets = share of the number of payments. Percentage on the right = share of the dollar amount.
+      </li>
     </ul>
   );
 }
