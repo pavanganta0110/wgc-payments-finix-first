@@ -32,6 +32,9 @@ export interface MerchantMoneyRow {
   paymentCount: number;
   refundedCents: number;
   feesCents: number;
+  /** Finix's per-payout fee (about 50¢ each) — already included in feesCents, broken out so it's visible. */
+  payoutFeeCents: number;
+  payoutFeeCount: number;
   donorCoveredFeesCents: number;
   /** Successful payments where the donor chose to cover the processing fee. */
   donorCoveredCount: number;
@@ -61,7 +64,7 @@ export function awaitingDeposit(
 export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<MerchantMoneyFlow> {
   const created = Prisma.sql`ft."createdAtFinix"`;
 
-  const [charges, refunds, returns, fees, deposits, coverage, churches] = await Promise.all([
+  const [charges, refunds, returns, fees, deposits, coverage, payoutFees, churches] = await Promise.all([
     prisma.$queryRaw<{ church_id: string; amount: bigint | null; count: bigint }[]>`
       SELECT ft."churchId" AS church_id, SUM(ft."amountCents") AS amount, COUNT(*) AS count
       FROM "FinixTransfer" ft
@@ -120,6 +123,18 @@ export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<Mercha
         AND ${inRange(Prisma.sql`p."createdAt"`, period.from, period.to)}
       GROUP BY p."churchId"
     `,
+    // Finix charges a fixed fee (50¢) every time it pays a settlement out to
+    // the merchant's bank. These are PLATFORM_FEE rows of the
+    // SETTLEMENT_FUNDING_TRANSFER_* types, so they are already inside
+    // "fees"; this query only breaks them out.
+    prisma.$queryRaw<{ church_id: string; total: number | null; count: bigint }[]>`
+      SELECT f."churchId" AS church_id, SUM(f."amountCents") AS total, COUNT(*) AS count
+      FROM "FinixFee" f
+      WHERE f."feeType" ILIKE 'SETTLEMENT_FUNDING_TRANSFER%'
+        AND f."churchId" IS NOT NULL
+        AND ${inRange(Prisma.sql`f."createdAtFinix"`, period.from, period.to)}
+      GROUP BY f."churchId"
+    `,
     prisma.church.findMany({ select: { id: true, name: true } }),
   ]);
 
@@ -135,6 +150,8 @@ export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<Mercha
         paymentCount: 0,
         refundedCents: 0,
         feesCents: 0,
+        payoutFeeCents: 0,
+        payoutFeeCount: 0,
         donorCoveredFeesCents: 0,
         donorCoveredCount: 0,
         orgPaidCount: 0,
@@ -175,6 +192,12 @@ export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<Mercha
     r.donorCoveredCount += n(p.covered);
     r.orgPaidCount += n(p.org_paid);
   }
+  for (const p of payoutFees) {
+    const r = byChurch.get(p.church_id);
+    if (!r) continue;
+    r.payoutFeeCents += Math.round(p.total ?? 0);
+    r.payoutFeeCount += n(p.count);
+  }
 
   const rows = [...byChurch.values()]
     .map((r) => ({
@@ -190,6 +213,8 @@ export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<Mercha
       paymentCount: t.paymentCount + r.paymentCount,
       refundedCents: t.refundedCents + r.refundedCents,
       feesCents: t.feesCents + r.feesCents,
+      payoutFeeCents: t.payoutFeeCents + r.payoutFeeCents,
+      payoutFeeCount: t.payoutFeeCount + r.payoutFeeCount,
       donorCoveredFeesCents: t.donorCoveredFeesCents + r.donorCoveredFeesCents,
       donorCoveredCount: t.donorCoveredCount + r.donorCoveredCount,
       orgPaidCount: t.orgPaidCount + r.orgPaidCount,
@@ -204,6 +229,8 @@ export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<Mercha
       paymentCount: 0,
       refundedCents: 0,
       feesCents: 0,
+      payoutFeeCents: 0,
+      payoutFeeCount: 0,
       donorCoveredFeesCents: 0,
       donorCoveredCount: 0,
       orgPaidCount: 0,
