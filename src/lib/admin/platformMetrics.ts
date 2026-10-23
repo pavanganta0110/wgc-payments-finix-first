@@ -94,7 +94,7 @@ export interface PlatformMetrics {
  * A successful charge: excludes Finix's own settlement/payout rows and ACH
  * return rows (same exclusions the merchant Payments list uses).
  */
-const SUCCESSFUL_CHARGE_WHERE = Prisma.sql`
+export const SUCCESSFUL_CHARGE_WHERE = Prisma.sql`
   UPPER(ft."state") = 'SUCCEEDED'
   AND (ft."subtype" IS NULL OR (ft."subtype" NOT ILIKE '%SETTLEMENT%' AND ft."subtype" NOT ILIKE '%RETURN%'))
   AND (ft."type" IS NULL OR UPPER(ft."type") <> 'REVERSAL')
@@ -114,7 +114,7 @@ const ATTRIBUTED_WHERE = Prisma.sql`
 
 const CHARGE_WHERE = Prisma.sql`${SUCCESSFUL_CHARGE_WHERE} AND ${ATTRIBUTED_WHERE}`;
 
-function inRange(column: Prisma.Sql, from: Date | null, to: Date): Prisma.Sql {
+export function inRange(column: Prisma.Sql, from: Date | null, to: Date): Prisma.Sql {
   return from ? Prisma.sql`${column} >= ${from} AND ${column} < ${to}` : Prisma.sql`${column} < ${to}`;
 }
 

@@ -31,6 +31,8 @@ import RangeSelect from "@/components/admin/dashboard/RangeSelect";
 import MethodBreakdown from "@/components/admin/dashboard/MethodBreakdown";
 import MonthlyVolume from "@/components/admin/dashboard/MonthlyVolume";
 import TopMerchants from "@/components/admin/dashboard/TopMerchants";
+import MerchantMoneyFlow from "@/components/admin/dashboard/MerchantMoneyFlow";
+import { loadMerchantMoneyFlow } from "@/lib/admin/merchantMoneyFlow";
 import ResidualPayouts from "@/components/admin/dashboard/ResidualPayouts";
 
 function GroupLabel({ children, hint }: { children: React.ReactNode; hint?: string }) {
@@ -97,8 +99,9 @@ export default async function AdminDashboardHome({ searchParams }: { searchParam
   const period = resolveAdminPeriod(parseAdminRange(rangeParam), new Date());
   const adminUser = await prisma.user.findUnique({ where: { id: session.userId }, select: { permissionsJson: true } });
   const billingPerms = resolveWgcAdminBillingPermissions(session.role, adminUser?.permissionsJson);
-  const [m, ops, residuals] = await Promise.all([
+  const [m, moneyFlow, ops, residuals] = await Promise.all([
     loadPlatformMetrics(period),
+    loadMerchantMoneyFlow(period),
     loadAdminOpsSummary(),
     billingPerms.canViewBilling ? loadResidualLedger() : Promise.resolve(null),
   ]);
@@ -263,6 +266,9 @@ export default async function AdminDashboardHome({ searchParams }: { searchParam
             ]}
           />
           <TopMerchants rows={m.topMerchants} totalCents={m.processed.amountCents} periodLabel={period.label} />
+        </div>
+        <div className="mt-3">
+          <MerchantMoneyFlow flow={moneyFlow} periodLabel={period.label} />
         </div>
       </section>
 
