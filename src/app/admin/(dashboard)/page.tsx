@@ -245,6 +245,12 @@ export default async function AdminDashboardHome({ searchParams }: { searchParam
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <MethodBreakdown
             periodLabel={period.label}
+            feeCover={{
+              donor: moneyFlow.totals.donorCoveredCount,
+              org: moneyFlow.totals.orgPaidCount,
+              noRecord: moneyFlow.totals.noFeeRecordCount,
+              donorCoveredCents: moneyFlow.totals.donorCoveredFeesCents,
+            }}
             methods={[
               { key: "CARD", label: "Card", hint: "credit, debit, prepaid", ...m.byMethod.CARD },
               { key: "ACH", label: "ACH (bank)", hint: "bank-account debits", ...m.byMethod.ACH },

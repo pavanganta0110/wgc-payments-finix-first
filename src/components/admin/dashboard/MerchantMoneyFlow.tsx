@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Card, { EmptyNote } from "@/components/merchant/reporting/overview/Card";
-import { formatCents, percent } from "@/components/merchant/reporting/overview/format";
+import { formatCents } from "@/components/merchant/reporting/overview/format";
 import type { MerchantMoneyFlow as MoneyFlow } from "@/lib/admin/merchantMoneyFlow";
 
 const th = "py-2 pr-4 text-right text-xs font-semibold text-slate-500 whitespace-nowrap";
@@ -21,42 +21,6 @@ function Awaiting({ cents }: { cents: number }) {
   return <span className="text-slate-700">{formatCents(cents)}</span>;
 }
 
-/** Who bore the processing fee on each successful payment: the donor (opted to cover it) or the organization. */
-function FeePayers({
-  donor,
-  org,
-  noRecord,
-  donorCoveredCents,
-}: {
-  donor: number;
-  org: number;
-  noRecord: number;
-  donorCoveredCents: number;
-}) {
-  // Percentages are out of the payments whose fee payer is known; "n/a" charges have no WGC payment record.
-  const known = donor + org;
-  const donorPct = known > 0 ? percent((donor / known) * 100) : "—";
-  const orgPct = known > 0 ? percent((org / known) * 100) : "—";
-  return (
-    <span
-      title={
-        `${donor} donor${donor === 1 ? "" : "s"} (${donorPct}) covered the fee (${formatCents(donorCoveredCents)}); ${org} payment${org === 1 ? "" : "s"} ` +
-        `(${orgPct}) had the fee paid by the organization` +
-        (noRecord > 0 ? `; ${noRecord} charge${noRecord === 1 ? " has" : "s have"} no WGC payment record so it isn't known.` : ".")
-      }
-    >
-      <span className="font-semibold text-emerald-700">{donor.toLocaleString("en-US")}</span>
-      <span className="text-xs text-slate-400"> donor </span>
-      <span className="text-xs font-semibold text-emerald-700">({donorPct})</span>
-      <span className="text-xs text-slate-400"> · </span>
-      <span className="font-semibold text-slate-700">{org.toLocaleString("en-US")}</span>
-      <span className="text-xs text-slate-400"> didn&apos;t </span>
-      <span className="text-xs font-semibold text-slate-700">({orgPct})</span>
-      {noRecord > 0 && <span className="text-xs text-slate-400"> · {noRecord.toLocaleString("en-US")} n/a</span>}
-    </span>
-  );
-}
-
 export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFlow; periodLabel: string }) {
   const { rows, totals } = flow;
   return (
@@ -69,7 +33,7 @@ export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFl
       ) : (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-sm">
+            <table className="w-full min-w-[860px] text-sm">
               <thead>
                 <tr className="border-b border-slate-100">
                   <th className="py-2 pr-4 text-left text-xs font-semibold text-slate-500">Merchant</th>
@@ -77,9 +41,6 @@ export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFl
                   <th className={th}>Fees paid</th>
                   <th className={th} title="Finix charges a fixed fee (50¢) each time it pays out to a merchant's bank. Already included in Fees paid.">
                     of which payout fees
-                  </th>
-                  <th className={th} title="Donors who covered the processing fee vs those who didn't (the organization paid it). Percentages are of payments whose fee payer is known.">
-                    Donor covered the fee?
                   </th>
                   <th className={th}>Refunds &amp; returns</th>
                   <th className={th}>Deposited to bank</th>
@@ -105,14 +66,6 @@ export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFl
                       {formatCents(r.payoutFeeCents)}
                       <span className="ml-1 text-xs text-slate-400">{r.payoutFeeCount.toLocaleString("en-US")}×</span>
                     </td>
-                    <td className={td}>
-                      <FeePayers
-                        donor={r.donorCoveredCount}
-                        org={r.orgPaidCount}
-                        noRecord={r.noFeeRecordCount}
-                        donorCoveredCents={r.donorCoveredFeesCents}
-                      />
-                    </td>
                     <td className={td}>{formatCents(r.refundedCents)}</td>
                     <td
                       className={td}
@@ -135,14 +88,6 @@ export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFl
                   <td className={`${td} pt-3`}>
                     {formatCents(totals.payoutFeeCents)}
                     <span className="ml-1 text-xs font-normal text-slate-400">{totals.payoutFeeCount.toLocaleString("en-US")}×</span>
-                  </td>
-                  <td className={`${td} pt-3`}>
-                    <FeePayers
-                      donor={totals.donorCoveredCount}
-                      org={totals.orgPaidCount}
-                      noRecord={totals.noFeeRecordCount}
-                      donorCoveredCents={totals.donorCoveredFeesCents}
-                    />
                   </td>
                   <td className={`${td} pt-3`}>{formatCents(totals.refundedCents)}</td>
                   <td className={`${td} pt-3`}>{formatCents(totals.depositedCents)}</td>

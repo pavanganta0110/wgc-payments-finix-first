@@ -98,14 +98,71 @@ function Rows({ rows, total, drillKey, onDrill }: { rows: BreakdownRow[]; total:
   );
 }
 
+export interface FeeCover {
+  /** Successful payments where the donor chose to cover the processing fee. */
+  donor: number;
+  /** Successful payments where the donor didn't (the organization paid the fee). */
+  org: number;
+  /** Charges with no WGC payment record, so who paid the fee isn't known — left out of the percentages. */
+  noRecord: number;
+  /** Fee dollars donors covered, per Finix's supplemental fee rows. */
+  donorCoveredCents: number;
+}
+
+/** Overall split of who covered the processing fee, across every merchant in the period. */
+function FeeCoverSplit({ feeCover }: { feeCover: FeeCover }) {
+  const known = feeCover.donor + feeCover.org;
+  if (known === 0) return null;
+  const donorShare = (feeCover.donor / known) * 100;
+  const orgShare = (feeCover.org / known) * 100;
+  const line = (color: string, label: string, count: number, share: number, extra?: string) => (
+    <div className="flex items-center gap-2.5 px-2 py-1.5 text-sm">
+      <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color }} aria-hidden />
+      <span className="min-w-0 text-left">
+        <span className="block font-medium text-slate-700">{label}</span>
+        <span className="block text-xs text-slate-500">
+          {count.toLocaleString("en-US")} payment{count === 1 ? "" : "s"}
+          {extra ? ` · ${extra}` : ""}
+        </span>
+      </span>
+      <span className="ml-auto w-12 text-right font-bold tabular-nums text-slate-900">{percent(share)}</span>
+    </div>
+  );
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-4">
+      <h5 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Who covered the processing fee</h5>
+      <div
+        className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full bg-slate-100"
+        role="img"
+        aria-label={`Donor covered the fee ${percent(donorShare)}, didn't cover ${percent(orgShare)}`}
+      >
+        {feeCover.donor > 0 && <div style={{ width: `${donorShare}%`, background: "#059669" }} className="first:rounded-l-full last:rounded-r-full" />}
+        {feeCover.org > 0 && <div style={{ width: `${orgShare}%`, background: "#94A3B8" }} className="first:rounded-l-full last:rounded-r-full" />}
+      </div>
+      <div className="mt-2 space-y-0.5">
+        {line("#059669", "Donor covered the fee", feeCover.donor, donorShare, feeCover.donorCoveredCents > 0 ? `${formatCents(feeCover.donorCoveredCents)} in fees` : undefined)}
+        {line("#94A3B8", "Donor didn't cover it (organization paid)", feeCover.org, orgShare)}
+      </div>
+      {feeCover.noRecord > 0 && (
+        <p className="mt-1 px-2 text-xs text-slate-400">
+          Out of payments with a WGC record; {feeCover.noRecord.toLocaleString("en-US")} charge{feeCover.noRecord === 1 ? "" : "s"} made outside WGC
+          (e.g. in the Finix dashboard) {feeCover.noRecord === 1 ? "is" : "are"} not counted.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function MethodBreakdown({
   methods,
   cardTypes,
   periodLabel,
+  feeCover,
 }: {
   methods: BreakdownRow[];
   cardTypes: BreakdownRow[];
   periodLabel: string;
+  feeCover?: FeeCover;
 }) {
   const [view, setView] = useState<View>("methods");
   const methodTotal = methods.reduce((s, r) => s + r.amountCents, 0);
@@ -150,6 +207,7 @@ export default function MethodBreakdown({
           <>
             <Bar rows={visibleMethods} total={methodTotal} />
             <Rows rows={visibleMethods} total={methodTotal} drillKey="CARD" onDrill={() => setView("card")} />
+            {feeCover && <FeeCoverSplit feeCover={feeCover} />}
           </>
         )
       ) : (
