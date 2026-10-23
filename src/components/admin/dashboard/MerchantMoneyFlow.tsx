@@ -57,7 +57,10 @@ export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFl
                       {formatCents(r.feesCents)}
                     </td>
                     <td className={td}>{formatCents(r.refundedCents)}</td>
-                    <td className={td}>
+                    <td
+                      className={td}
+                      title={r.pulledBackCents > 0 ? `${formatCents(r.pulledBackCents)} was also pulled back from the bank by Finix for fees` : undefined}
+                    >
                       {formatCents(r.depositedCents)}
                       <span className="ml-1 text-xs text-slate-400">{r.depositCount.toLocaleString("en-US")}×</span>
                     </td>
@@ -82,8 +85,9 @@ export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFl
             </table>
           </div>
           <p className="mt-3 text-xs text-slate-500">
-            Awaiting deposit = collected − fees − refunds &amp; returns − deposited. Settlements arrive on a delay and Finix doesn&apos;t finalize
-            fees until about the 15th of the next month, so a balance here is usually money still in flight, not a discrepancy.
+            Awaiting deposit = collected − fees − refunds &amp; returns − (deposited − fees Finix pulled back from the bank). Settlements arrive
+            on a delay and Finix doesn&apos;t finalize fees until about the 15th of the next month, so a balance here is usually money still in
+            flight, not a discrepancy.
           </p>
         </>
       )}

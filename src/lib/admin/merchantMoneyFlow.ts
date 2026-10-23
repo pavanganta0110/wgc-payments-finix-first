@@ -9,10 +9,13 @@
  *   refunded   — successful refunds/reversals + ACH returns (FinixRefundOrReversal, BankReturn)
  *   fees       — PLATFORM_FEE rows (FinixFee); donor-covered supplemental
  *                fees are a subset of this, shown separately
- *   deposited  — funding transfers to the organization's bank that SUCCEEDED
- *                (FinixFundingTransferAttempt)
+ *   deposited  — payouts Finix pushed TO the organization's bank (SUCCEEDED
+ *                funding transfers of type CREDIT)
+ *   pulled back — small fee settlements Finix pulls FROM the organization's
+ *                bank (SUCCEEDED funding transfers of type DEBIT, "pull from
+ *                ACH"). They are money leaving the bank, never a deposit.
  *
- * "Awaiting deposit" = collected − refunded − fees − deposited. It is a
+ * "Awaiting deposit" = collected − refunded − fees − (deposited − pulled back). It is a
  * reconciliation line, not an error: settlements land on a delay and fee
  * rows aren't final until about the 15th of the next month, so a non-zero
  * value usually just means money that is still in flight. A negative value
@@ -32,6 +35,7 @@ export interface MerchantMoneyRow {
   donorCoveredFeesCents: number;
   depositedCents: number;
   depositCount: number;
+  pulledBackCents: number;
   awaitingDepositCents: number;
 }
 
@@ -42,8 +46,10 @@ export interface MerchantMoneyFlow {
 
 const n = (v: bigint | number | null | undefined) => Number(v ?? 0);
 
-export function awaitingDeposit(row: Pick<MerchantMoneyRow, "collectedCents" | "refundedCents" | "feesCents" | "depositedCents">): number {
-  return row.collectedCents - row.refundedCents - row.feesCents - row.depositedCents;
+export function awaitingDeposit(
+  row: Pick<MerchantMoneyRow, "collectedCents" | "refundedCents" | "feesCents" | "depositedCents" | "pulledBackCents">,
+): number {
+  return row.collectedCents - row.refundedCents - row.feesCents - (row.depositedCents - row.pulledBackCents);
 }
 
 export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<MerchantMoneyFlow> {
@@ -82,8 +88,14 @@ export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<Mercha
         AND ${inRange(Prisma.sql`f."createdAtFinix"`, period.from, period.to)}
       GROUP BY f."churchId"
     `,
-    prisma.$queryRaw<{ church_id: string; amount: bigint | null; count: bigint }[]>`
-      SELECT d."churchId" AS church_id, SUM(d."amountCents") AS amount, COUNT(*) AS count
+    // Finix moves money both ways: CREDIT = payout pushed to the merchant's
+    // bank; DEBIT = a small fee settlement pulled back from it. A transfer
+    // with no recorded direction is treated as a payout (the common case).
+    prisma.$queryRaw<{ church_id: string; amount: bigint | null; count: bigint; pulled: bigint | null }[]>`
+      SELECT d."churchId" AS church_id,
+             SUM(d."amountCents") FILTER (WHERE UPPER(COALESCE(d."rawJsonRedacted"->>'type', 'CREDIT')) <> 'DEBIT') AS amount,
+             COUNT(*) FILTER (WHERE UPPER(COALESCE(d."rawJsonRedacted"->>'type', 'CREDIT')) <> 'DEBIT') AS count,
+             SUM(d."amountCents") FILTER (WHERE UPPER(COALESCE(d."rawJsonRedacted"->>'type', 'CREDIT')) = 'DEBIT') AS pulled
       FROM "FinixFundingTransferAttempt" d
       WHERE UPPER(d."state") = 'SUCCEEDED'
         AND d."churchId" IS NOT NULL
@@ -108,6 +120,7 @@ export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<Mercha
         donorCoveredFeesCents: 0,
         depositedCents: 0,
         depositCount: 0,
+        pulledBackCents: 0,
         awaitingDepositCents: 0,
       };
       byChurch.set(churchId, r);
@@ -132,6 +145,7 @@ export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<Mercha
     const r = row(d.church_id);
     r.depositedCents += n(d.amount);
     r.depositCount += n(d.count);
+    r.pulledBackCents += n(d.pulled);
   }
 
   const rows = [...byChurch.values()]
@@ -147,9 +161,10 @@ export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<Mercha
       donorCoveredFeesCents: t.donorCoveredFeesCents + r.donorCoveredFeesCents,
       depositedCents: t.depositedCents + r.depositedCents,
       depositCount: t.depositCount + r.depositCount,
+      pulledBackCents: t.pulledBackCents + r.pulledBackCents,
       awaitingDepositCents: t.awaitingDepositCents + r.awaitingDepositCents,
     }),
-    { collectedCents: 0, paymentCount: 0, refundedCents: 0, feesCents: 0, donorCoveredFeesCents: 0, depositedCents: 0, depositCount: 0, awaitingDepositCents: 0 },
+    { collectedCents: 0, paymentCount: 0, refundedCents: 0, feesCents: 0, donorCoveredFeesCents: 0, depositedCents: 0, depositCount: 0, pulledBackCents: 0, awaitingDepositCents: 0 },
   );
 
   return { rows, totals };
