@@ -1026,6 +1026,11 @@ model Payment {
   @@index([churchId, status])
   @@index([churchId, createdAt])
   @@index([churchId, pledgeId])
+  // One record per Finix charge, enforced by the database (idempotency by
+  // DB constraint): two concurrent webhook deliveries for the same transfer
+  // can never both record it. Callers that may race treat P2002 as "already
+  // recorded". Null (no transfer yet / offline) is never constrained.
+  @@unique([finixTransferId])
 }
 
 // One immutable snapshot per receipt version sent (or prepared) for a
@@ -1059,6 +1064,10 @@ model DonationReceipt {
 
   payment Payment @relation(fields: [paymentId], references: [id])
 
+  // One receipt per payment version, enforced by the database: two receipt
+  // sends racing for the same next version can't both record it (the loser
+  // is skipped in generateReceipt.ts).
+  @@unique([paymentId, version])
   @@index([paymentId])
   @@index([churchId])
 }
@@ -3895,6 +3904,11 @@ model InvoicePayment {
   @@index([invoiceId])
   @@index([churchId])
   @@index([finixTransferId])
+  // One record per Finix charge, enforced by the database (idempotency by
+  // DB constraint): two concurrent webhook deliveries for the same transfer
+  // can never both record it. Callers that may race treat P2002 as "already
+  // recorded". Null (no transfer yet / offline) is never constrained.
+  @@unique([finixTransferId])
 }
 
 /// One delivery attempt (email or SMS) of an invoice or a reminder.
