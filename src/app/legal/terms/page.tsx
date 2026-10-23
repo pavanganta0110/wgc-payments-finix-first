@@ -153,7 +153,8 @@ export default function TermsPage() {
             <section>
               <h2 className="text-2xl font-bold text-wgc-navy-900 mb-4 tracking-tight">12. Payouts / Settlements</h2>
               <p>
-                Payouts are subject to settlement timing, processor/bank review, risk controls, reserves, holds, ACH returns, disputes, and chargebacks. WGC does not receive settlement funds on behalf of organizations. Payouts should go to the organization/sub-merchant’s approved payout bank account through Finix/processor. Dashboard payout data may be informational and should be reconciled by the organization.
+                A fee applies to each payout to the organization&apos;s bank account (currently $0.50 per payout; see the{" "}
+                <Link href="/legal/fees" className="text-wgc-navy-600 font-medium hover:underline">Fee Schedule</Link>). Payouts are subject to settlement timing, processor/bank review, risk controls, reserves, holds, ACH returns, disputes, and chargebacks. WGC does not receive settlement funds on behalf of organizations. Payouts should go to the organization/sub-merchant’s approved payout bank account through Finix/processor. Dashboard payout data may be informational and should be reconciled by the organization.
               </p>
             </section>
 
@@ -231,7 +232,7 @@ export default function TermsPage() {
           <div className="absolute -right-20 -bottom-20 opacity-[0.02] pointer-events-none select-none text-[12rem] font-black text-wgc-navy-900 leading-none">TERMS</div>
         </div>
 
-        <p className="text-slate-500 font-medium tracking-tight mt-8 opacity-80 text-center text-sm">Last updated July 2026.</p>
+        <p className="text-slate-500 font-medium tracking-tight mt-8 opacity-80 text-center text-sm">Last updated October 2026.</p>
         
         <div className="mt-12 text-center">
           <Link href="/" className="inline-flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-wgc-navy-900 transition-colors uppercase tracking-widest font-mono">

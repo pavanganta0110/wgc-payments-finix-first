@@ -93,10 +93,11 @@ export default function FeesPage() {
               <ul className="space-y-2">
                 <li className="flex items-center gap-2"><RotateCcw className="w-4 h-4 text-slate-400" /> <strong>Disputes / Chargebacks:</strong> $15.00 per instance</li>
                 <li className="flex items-center gap-2"><RotateCcw className="w-4 h-4 text-slate-400" /> <strong>ACH Returns:</strong> $4.00 per return</li>
+                <li className="flex items-center gap-2"><Banknote className="w-4 h-4 text-slate-400" /> <strong>Bank payouts (settlements):</strong> $0.50 per payout to your bank account</li>
               </ul>
             </div>
 
-            <p className="text-xs text-slate-400 text-right">Last updated July 2026.</p>
+            <p className="text-xs text-slate-400 text-right">Last updated October 2026.</p>
             
           </div>
 
