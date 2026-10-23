@@ -62,12 +62,15 @@ export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFl
       ) : (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-sm">
+            <table className="w-full min-w-[980px] text-sm">
               <thead>
                 <tr className="border-b border-slate-100">
                   <th className="py-2 pr-4 text-left text-xs font-semibold text-slate-500">Merchant</th>
                   <th className={th}>Collected</th>
                   <th className={th}>Fees paid</th>
+                  <th className={th} title="Finix charges a fixed fee (50¢) each time it pays out to a merchant's bank. Already included in Fees paid.">
+                    of which payout fees
+                  </th>
                   <th className={th}>Who covered the fee</th>
                   <th className={th}>Refunds &amp; returns</th>
                   <th className={th}>Deposited to bank</th>
@@ -88,6 +91,10 @@ export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFl
                     </td>
                     <td className={td} title={r.donorCoveredFeesCents > 0 ? `${formatCents(r.donorCoveredFeesCents)} of this was covered by donors` : undefined}>
                       {formatCents(r.feesCents)}
+                    </td>
+                    <td className={td}>
+                      {formatCents(r.payoutFeeCents)}
+                      <span className="ml-1 text-xs text-slate-400">{r.payoutFeeCount.toLocaleString("en-US")}×</span>
                     </td>
                     <td className={td}>
                       <FeePayers
@@ -117,6 +124,10 @@ export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFl
                   <td className={`${td} pt-3`}>{formatCents(totals.collectedCents)}</td>
                   <td className={`${td} pt-3`}>{formatCents(totals.feesCents)}</td>
                   <td className={`${td} pt-3`}>
+                    {formatCents(totals.payoutFeeCents)}
+                    <span className="ml-1 text-xs font-normal text-slate-400">{totals.payoutFeeCount.toLocaleString("en-US")}×</span>
+                  </td>
+                  <td className={`${td} pt-3`}>
                     <FeePayers
                       donor={totals.donorCoveredCount}
                       org={totals.orgPaidCount}
@@ -134,7 +145,8 @@ export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFl
             </table>
           </div>
           <p className="mt-3 text-xs text-slate-500">
-            Awaiting deposit = collected − fees − refunds &amp; returns − (deposited − fees Finix pulled back from the bank). Settlements arrive
+            Finix also charges a fixed 50¢ every time it pays out to a merchant&apos;s bank; that is part of Fees paid and shown separately in
+            &ldquo;of which payout fees&rdquo;. Awaiting deposit = collected − fees − refunds &amp; returns − (deposited − fees Finix pulled back from the bank). Settlements arrive
             on a delay and Finix doesn&apos;t finalize fees until about the 15th of the next month, so a balance here is usually money still in
             flight, not a discrepancy.
           </p>

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-// $queryRaw call order inside loadMerchantMoneyFlow: charges, fees, deposits, fee-payer coverage.
+// $queryRaw call order inside loadMerchantMoneyFlow: charges, fees, deposits, fee-payer coverage, payout fees.
 const rawResults: unknown[][] = [
   [
     { church_id: "a", amount: BigInt(498774), count: BigInt(33) },
@@ -19,6 +19,10 @@ const rawResults: unknown[][] = [
     // "a": 32 of 33 donors covered the fee, 1 org absorbed it. "b": its charge has no payment record.
     { church_id: "a", covered: BigInt(32), org_paid: BigInt(1) },
     { church_id: "ghost", covered: BigInt(5), org_paid: BigInt(0) }, // no charges in period → ignored
+  ],
+  [
+    // Finix's fixed per-payout fee: 23 payouts × 50¢ for "a".
+    { church_id: "a", total: 1150, count: BigInt(23) },
   ],
 ];
 let rawCall = 0;
@@ -52,6 +56,8 @@ describe("loadMerchantMoneyFlow", () => {
       donorCoveredCount: 32,
       orgPaidCount: 1,
       noFeeRecordCount: 0,
+      payoutFeeCents: 1150, // 23 payouts × 50¢, already inside feesCents
+      payoutFeeCount: 23,
     });
     // Money pulled back from the bank for fees is NOT a deposit: the bank received
     // 481250 − 450 = 480800, so 498774 − 15386 − 480800 = 2588 is still accruing.
