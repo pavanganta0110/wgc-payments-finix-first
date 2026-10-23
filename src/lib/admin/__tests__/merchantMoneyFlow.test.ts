@@ -11,8 +11,9 @@ const rawResults: unknown[][] = [
     { church_id: "b", fees: 50, donor_covered: null },
   ],
   [
-    { church_id: "a", amount: BigInt(481700), count: BigInt(31) },
-    { church_id: "b", amount: BigInt(1050), count: BigInt(2) },
+    // "a": 23 payouts pushed to the bank, plus small fee settlements pulled back from it.
+    { church_id: "a", amount: BigInt(481250), count: BigInt(23), pulled: BigInt(450) },
+    { church_id: "b", amount: BigInt(1050), count: BigInt(2), pulled: null },
   ],
 ];
 let rawCall = 0;
@@ -20,8 +21,8 @@ let rawCall = 0;
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     $queryRaw: vi.fn(async () => rawResults[rawCall++]),
-    finixRefundOrReversal: { groupBy: vi.fn().mockResolvedValue([{ churchId: "a", _sum: { amountCents: 500 } }]) },
-    bankReturn: { groupBy: vi.fn().mockResolvedValue([{ churchId: "a", _sum: { amountCents: 250 } }]) },
+    finixRefundOrReversal: { groupBy: vi.fn().mockResolvedValue([{ churchId: "b", _sum: { amountCents: 0 } }]) },
+    bankReturn: { groupBy: vi.fn().mockResolvedValue([]) },
     church: { findMany: vi.fn().mockResolvedValue([{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }]) },
   },
 }));
@@ -39,12 +40,14 @@ describe("loadMerchantMoneyFlow", () => {
       paymentCount: 33,
       feesCents: 15386, // rounded once per merchant, not per fee row
       donorCoveredFeesCents: 13897,
-      refundedCents: 750, // refund 500 + ACH return 250
-      depositedCents: 481700,
-      depositCount: 31,
+      refundedCents: 0,
+      depositedCents: 481250,
+      depositCount: 23,
+      pulledBackCents: 450,
     });
-    // 498774 − 750 − 15386 − 481700 = 938 still in flight
-    expect(a.awaitingDepositCents).toBe(938);
+    // Money pulled back from the bank for fees is NOT a deposit: the bank received
+    // 481250 − 450 = 480800, so 498774 − 15386 − 480800 = 2588 is still accruing.
+    expect(a.awaitingDepositCents).toBe(2588);
 
     // Beta was deposited more than expected (1000 − 50 = 950 vs 1050): shown negative, not hidden.
     const b = flow.rows.find((r) => r.churchId === "b")!;
@@ -52,7 +55,8 @@ describe("loadMerchantMoneyFlow", () => {
 
     expect(flow.rows.map((r) => r.churchId)).toEqual(["a", "b"]); // biggest collector first
     expect(flow.totals.collectedCents).toBe(499774);
-    expect(flow.totals.depositedCents).toBe(482750);
+    expect(flow.totals.depositedCents).toBe(482300);
+    expect(flow.totals.pulledBackCents).toBe(450);
     expect(flow.totals.awaitingDepositCents).toBe(a.awaitingDepositCents + b.awaitingDepositCents);
   });
 });
