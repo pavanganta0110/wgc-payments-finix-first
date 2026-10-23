@@ -125,14 +125,6 @@ export default async function AdminDashboardHome({ searchParams }: { searchParam
 
       <section aria-label="Processing">
         <GroupLabel hint={`${period.label} · successful charges, all merchants`}>Processing</GroupLabel>
-        {m.unattributed.count > 0 && (
-          <p className="mb-3 text-xs text-amber-700">
-            Not counted below: {m.unattributed.count.toLocaleString("en-US")} successful{" "}
-            {m.unattributed.count === 1 ? "charge" : "charges"} ({formatCents(m.unattributed.amountCents)}) that don&apos;t
-            belong to any organization in this database — usually test activity from another environment sharing the same Finix
-            account.
-          </p>
-        )}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-12">
           <KpiTile
             size="lg"

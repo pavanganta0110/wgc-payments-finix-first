@@ -318,17 +318,24 @@ export async function syncFinixDataFromWebhookEvent(
       ? await prisma.church.findFirst({ where: { finixMerchantId: data.merchant } })
       : null;
     const churchId = church?.id ?? null;
-    if (!churchId) {
+    if (!churchId && typeof tags.churchId === "string" && tags.churchId) {
       // Finix's webhook is application-wide, so this also receives transfers
-      // from merchants this database doesn't own (e.g. another environment's
-      // test merchant on the same Finix application). Still recorded for the
-      // audit trail, but with no churchId it is excluded from platform
-      // volume and surfaced as "unattributed" on the admin dashboard.
-      console.warn("[finix-webhook] transfer for a merchant with no matching organization", {
-        transferId: data.id,
-        merchant: data.merchant ?? null,
-        taggedChurchId: tags.churchId ?? null,
-      });
+      // from merchants another environment owns (e.g. a sandbox test
+      // merchant on the same Finix application). Such a transfer is tagged
+      // with that environment's organization id, which doesn't exist here —
+      // it isn't ours, so it is never stored (it would otherwise sit with no
+      // churchId and be mistaken for platform volume). WGC's own
+      // platform-level rows (settlement credits etc.) carry no such tag and
+      // are unaffected.
+      const taggedChurch = await prisma.church.findUnique({ where: { id: tags.churchId }, select: { id: true } });
+      if (!taggedChurch) {
+        console.warn("[finix-webhook] ignoring transfer owned by another environment", {
+          transferId: data.id,
+          merchant: data.merchant ?? null,
+          taggedChurchId: tags.churchId,
+        });
+        return;
+      }
     }
 
     // Read the transfer's prior state before upserting so a later state
