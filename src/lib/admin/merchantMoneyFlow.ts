@@ -1,0 +1,156 @@
+/**
+ * Per-organization money flow for the WGC admin dashboard: what each
+ * organization collected, what it was charged in fees, and what Finix has
+ * actually sent to its bank account. Read-only.
+ *
+ * Every figure is summed in Postgres from Finix's own records:
+ *   collected  — successful charges (FinixTransfer, same rule as the
+ *                dashboard's Total processed), attributed organizations only
+ *   refunded   — successful refunds/reversals + ACH returns (FinixRefundOrReversal, BankReturn)
+ *   fees       — PLATFORM_FEE rows (FinixFee); donor-covered supplemental
+ *                fees are a subset of this, shown separately
+ *   deposited  — funding transfers to the organization's bank that SUCCEEDED
+ *                (FinixFundingTransferAttempt)
+ *
+ * "Awaiting deposit" = collected − refunded − fees − deposited. It is a
+ * reconciliation line, not an error: settlements land on a delay and fee
+ * rows aren't final until about the 15th of the next month, so a non-zero
+ * value usually just means money that is still in flight. A negative value
+ * (deposited more than expected) is flagged for a look.
+ */
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { SUCCESSFUL_CHARGE_WHERE, inRange, type AdminPeriod } from "./platformMetrics";
+
+export interface MerchantMoneyRow {
+  churchId: string;
+  name: string;
+  collectedCents: number;
+  paymentCount: number;
+  refundedCents: number;
+  feesCents: number;
+  donorCoveredFeesCents: number;
+  depositedCents: number;
+  depositCount: number;
+  awaitingDepositCents: number;
+}
+
+export interface MerchantMoneyFlow {
+  rows: MerchantMoneyRow[];
+  totals: Omit<MerchantMoneyRow, "churchId" | "name">;
+}
+
+const n = (v: bigint | number | null | undefined) => Number(v ?? 0);
+
+export function awaitingDeposit(row: Pick<MerchantMoneyRow, "collectedCents" | "refundedCents" | "feesCents" | "depositedCents">): number {
+  return row.collectedCents - row.refundedCents - row.feesCents - row.depositedCents;
+}
+
+export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<MerchantMoneyFlow> {
+  const created = Prisma.sql`ft."createdAtFinix"`;
+
+  const [charges, refunds, returns, fees, deposits, churches] = await Promise.all([
+    prisma.$queryRaw<{ church_id: string; amount: bigint | null; count: bigint }[]>`
+      SELECT ft."churchId" AS church_id, SUM(ft."amountCents") AS amount, COUNT(*) AS count
+      FROM "FinixTransfer" ft
+      WHERE ${SUCCESSFUL_CHARGE_WHERE}
+        AND EXISTS (SELECT 1 FROM "Church" c_attr WHERE c_attr."id" = ft."churchId")
+        AND ${inRange(created, period.from, period.to)}
+      GROUP BY ft."churchId"
+    `,
+    prisma.finixRefundOrReversal.groupBy({
+      by: ["churchId"],
+      where: {
+        churchId: { not: null },
+        state: { equals: "SUCCEEDED", mode: "insensitive" },
+        createdAtFinix: period.from ? { gte: period.from, lt: period.to } : { lt: period.to },
+      },
+      _sum: { amountCents: true },
+    }),
+    prisma.bankReturn.groupBy({
+      by: ["churchId"],
+      where: { churchId: { not: null }, createdAtFinix: period.from ? { gte: period.from, lt: period.to } : { lt: period.to } },
+      _sum: { amountCents: true },
+    }),
+    prisma.$queryRaw<{ church_id: string; fees: number | null; donor_covered: number | null }[]>`
+      SELECT f."churchId" AS church_id,
+             SUM(f."amountCents") AS fees,
+             SUM(f."amountCents") FILTER (WHERE f."feeType" ILIKE '%SUPPLEMENTAL%') AS donor_covered
+      FROM "FinixFee" f
+      WHERE (f."feeSubtype" = 'PLATFORM_FEE' OR f."feeCategory" = 'PLATFORM_FEE')
+        AND f."churchId" IS NOT NULL
+        AND ${inRange(Prisma.sql`f."createdAtFinix"`, period.from, period.to)}
+      GROUP BY f."churchId"
+    `,
+    prisma.$queryRaw<{ church_id: string; amount: bigint | null; count: bigint }[]>`
+      SELECT d."churchId" AS church_id, SUM(d."amountCents") AS amount, COUNT(*) AS count
+      FROM "FinixFundingTransferAttempt" d
+      WHERE UPPER(d."state") = 'SUCCEEDED'
+        AND d."churchId" IS NOT NULL
+        AND ${inRange(Prisma.sql`d."createdAtFinix"`, period.from, period.to)}
+      GROUP BY d."churchId"
+    `,
+    prisma.church.findMany({ select: { id: true, name: true } }),
+  ]);
+
+  const names = new Map(churches.map((c) => [c.id, c.name]));
+  const byChurch = new Map<string, MerchantMoneyRow>();
+  const row = (churchId: string): MerchantMoneyRow => {
+    let r = byChurch.get(churchId);
+    if (!r) {
+      r = {
+        churchId,
+        name: names.get(churchId) ?? "Unknown merchant",
+        collectedCents: 0,
+        paymentCount: 0,
+        refundedCents: 0,
+        feesCents: 0,
+        donorCoveredFeesCents: 0,
+        depositedCents: 0,
+        depositCount: 0,
+        awaitingDepositCents: 0,
+      };
+      byChurch.set(churchId, r);
+    }
+    return r;
+  };
+
+  for (const c of charges) {
+    const r = row(c.church_id);
+    r.collectedCents += n(c.amount);
+    r.paymentCount += n(c.count);
+  }
+  for (const x of refunds) if (x.churchId) row(x.churchId).refundedCents += x._sum.amountCents ?? 0;
+  for (const x of returns) if (x.churchId) row(x.churchId).refundedCents += x._sum.amountCents ?? 0;
+  for (const f of fees) {
+    const r = row(f.church_id);
+    // Finix fee amounts carry fractions of a cent; round once per organization, never per row.
+    r.feesCents += Math.round(f.fees ?? 0);
+    r.donorCoveredFeesCents += Math.round(f.donor_covered ?? 0);
+  }
+  for (const d of deposits) {
+    const r = row(d.church_id);
+    r.depositedCents += n(d.amount);
+    r.depositCount += n(d.count);
+  }
+
+  const rows = [...byChurch.values()]
+    .map((r) => ({ ...r, awaitingDepositCents: awaitingDeposit(r) }))
+    .sort((a, b) => b.collectedCents - a.collectedCents || a.name.localeCompare(b.name));
+
+  const totals = rows.reduce(
+    (t, r) => ({
+      collectedCents: t.collectedCents + r.collectedCents,
+      paymentCount: t.paymentCount + r.paymentCount,
+      refundedCents: t.refundedCents + r.refundedCents,
+      feesCents: t.feesCents + r.feesCents,
+      donorCoveredFeesCents: t.donorCoveredFeesCents + r.donorCoveredFeesCents,
+      depositedCents: t.depositedCents + r.depositedCents,
+      depositCount: t.depositCount + r.depositCount,
+      awaitingDepositCents: t.awaitingDepositCents + r.awaitingDepositCents,
+    }),
+    { collectedCents: 0, paymentCount: 0, refundedCents: 0, feesCents: 0, donorCoveredFeesCents: 0, depositedCents: 0, depositCount: 0, awaitingDepositCents: 0 },
+  );
+
+  return { rows, totals };
+}
