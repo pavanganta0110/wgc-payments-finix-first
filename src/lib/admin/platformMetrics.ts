@@ -81,6 +81,8 @@ export interface PlatformMetrics {
   previousProcessedCents: number | null;
   refundsCents: number;
   returnsCents: number;
+  /** Successful charges in the period that belong to no known organization — excluded from every total above. */
+  unattributed: VolumeSlice;
   byMethod: Record<MethodKey, VolumeSlice>;
   byCardType: Record<CardTypeKey, VolumeSlice>;
   /** Last 12 calendar months, oldest first, regardless of the selected range. */
@@ -92,11 +94,25 @@ export interface PlatformMetrics {
  * A successful charge: excludes Finix's own settlement/payout rows and ACH
  * return rows (same exclusions the merchant Payments list uses).
  */
-const CHARGE_WHERE = Prisma.sql`
+const SUCCESSFUL_CHARGE_WHERE = Prisma.sql`
   UPPER(ft."state") = 'SUCCEEDED'
   AND (ft."subtype" IS NULL OR (ft."subtype" NOT ILIKE '%SETTLEMENT%' AND ft."subtype" NOT ILIKE '%RETURN%'))
   AND (ft."type" IS NULL OR UPPER(ft."type") <> 'REVERSAL')
 `;
+
+/**
+ * The transfer belongs to an organization that exists in this database.
+ * Finix's webhook is application-wide, so a transfer from a merchant WGC
+ * doesn't know (another environment's test merchant sharing the same Finix
+ * application, or an organization since deleted) is stored with no
+ * churchId — it must never count toward platform volume. Those rows are
+ * reported separately via `unattributed`, never silently dropped.
+ */
+const ATTRIBUTED_WHERE = Prisma.sql`
+  EXISTS (SELECT 1 FROM "Church" c_attr WHERE c_attr."id" = ft."churchId")
+`;
+
+const CHARGE_WHERE = Prisma.sql`${SUCCESSFUL_CHARGE_WHERE} AND ${ATTRIBUTED_WHERE}`;
 
 function inRange(column: Prisma.Sql, from: Date | null, to: Date): Prisma.Sql {
   return from ? Prisma.sql`${column} >= ${from} AND ${column} < ${to}` : Prisma.sql`${column} < ${to}`;
@@ -129,7 +145,7 @@ export async function loadPlatformMetrics(period: AdminPeriod): Promise<Platform
   // Months are bucketed in UTC by Postgres, so build the buckets in UTC too.
   const trendFrom = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
 
-  const [breakdown, previousTotal, monthly, top, processing, refunds, returns, active, total, terminated, newInPeriod] =
+  const [breakdown, previousTotal, monthly, top, processing, refunds, returns, active, total, terminated, newInPeriod, orphaned] =
     await Promise.all([
       prisma.$queryRaw<{ method: MethodKey; card_type: string | null; amount: bigint | null; count: bigint }[]>`
         SELECT ${METHOD_SQL} AS method,
@@ -174,19 +190,25 @@ export async function loadPlatformMetrics(period: AdminPeriod): Promise<Platform
       `,
       prisma.finixRefundOrReversal.aggregate({
         where: {
+          churchId: { not: null },
           state: { equals: "SUCCEEDED", mode: "insensitive" },
           createdAtFinix: period.from ? { gte: period.from, lt: period.to } : { lt: period.to },
         },
         _sum: { amountCents: true },
       }),
       prisma.bankReturn.aggregate({
-        where: { createdAtFinix: period.from ? { gte: period.from, lt: period.to } : { lt: period.to } },
+        where: { churchId: { not: null }, createdAtFinix: period.from ? { gte: period.from, lt: period.to } : { lt: period.to } },
         _sum: { amountCents: true },
       }),
       prisma.church.count({ where: { status: "ACTIVE", finixMerchantId: { not: null } } }),
       prisma.church.count(),
       prisma.church.count({ where: { status: "TERMINATED" } }),
       prisma.church.count({ where: period.from ? { createdAt: { gte: period.from, lt: period.to } } : {} }),
+      prisma.$queryRaw<{ amount: bigint | null; count: bigint }[]>`
+        SELECT SUM(ft."amountCents") AS amount, COUNT(*) AS count
+        FROM "FinixTransfer" ft
+        WHERE ${SUCCESSFUL_CHARGE_WHERE} AND NOT ${ATTRIBUTED_WHERE} AND ${inRange(created, period.from, period.to)}
+      `,
     ]);
 
   const empty = (): VolumeSlice => ({ amountCents: 0, count: 0 });
@@ -237,6 +259,7 @@ export async function loadPlatformMetrics(period: AdminPeriod): Promise<Platform
     previousProcessedCents: previousTotal ? n(previousTotal[0]?.amount) : null,
     refundsCents: refunds._sum.amountCents ?? 0,
     returnsCents: returns._sum.amountCents ?? 0,
+    unattributed: { amountCents: n(orphaned[0]?.amount), count: n(orphaned[0]?.count) },
     byMethod,
     byCardType,
     monthly: months.map((m) => ({ month: m.month, cardCents: m.cardCents, achCents: m.achCents, otherCents: m.otherCents, count: m.count })),
