@@ -12,9 +12,24 @@ export interface BreakdownRow {
   hint: string;
   amountCents: number;
   count: number;
+  /** Card network split (Visa, Mastercard, …) shown under the row; only set for card types. */
+  brands?: { brand: string; amountCents: number; count: number }[];
 }
 
 type View = "methods" | "card";
+
+const BRAND_LABELS: Record<string, string> = {
+  VISA: "Visa",
+  MASTERCARD: "Mastercard",
+  AMERICAN_EXPRESS: "American Express",
+  AMEX: "American Express",
+  DISCOVER: "Discover",
+  DINERS_CLUB: "Diners Club",
+  JCB: "JCB",
+  UNKNOWN: "Brand not reported",
+};
+const brandLabel = (b: string) =>
+  BRAND_LABELS[b] ?? b.toLowerCase().replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 const COLOR: Record<string, string> = {
   CARD: SERIES.indigo,
@@ -87,6 +102,19 @@ function Rows({ rows, total, drillKey, onDrill }: { rows: BreakdownRow[]; total:
               </button>
             ) : (
               <div className={`flex w-full items-center gap-2.5 px-2 py-2 text-sm ${r.amountCents === 0 ? "opacity-60" : ""}`}>{inner}</div>
+            )}
+            {r.brands && r.brands.length > 0 && (
+              <ul className="mb-2 ml-7 mr-2 space-y-0.5 border-l border-slate-100 pl-3">
+                {r.brands.map((b) => (
+                  <li key={b.brand} className="flex items-baseline gap-2 text-xs text-slate-500">
+                    <span className="font-medium text-slate-600">{brandLabel(b.brand)}</span>
+                    <span>
+                      {b.count.toLocaleString("en-US")} payment{b.count === 1 ? "" : "s"}
+                    </span>
+                    <span className="ml-auto tabular-nums text-slate-700">{formatCents(b.amountCents)}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </li>
         );
