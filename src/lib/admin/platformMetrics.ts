@@ -85,6 +85,8 @@ export interface PlatformMetrics {
   unattributed: VolumeSlice;
   byMethod: Record<MethodKey, VolumeSlice>;
   byCardType: Record<CardTypeKey, VolumeSlice>;
+  /** Card payments split by network (Visa, Mastercard, …) within each credit/debit/prepaid type, biggest first. */
+  byCardBrand: Record<CardTypeKey, { brand: string; amountCents: number; count: number }[]>;
   /** Last 12 calendar months, oldest first, regardless of the selected range. */
   monthly: { month: string; cardCents: number; achCents: number; otherCents: number; count: number }[];
   topMerchants: { churchId: string; name: string; amountCents: number; count: number }[];
@@ -147,15 +149,16 @@ export async function loadPlatformMetrics(period: AdminPeriod): Promise<Platform
 
   const [breakdown, previousTotal, monthly, top, processing, refunds, returns, active, total, terminated, newInPeriod, orphaned] =
     await Promise.all([
-      prisma.$queryRaw<{ method: MethodKey; card_type: string | null; amount: bigint | null; count: bigint }[]>`
+      prisma.$queryRaw<{ method: MethodKey; card_type: string | null; card_brand: string | null; amount: bigint | null; count: bigint }[]>`
         SELECT ${METHOD_SQL} AS method,
                UPPER(pi."cardType") AS card_type,
+               UPPER(pi."cardBrand") AS card_brand,
                SUM(ft."amountCents") AS amount,
                COUNT(*) AS count
         FROM "FinixTransfer" ft
         ${JOINS}
         WHERE ${CHARGE_WHERE} AND ${inRange(created, period.from, period.to)}
-        GROUP BY 1, 2
+        GROUP BY 1, 2, 3
       `,
       period.previous
         ? prisma.$queryRaw<{ amount: bigint | null }[]>`
@@ -214,6 +217,12 @@ export async function loadPlatformMetrics(period: AdminPeriod): Promise<Platform
   const empty = (): VolumeSlice => ({ amountCents: 0, count: 0 });
   const byMethod: Record<MethodKey, VolumeSlice> = { CARD: empty(), ACH: empty(), OTHER: empty() };
   const byCardType: Record<CardTypeKey, VolumeSlice> = { CREDIT: empty(), DEBIT: empty(), PREPAID: empty(), UNKNOWN: empty() };
+  const brandMaps: Record<CardTypeKey, Map<string, { brand: string; amountCents: number; count: number }>> = {
+    CREDIT: new Map(),
+    DEBIT: new Map(),
+    PREPAID: new Map(),
+    UNKNOWN: new Map(),
+  };
   for (const row of breakdown) {
     const amount = n(row.amount);
     const count = n(row.count);
@@ -224,8 +233,16 @@ export async function loadPlatformMetrics(period: AdminPeriod): Promise<Platform
         row.card_type === "CREDIT" || row.card_type === "DEBIT" || row.card_type === "PREPAID" ? row.card_type : "UNKNOWN";
       byCardType[key].amountCents += amount;
       byCardType[key].count += count;
+      const brand = row.card_brand || "UNKNOWN";
+      const slot = brandMaps[key].get(brand) ?? { brand, amountCents: 0, count: 0 };
+      slot.amountCents += amount;
+      slot.count += count;
+      brandMaps[key].set(brand, slot);
     }
   }
+  const byCardBrand = Object.fromEntries(
+    (Object.keys(brandMaps) as CardTypeKey[]).map((k) => [k, [...brandMaps[k].values()].sort((a, b) => b.amountCents - a.amountCents)]),
+  ) as PlatformMetrics["byCardBrand"];
   const processed = Object.values(byMethod).reduce(
     (s, v) => ({ amountCents: s.amountCents + v.amountCents, count: s.count + v.count }),
     empty(),
@@ -262,6 +279,7 @@ export async function loadPlatformMetrics(period: AdminPeriod): Promise<Platform
     unattributed: { amountCents: n(orphaned[0]?.amount), count: n(orphaned[0]?.count) },
     byMethod,
     byCardType,
+    byCardBrand,
     monthly: months.map((m) => ({ month: m.month, cardCents: m.cardCents, achCents: m.achCents, otherCents: m.otherCents, count: m.count })),
     topMerchants: top.map((t) => ({ churchId: t.church_id, name: t.name ?? "Unknown merchant", amountCents: n(t.amount), count: n(t.count) })),
   };

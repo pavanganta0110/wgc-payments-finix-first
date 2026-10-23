@@ -257,10 +257,10 @@ export default async function AdminDashboardHome({ searchParams }: { searchParam
               { key: "OTHER", label: "Unclassified", hint: "instrument not synced yet", ...m.byMethod.OTHER },
             ]}
             cardTypes={[
-              { key: "CREDIT", label: "Credit cards", hint: "issued as credit", ...m.byCardType.CREDIT },
-              { key: "DEBIT", label: "Debit cards", hint: "issued as debit", ...m.byCardType.DEBIT },
-              { key: "PREPAID", label: "Prepaid cards", hint: "issued as prepaid", ...m.byCardType.PREPAID },
-              { key: "UNKNOWN", label: "Unknown type", hint: "not reported by Finix", ...m.byCardType.UNKNOWN },
+              { key: "CREDIT", label: "Credit cards", hint: "issued as credit", ...m.byCardType.CREDIT, brands: m.byCardBrand.CREDIT },
+              { key: "DEBIT", label: "Debit cards", hint: "issued as debit", ...m.byCardType.DEBIT, brands: m.byCardBrand.DEBIT },
+              { key: "PREPAID", label: "Prepaid cards", hint: "issued as prepaid", ...m.byCardType.PREPAID, brands: m.byCardBrand.PREPAID },
+              { key: "UNKNOWN", label: "Unknown type", hint: "not reported by Finix", ...m.byCardType.UNKNOWN, brands: m.byCardBrand.UNKNOWN },
             ]}
           />
           <TopMerchants rows={m.topMerchants} totalCents={m.processed.amountCents} periodLabel={period.label} />
