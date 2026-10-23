@@ -33,6 +33,12 @@ export interface MerchantMoneyRow {
   refundedCents: number;
   feesCents: number;
   donorCoveredFeesCents: number;
+  /** Successful payments where the donor chose to cover the processing fee. */
+  donorCoveredCount: number;
+  /** Successful payments where the organization absorbed the fee. */
+  orgPaidCount: number;
+  /** Charges with no WGC payment record (e.g. created straight in the Finix dashboard), so who paid the fee isn't known. */
+  noFeeRecordCount: number;
   depositedCents: number;
   depositCount: number;
   pulledBackCents: number;
@@ -55,7 +61,7 @@ export function awaitingDeposit(
 export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<MerchantMoneyFlow> {
   const created = Prisma.sql`ft."createdAtFinix"`;
 
-  const [charges, refunds, returns, fees, deposits, churches] = await Promise.all([
+  const [charges, refunds, returns, fees, deposits, coverage, churches] = await Promise.all([
     prisma.$queryRaw<{ church_id: string; amount: bigint | null; count: bigint }[]>`
       SELECT ft."churchId" AS church_id, SUM(ft."amountCents") AS amount, COUNT(*) AS count
       FROM "FinixTransfer" ft
@@ -102,6 +108,18 @@ export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<Mercha
         AND ${inRange(Prisma.sql`d."createdAtFinix"`, period.from, period.to)}
       GROUP BY d."churchId"
     `,
+    // Who paid the processing fee: Payment.donorCoversFee is recorded when the
+    // gift is made; false = the organization absorbed it.
+    prisma.$queryRaw<{ church_id: string; covered: bigint; org_paid: bigint }[]>`
+      SELECT p."churchId" AS church_id,
+             COUNT(*) FILTER (WHERE p."donorCoversFee" IS TRUE) AS covered,
+             COUNT(*) FILTER (WHERE p."donorCoversFee" IS FALSE) AS org_paid
+      FROM "Payment" p
+      WHERE UPPER(p."status") = 'SUCCEEDED'
+        AND p."churchId" IS NOT NULL
+        AND ${inRange(Prisma.sql`p."createdAt"`, period.from, period.to)}
+      GROUP BY p."churchId"
+    `,
     prisma.church.findMany({ select: { id: true, name: true } }),
   ]);
 
@@ -118,6 +136,9 @@ export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<Mercha
         refundedCents: 0,
         feesCents: 0,
         donorCoveredFeesCents: 0,
+        donorCoveredCount: 0,
+        orgPaidCount: 0,
+        noFeeRecordCount: 0,
         depositedCents: 0,
         depositCount: 0,
         pulledBackCents: 0,
@@ -147,9 +168,20 @@ export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<Mercha
     r.depositCount += n(d.count);
     r.pulledBackCents += n(d.pulled);
   }
+  for (const p of coverage) {
+    // Only merchants that also have charges in the period appear in the table.
+    const r = byChurch.get(p.church_id);
+    if (!r) continue;
+    r.donorCoveredCount += n(p.covered);
+    r.orgPaidCount += n(p.org_paid);
+  }
 
   const rows = [...byChurch.values()]
-    .map((r) => ({ ...r, awaitingDepositCents: awaitingDeposit(r) }))
+    .map((r) => ({
+      ...r,
+      noFeeRecordCount: Math.max(0, r.paymentCount - r.donorCoveredCount - r.orgPaidCount),
+      awaitingDepositCents: awaitingDeposit(r),
+    }))
     .sort((a, b) => b.collectedCents - a.collectedCents || a.name.localeCompare(b.name));
 
   const totals = rows.reduce(
@@ -159,12 +191,28 @@ export async function loadMerchantMoneyFlow(period: AdminPeriod): Promise<Mercha
       refundedCents: t.refundedCents + r.refundedCents,
       feesCents: t.feesCents + r.feesCents,
       donorCoveredFeesCents: t.donorCoveredFeesCents + r.donorCoveredFeesCents,
+      donorCoveredCount: t.donorCoveredCount + r.donorCoveredCount,
+      orgPaidCount: t.orgPaidCount + r.orgPaidCount,
+      noFeeRecordCount: t.noFeeRecordCount + r.noFeeRecordCount,
       depositedCents: t.depositedCents + r.depositedCents,
       depositCount: t.depositCount + r.depositCount,
       pulledBackCents: t.pulledBackCents + r.pulledBackCents,
       awaitingDepositCents: t.awaitingDepositCents + r.awaitingDepositCents,
     }),
-    { collectedCents: 0, paymentCount: 0, refundedCents: 0, feesCents: 0, donorCoveredFeesCents: 0, depositedCents: 0, depositCount: 0, pulledBackCents: 0, awaitingDepositCents: 0 },
+    {
+      collectedCents: 0,
+      paymentCount: 0,
+      refundedCents: 0,
+      feesCents: 0,
+      donorCoveredFeesCents: 0,
+      donorCoveredCount: 0,
+      orgPaidCount: 0,
+      noFeeRecordCount: 0,
+      depositedCents: 0,
+      depositCount: 0,
+      pulledBackCents: 0,
+      awaitingDepositCents: 0,
+    },
   );
 
   return { rows, totals };

@@ -10,12 +10,44 @@ function Awaiting({ cents }: { cents: number }) {
   if (cents === 0) return <span className="text-slate-500">Cleared</span>;
   if (cents < 0) {
     return (
-      <span className="font-semibold text-amber-700" title="Finix has deposited more than collected minus fees and refunds — worth a look.">
+      <span
+        className="font-semibold text-amber-700"
+        title="Finix has paid out more than the charges WGC has on record, minus fees and refunds. Usually Finix settled a charge that WGC has no record of (for example one made directly in the Finix dashboard)."
+      >
         {formatCents(cents)} · check
       </span>
     );
   }
   return <span className="text-slate-700">{formatCents(cents)}</span>;
+}
+
+/** Who bore the processing fee on each successful payment: the donor (opted to cover it) or the organization. */
+function FeePayers({
+  donor,
+  org,
+  noRecord,
+  donorCoveredCents,
+}: {
+  donor: number;
+  org: number;
+  noRecord: number;
+  donorCoveredCents: number;
+}) {
+  return (
+    <span
+      title={
+        `${donor} donor${donor === 1 ? "" : "s"} covered the fee (${formatCents(donorCoveredCents)}), ${org} payment${org === 1 ? "" : "s"} had the fee ` +
+        `paid by the organization` +
+        (noRecord > 0 ? `, and ${noRecord} charge${noRecord === 1 ? " has" : "s have"} no WGC payment record so it isn't known.` : ".")
+      }
+    >
+      <span className="font-semibold text-emerald-700">{donor.toLocaleString("en-US")}</span>
+      <span className="text-xs text-slate-400"> donor · </span>
+      <span className="font-semibold text-slate-700">{org.toLocaleString("en-US")}</span>
+      <span className="text-xs text-slate-400"> org</span>
+      {noRecord > 0 && <span className="text-xs text-slate-400"> · {noRecord.toLocaleString("en-US")} n/a</span>}
+    </span>
+  );
 }
 
 export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFlow; periodLabel: string }) {
@@ -30,12 +62,13 @@ export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFl
       ) : (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
+            <table className="w-full min-w-[860px] text-sm">
               <thead>
                 <tr className="border-b border-slate-100">
                   <th className="py-2 pr-4 text-left text-xs font-semibold text-slate-500">Merchant</th>
                   <th className={th}>Collected</th>
                   <th className={th}>Fees paid</th>
+                  <th className={th}>Who covered the fee</th>
                   <th className={th}>Refunds &amp; returns</th>
                   <th className={th}>Deposited to bank</th>
                   <th className={th}>Awaiting deposit</th>
@@ -56,6 +89,14 @@ export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFl
                     <td className={td} title={r.donorCoveredFeesCents > 0 ? `${formatCents(r.donorCoveredFeesCents)} of this was covered by donors` : undefined}>
                       {formatCents(r.feesCents)}
                     </td>
+                    <td className={td}>
+                      <FeePayers
+                        donor={r.donorCoveredCount}
+                        org={r.orgPaidCount}
+                        noRecord={r.noFeeRecordCount}
+                        donorCoveredCents={r.donorCoveredFeesCents}
+                      />
+                    </td>
                     <td className={td}>{formatCents(r.refundedCents)}</td>
                     <td
                       className={td}
@@ -75,6 +116,14 @@ export default function MerchantMoneyFlow({ flow, periodLabel }: { flow: MoneyFl
                   <td className="pt-3 pr-4">All merchants</td>
                   <td className={`${td} pt-3`}>{formatCents(totals.collectedCents)}</td>
                   <td className={`${td} pt-3`}>{formatCents(totals.feesCents)}</td>
+                  <td className={`${td} pt-3`}>
+                    <FeePayers
+                      donor={totals.donorCoveredCount}
+                      org={totals.orgPaidCount}
+                      noRecord={totals.noFeeRecordCount}
+                      donorCoveredCents={totals.donorCoveredFeesCents}
+                    />
+                  </td>
                   <td className={`${td} pt-3`}>{formatCents(totals.refundedCents)}</td>
                   <td className={`${td} pt-3`}>{formatCents(totals.depositedCents)}</td>
                   <td className={`${td} pt-3`}>
