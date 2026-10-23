@@ -318,6 +318,18 @@ export async function syncFinixDataFromWebhookEvent(
       ? await prisma.church.findFirst({ where: { finixMerchantId: data.merchant } })
       : null;
     const churchId = church?.id ?? null;
+    if (!churchId) {
+      // Finix's webhook is application-wide, so this also receives transfers
+      // from merchants this database doesn't own (e.g. another environment's
+      // test merchant on the same Finix application). Still recorded for the
+      // audit trail, but with no churchId it is excluded from platform
+      // volume and surfaced as "unattributed" on the admin dashboard.
+      console.warn("[finix-webhook] transfer for a merchant with no matching organization", {
+        transferId: data.id,
+        merchant: data.merchant ?? null,
+        taggedChurchId: tags.churchId ?? null,
+      });
+    }
 
     // Read the transfer's prior state before upserting so a later state
     // change (e.g. PENDING -> SUCCEEDED on ACH settlement, arriving via a
