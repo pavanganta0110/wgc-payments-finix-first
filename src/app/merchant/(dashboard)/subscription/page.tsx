@@ -192,6 +192,7 @@ export default async function SubscriptionPage() {
                 <th className="text-left px-6 py-2">Type</th>
                 <th className="text-left px-6 py-2">Amount</th>
                 <th className="text-left px-6 py-2">Status</th>
+                <th className="text-left px-6 py-2">Receipt</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -201,6 +202,15 @@ export default async function SubscriptionPage() {
                   <td className="px-6 py-2">{titleCase(c.chargeType.replace(/_/g, " "))}</td>
                   <td className="px-6 py-2">{formatCents(c.amountCents)}</td>
                   <td className="px-6 py-2"><StateBadge state={c.status} /></td>
+                  <td className="px-6 py-2">
+                    {c.status === "SUCCEEDED" ? (
+                      <a href={`/api/merchant/billing/charges/${c.id}/receipt`} target="_blank" rel="noopener noreferrer" className="text-wgc-navy-600 font-semibold hover:underline">
+                        View receipt
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
