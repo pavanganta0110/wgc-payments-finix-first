@@ -9,9 +9,54 @@ import ScrollFade from "@/components/ui/ScrollFade";
 
 import type { Metadata } from "next";
 
+const HOME_TITLE = "Best Payment Processor for Nonprofits | $0 Cost | WGC";
+const HOME_DESCRIPTION = "Nonprofit payment processing + donor management in one dashboard. $0 processing cost when donors cover fees, $10/month flat. See pricing.";
+
 export const metadata: Metadata = {
+  title: HOME_TITLE,
+  description: HOME_DESCRIPTION,
   alternates: { canonical: "/" },
+  openGraph: {
+    title: HOME_TITLE,
+    description: HOME_DESCRIPTION,
+    type: "website",
+    images: [{ url: "/og/default.png", width: 1200, height: 630 }],
+    url: "https://www.wgcpayments.com/",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: HOME_TITLE,
+    description: HOME_DESCRIPTION,
+    images: ["/og/default.png"],
+  },
 };
+
+// Single source for the visible FAQ and the FAQPage JSON-LD so the two can
+// never drift apart. `link` adds a trailing sentence with a "migration guide" link.
+const FAQS: { q: string; a: string; link?: boolean }[] = [
+  {
+    q: "Is WGC just a payment processor?",
+    a: "No. WGC is a fundraising, payments, and donor management platform for mission-driven organizations — nonprofits, churches and ministries, foundations, associations, schools, and community organizations. Beyond accepting card, ACH, and digital wallet payments, WGC includes donor profiles and donation history, recurring giving, giving and campaign pages, invoicing, external and offline donation recording, reporting and donor analytics with CSV exports, settlements and payouts, refunds, year-end statements, team accounts with role-based permissions (Owner, Admin, Fundraiser, Viewer), and accounting integrations with QuickBooks and Aplos — all in one dashboard, instead of piecing together separate tools.",
+  },
+  {
+    q: "Can I switch to WGC from Givebutter, Zeffy, Donorbox, Stripe, or another platform?",
+    a: "Yes. WGC helps you migrate donor and contact records, historical and external donation data, funds, and organization information from another fundraising or payment platform — including CSV imports and spreadsheet-based donor databases. Saved card or bank details generally can't be transferred automatically between processors; recurring giving is reviewed during migration, and we'll help determine the best path based on your current provider.",
+    link: true,
+  },
+  {
+    q: "How much does WGC cost for a nonprofit, church, or other organization?",
+    a: "When a supporter chooses to cover the processing fee, the cost to the organization is $0. Organizations that choose to absorb the fee pay a maximum of 2.3% + 25¢ per card transaction and a flat 25¢ per ACH transaction. Every organization also pays a simple $10/month WGC platform fee, which includes full access to the dashboard and every platform feature — not just payment processing.",
+  },
+  {
+    q: "Does WGC support team accounts and staff permissions?",
+    a: "Yes. WGC supports Owner, Admin, Fundraiser, and Viewer roles so any organization can give each staff member or volunteer their own login with access scoped to what they actually need, instead of sharing one account and password.",
+  },
+  {
+    q: "What's the best alternative to Omella, Tithe.ly, Givebutter, or Zeffy?",
+    a: "WGC is an alternative to Omella, Tithe.ly, Givebutter, and Zeffy that combines payments, donor management, and fundraising in one platform. It is built for nonprofits, churches, foundations, associations, schools, and other mission-driven organizations that want more than a giving page, with supporter management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, year-end statements, team accounts with role-based permissions, and accounting integrations, plus a $0 processing cost option when supporters cover the fee.",
+  },
+];
+const MIGRATION_SENTENCE = " See our migration guide for details.";
 
 const IMPACT_ITEMS = [
   {
@@ -58,18 +103,22 @@ const jsonLd = {
   "@context": "https://schema.org",
   "@graph": [
     {
-      "@type": "Product",
-      "name": "WGC Fundraising, Payments & Donor Management Platform",
+      "@type": "SoftwareApplication",
+      "name": "WGC",
+      "applicationCategory": "FinanceApplication",
+      "operatingSystem": "Web",
       "description": "WGC helps mission-driven organizations keep more of the money they raise and gives their teams time back by bringing payments, supporters, reporting, and financial operations into one platform. A fundraising, payments, and donor management platform for nonprofits, churches and ministries, foundations, associations, schools, and community organizations — with donor profiles, donation history, recurring giving, campaigns, invoicing, external/offline donation recording, reporting and donor analytics, settlements, refunds, year-end statements, team accounts with role-based permissions, and accounting integrations (QuickBooks, Aplos). WGC also partners with software platforms to embed this infrastructure into their own product.",
-      "brand": { "@type": "Brand", "name": "WGC" },
+      "url": "https://www.wgcpayments.com/",
+      "publisher": { "@id": "https://www.wgcpayments.com/#organization" },
       "offers": {
         "@type": "Offer",
         "priceCurrency": "USD",
-        "price": "10.00",
+        "price": "10",
         "priceSpecification": {
           "@type": "UnitPriceSpecification",
-          "price": "10.00",
+          "price": "10",
           "priceCurrency": "USD",
+          "unitCode": "MON",
           "unitText": "per organization per month — the WGC platform fee, includes the full dashboard and all platform features"
         },
         "availability": "https://schema.org/InStock",
@@ -79,49 +128,12 @@ const jsonLd = {
     },
     {
       "@type": "FAQPage",
-      "mainEntity": [
-        {
-          "@type": "Question",
-          "name": "Is WGC just a payment processor?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "No. WGC is a fundraising, payments, and donor management platform for mission-driven organizations, not just a payment processor. Beyond accepting card, ACH, and digital wallet payments, WGC includes donor profiles and donation history, recurring giving, giving and campaign pages, invoicing, external and offline donation recording, reporting and donor analytics with CSV exports, settlements and payouts, refunds, year-end statements, team accounts with role-based permissions (Owner, Admin, Fundraiser, Viewer), and accounting integrations with QuickBooks and Aplos — all in one dashboard, instead of piecing together separate tools."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Can I switch to WGC from Givebutter, Zeffy, Donorbox, Stripe, or another platform?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Yes. WGC helps organizations migrate donor and contact records, historical and external donation data, funds, and organization information from another fundraising or payment platform, including CSV imports and spreadsheet-based donor databases. Saved card or bank details generally can't be transferred automatically between processors — recurring giving is reviewed during migration, and we help determine the best path based on your current provider."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "How much does WGC cost for a nonprofit, church, or other organization?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "When a supporter chooses to cover the processing fee, the cost to the organization is $0. Organizations that choose to absorb the fee pay a maximum of 2.3% + 25¢ per card transaction and a flat 25¢ per ACH transaction. Every organization also pays a simple $10/month WGC platform fee, which includes full access to the dashboard and every platform feature — not just payment processing."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Does WGC support team accounts and staff permissions?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Yes. WGC supports Owner, Admin, Fundraiser, and Viewer roles so any organization can give each staff member or volunteer their own login with access scoped to what they actually need, instead of sharing one account and password."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "What's the best alternative to Omella, Tithe.ly, Givebutter, or Zeffy?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "WGC is built for nonprofits, churches, foundations, associations, schools, and other mission-driven organizations that want more than a giving page — it combines supporter management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, year-end statements, team accounts with role-based permissions, and accounting integrations in one platform, with a $0 processing cost option when supporters cover the fee."
-          }
-        }
-      ]
-    }
+      "mainEntity": FAQS.map((f) => ({
+        "@type": "Question",
+        "name": f.q,
+        "acceptedAnswer": { "@type": "Answer", "text": f.a + (f.link ? MIGRATION_SENTENCE : "") },
+      })),
+    },
   ]
 };
 
@@ -153,11 +165,14 @@ export default function Home() {
                   <div className="w-2 h-2 rounded-full bg-wgc-gold-500 animate-pulse"></div>
                   <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500/90 font-mono">Fundraising, Payments & Donor Management</span>
                 </div>
-                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-8 !text-white">
-                  Save money. Save staff time. <span className="text-wgc-gold-500 italic">Put more toward the mission.</span>
+                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6 !text-white">
+                  Nonprofit Payment Processing <span className="text-wgc-gold-500 italic">at $0 Cost When Donors Cover Fees</span>
                 </h1>
+                <p className="text-xl sm:text-2xl font-semibold leading-snug mb-6 text-wgc-gold-500/90 max-w-2xl tracking-tight">
+                  Save money. Save staff time. Put more toward the mission.
+                </p>
                 <p className="text-lg sm:text-xl font-medium leading-relaxed mb-6 text-white/70 max-w-2xl tracking-tight">
-                  WGC is a fundraising, payments, and donor management platform built for nonprofits, churches, foundations, associations, schools, and other mission-driven organizations.
+                  WGC is a nonprofit payment processing and fundraising platform. Organizations accept card and ACH donations, manage recurring gifts and donors, and export reconciliation-ready reports from one dashboard. When donors cover the processing fee, your organization pays $0 in processing costs, plus a $10 monthly platform fee.
                 </p>
                 <p className="text-lg sm:text-xl font-medium leading-relaxed mb-12 text-white/70 max-w-2xl tracking-tight">
                   Accept donations, track donor giving history, launch campaigns, automate recurring giving, send invoices, track every gift, and manage your organization — all from one dashboard.
@@ -332,12 +347,12 @@ export default function Home() {
             </ScrollFade>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
-                { icon: Heart, title: "Nonprofits & Charities", desc: "Donor management, recurring giving, campaigns, and reporting for 501(c) organizations.", href: "/for/christian-nonprofits" },
+                { icon: Heart, title: "Nonprofits & Charities", desc: "Donor management, recurring giving, campaigns, and reporting for 501(c) organizations.", href: "/for/nonprofits" },
                 { icon: Building2, title: "Churches & Ministries", desc: "Giving, tithing, and stewardship tools built for congregations of every size.", href: "/for/churches" },
                 { icon: GraduationCap, title: "Schools, PTAs & Booster Clubs", desc: "Dues, fundraisers, and event payments with team accounts for staff and volunteers.", href: "/for/schools" },
                 { icon: Landmark, title: "Foundations", desc: "Grant-ready reporting, recurring giving, and multi-fund tracking in one dashboard.", href: "/for/foundations" },
                 { icon: HandCoins, title: "Associations & Membership Organizations", desc: "Membership dues, renewals, invoicing, and member records, fully automated.", href: "/for/associations" },
-                { icon: Building, title: "Community Organizations", desc: "Payments, supporter records, and reporting for community and civic groups.", href: "/for/christian-nonprofits" },
+                { icon: Building, title: "Community Organizations", desc: "Payments, supporter records, and reporting for community and civic groups.", href: "/for/nonprofits" },
                 { icon: Code2, title: "Software Platforms & ISVs", desc: "Embed WGC's payment infrastructure into your own software through a guided partnership.", href: "/software-partners" },
               ].map((v, i) => (
                 <ScrollFade key={v.title} delay={i * 60}>
@@ -578,31 +593,25 @@ export default function Home() {
         <section className="py-24 bg-white relative">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <ScrollFade>
-              <div className="text-center mb-16">
-                <h2 className="text-3xl font-bold text-wgc-navy-950 tracking-tight mb-4">Frequently Asked Questions</h2>
-                <p className="text-lg text-wgc-navy-500 font-medium tracking-tight">Learn more about how WGC is building the giving and payment management platform for mission-driven organizations in 2026.</p>
+              <div className="text-center mb-12">
+                <h2 className="text-3xl font-bold text-wgc-navy-950 tracking-tight">Frequently Asked Questions</h2>
               </div>
               <div className="space-y-8">
-                <div className="bg-wgc-off p-8 rounded-3xl border border-wgc-navy-50">
-                  <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">Is WGC just a payment processor?</h3>
-                  <p className="text-wgc-navy-500 leading-relaxed font-medium">No. WGC is a fundraising, payments, and donor management platform for mission-driven organizations — nonprofits, churches and ministries, foundations, associations, schools, and community organizations. Beyond accepting card, ACH, and digital wallet payments, WGC includes donor profiles and donation history, recurring giving, giving and campaign pages, invoicing, external and offline donation recording, reporting and donor analytics with CSV exports, settlements and payouts, refunds, year-end statements, team accounts with role-based permissions (Owner, Admin, Fundraiser, Viewer), and accounting integrations with QuickBooks and Aplos — all in one dashboard, instead of piecing together separate tools.</p>
-                </div>
-                <div className="bg-wgc-off p-8 rounded-3xl border border-wgc-navy-50">
-                  <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">Can I switch to WGC from Givebutter, Zeffy, Donorbox, Stripe, or another platform?</h3>
-                  <p className="text-wgc-navy-500 leading-relaxed font-medium">Yes. WGC helps you migrate donor and contact records, historical and external donation data, funds, and organization information from another fundraising or payment platform — including CSV imports and spreadsheet-based donor databases. Saved card or bank details generally can&apos;t be transferred automatically between processors; recurring giving is reviewed during migration, and we&apos;ll help determine the best path based on your current provider. See our <Link href="/switch" className="text-wgc-gold-600 font-bold hover:underline">migration guide</Link> for details.</p>
-                </div>
-                <div className="bg-wgc-off p-8 rounded-3xl border border-wgc-navy-50">
-                  <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">How much does WGC cost for a nonprofit, church, or other organization?</h3>
-                  <p className="text-wgc-navy-500 leading-relaxed font-medium">When a supporter chooses to cover the processing fee, the cost to the organization is $0. Organizations that choose to absorb the fee pay a maximum of 2.3% + 25¢ per card transaction and a flat 25¢ per ACH transaction. Every organization also pays a simple $10/month WGC platform fee, which includes full access to the dashboard and every platform feature — not just payment processing.</p>
-                </div>
-                <div className="bg-wgc-off p-8 rounded-3xl border border-wgc-navy-50">
-                  <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">Does WGC support team accounts and staff permissions?</h3>
-                  <p className="text-wgc-navy-500 leading-relaxed font-medium">Yes. WGC supports Owner, Admin, Fundraiser, and Viewer roles so any organization can give each staff member or volunteer their own login with access scoped to what they actually need, instead of sharing one account and password.</p>
-                </div>
-                <div className="bg-wgc-off p-8 rounded-3xl border border-wgc-navy-50">
-                  <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">What&apos;s the best alternative to Omella, Tithe.ly, Givebutter, or Zeffy?</h3>
-                  <p className="text-wgc-navy-500 leading-relaxed font-medium">WGC is built for nonprofits, churches, foundations, associations, schools, and other mission-driven organizations that want more than a giving page — it combines supporter management, recurring giving, campaigns, invoicing, reporting, settlements, refunds, year-end statements, team accounts with role-based permissions, and accounting integrations in one platform, with a $0 processing cost option when supporters cover the fee.</p>
-                </div>
+                {FAQS.map((f) => (
+                  <div key={f.q} className="bg-wgc-off p-8 rounded-3xl border border-wgc-navy-50">
+                    <h3 className="text-xl font-bold text-wgc-navy-950 mb-3">{f.q}</h3>
+                    <p className="text-wgc-navy-500 leading-relaxed font-medium">
+                      {f.a}
+                      {f.link && (
+                        <>
+                          {" See our "}
+                          <Link href="/switch" className="text-wgc-gold-600 font-bold hover:underline">migration guide</Link>
+                          {" for details."}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                ))}
               </div>
             </ScrollFade>
           </div>

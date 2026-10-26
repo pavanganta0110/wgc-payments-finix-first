@@ -3,11 +3,11 @@ import { HandCoins, Repeat, FileText, Users, BarChart3, ShieldCheck } from "luci
 import AudienceLandingPage, { type AudienceLandingContent } from "@/components/marketing/AudienceLandingPage";
 
 export const metadata: Metadata = {
-  title: "Payment & Membership Management Software for Associations | WGC Payments",
+  title: "Membership Dues Payment Processing for Associations | WGC",
   description: "Membership dues, renewals, invoicing, and member records in one platform. Payment processing built for associations, membership organizations, and professional societies — with low-cost ACH and card processing.",
   openGraph: {
     images: [{ url: "/og/verticals.png", width: 1200, height: 630 }],
-    title: "Payment & Membership Management Software for Associations | WGC Payments",
+    title: "Membership Dues Payment Processing for Associations | WGC",
     description: "Membership dues, renewals, invoicing, and member records in one platform — built for associations and membership organizations.",
     url: "https://www.wgcpayments.com/for/associations",
   },
@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 
 const content: AudienceLandingContent = {
   eyebrow: "For Associations",
-  headline: "Membership payments that",
-  headlineAccent: "run themselves",
+  headline: "Membership dues payment processing",
+  headlineAccent: "for associations",
   intro: "WGC brings dues, renewals, invoicing, and member records into one platform — so your association spends less time chasing payments and more time serving members.",
   whoWeServeTitle: "Built for membership organizations",
   whoWeServe: [

@@ -92,7 +92,7 @@ export default function PricingGuidePage() {
                 Financial Stewardship
               </div>
               <h1 className="text-4xl md:text-5xl font-bold text-wgc-navy-900 tracking-tighter mb-8 tracking-tight leading-[0.95]">
-                Stripe vs Tithe.ly vs <span className="text-wgc-gold-500">WGC: Fee Breakdown</span>
+                Nonprofit payment processing fees compared: <span className="text-wgc-gold-500">Stripe vs. Tithe.ly vs. WGC</span>
               </h1>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] font-semibold text-wgc-navy-500 mb-8">
                 <span>By <span className="text-wgc-navy-700">Waypoint Gateway Collective</span></span>

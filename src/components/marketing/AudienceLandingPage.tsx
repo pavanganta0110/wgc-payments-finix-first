@@ -65,6 +65,8 @@ export interface AudienceLandingContent {
   faqTitle: string;
   faqs: AudienceFAQ[];
   ctaHeadline: string;
+  /** Optional cross-link shown just above the closing CTA. */
+  relatedLink?: { prefix: string; label: string; href: string };
   ctaSubheadline: string;
   ctaText?: string;
 }
@@ -90,6 +92,7 @@ export default function AudienceLandingPage({ content }: { content: AudienceLand
     faqTitle,
     faqs,
     ctaHeadline,
+    relatedLink,
     ctaSubheadline,
     ctaText,
   } = content;
@@ -276,6 +279,17 @@ export default function AudienceLandingPage({ content }: { content: AudienceLand
         </section>
 
         {/* CTA SECTION */}
+        {relatedLink && (
+          <section className="py-10 bg-wgc-off text-center">
+            <p className="text-wgc-navy-500 font-medium">
+              {relatedLink.prefix}{" "}
+              <Link href={relatedLink.href} className="text-wgc-gold-600 font-bold hover:underline">
+                {relatedLink.label}
+              </Link>
+              .
+            </p>
+          </section>
+        )}
         <CTASection headline={ctaHeadline} subheadline={ctaSubheadline} ctaText={ctaText || "Get Started"} ctaLink="/start" />
       </main>
       <Footer />

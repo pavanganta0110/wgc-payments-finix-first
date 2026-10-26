@@ -5,8 +5,8 @@ import TimeBack from "@/components/marketing/time-back/TimeBack";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Time-Back Calculator | WGC Payments",
-  description: "See how many hours your church or nonprofit gets back each year when gift reconciliation runs through WGC.",
+  title: "Nonprofit Accounting Automation Calculator | WGC Payments",
+  description: "See how many hours your nonprofit gets back each year when donation reconciliation and accounting run through WGC.",
   alternates: { canonical: "/time-back" },
 };
 
@@ -23,7 +23,7 @@ export default function TimeBackPage() {
               Time-back calculator for churches
             </span>
             <h1 className="text-white text-4xl md:text-6xl font-extrabold tracking-tight leading-[1.05]">
-              Your books are eating <em className="text-wgc-gold-500">ministry hours.</em>
+              Nonprofit accounting automation: stop <em className="text-wgc-gold-500">reconciling donations by hand.</em>
             </h1>
             <p className="text-lg text-white/70 max-w-2xl">
               Matching online gifts, payouts and fees by hand quietly takes hours away from gospel impact every month. Put in your numbers and see how many come back.

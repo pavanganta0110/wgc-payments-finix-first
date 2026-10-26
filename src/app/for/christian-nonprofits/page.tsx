@@ -3,11 +3,11 @@ import { Globe2, Repeat, ShieldCheck, LayoutDashboard, Plane, CalendarDays, Hear
 import AudienceLandingPage, { type AudienceLandingContent } from "@/components/marketing/AudienceLandingPage";
 
 export const metadata: Metadata = {
-  title: "Giving & Donor Management Platform for Nonprofits",
+  title: "Donation Processing for Christian Nonprofits & Ministries | WGC",
   description: "More than donation processing: donor management, recurring giving, giving campaigns, invoicing, reporting, settlements, refunds, donor statements, team accounts with role-based permissions, and QuickBooks integration — all in one platform for nonprofits and ministries.",
   openGraph: {
     images: [{ url: "/og/verticals.png", width: 1200, height: 630 }],
-    title: "Giving & Donor Management Platform for Nonprofits",
+    title: "Donation Processing for Christian Nonprofits & Ministries | WGC",
     description: "Donor management, recurring giving, giving campaigns, invoicing, reporting, settlements, refunds, donor statements, and team accounts — all in one platform.",
     url: "https://www.wgcpayments.com/for/christian-nonprofits",
   },
@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 
 const content: AudienceLandingContent = {
   eyebrow: "For Nonprofits & Ministries",
-  headline: "Save time. Save money.",
-  headlineAccent: "Put more toward the mission.",
+  headline: "Donation processing for",
+  headlineAccent: "Christian nonprofits & ministries",
   intro: "Whether you're a nonprofit, a missions organization, a community charity, or any other 501(c) organization, WGC brings donor management, recurring giving, campaigns, invoicing, reporting, payouts, refunds, and staff access into one platform — so more of your time and every gift goes toward the cause.",
   whoWeServeTitle: "Built for nonprofits, ministries, and mission-driven organizations",
   whoWeServe: [],

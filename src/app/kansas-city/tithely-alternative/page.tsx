@@ -8,11 +8,11 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/kansas-city/tithely-alternative" },
-  title: "Tithe.ly Alternative for Kansas City Churches & 501(c) Organizations | WGC",
+  title: "Donation Platform & Tithe.ly Alternative for Kansas City Nonprofits & Churches | WGC",
   description: "Looking for a Tithe.ly alternative in Kansas City? WGC offers a white-label donation engine with lower flat-rate ACH fees and superior software integration for churches and other 501(c) organizations.",
   openGraph: {
     images: [{ url: "/og/kansas-city.png", width: 1200, height: 630 }],
-    title: "Tithe.ly Alternative for Kansas City Churches | WGC",
+    title: "Donation Platform & Tithe.ly Alternative for Kansas City Nonprofits | WGC",
     description: "Looking for a Tithe.ly alternative in Kansas City? WGC offers a white-label donation engine with lower flat-rate ACH fees and superior software integration.",
     url: "https://www.wgcpayments.com/kansas-city/tithely-alternative",
   },
@@ -92,7 +92,7 @@ export default function KansasCityTithelyAlternative() {
                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500/90 font-mono">Kansas City</span>
               </div>
               <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold tracking-tight mb-8 text-white">
-                Tithe.ly Alternative for <span className="text-wgc-gold-500 italic">Kansas City Churches & 501(c) Organizations</span>
+                Donation Platform Alternative for <span className="text-wgc-gold-500 italic">Kansas City Nonprofits & Churches</span>
               </h1>
               <p className="text-lg sm:text-xl font-medium leading-relaxed mb-12 text-white/70 max-w-2xl mx-auto">
                 Discover why growing KC ministries, other 501(c) organizations, and church software platforms are choosing WGC's transparent infrastructure over traditional giving platforms.

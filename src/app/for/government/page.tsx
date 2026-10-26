@@ -3,11 +3,11 @@ import { Landmark, Repeat, ShieldCheck, LayoutDashboard, Building2, FileCheck } 
 import AudienceLandingPage, { type AudienceLandingContent } from "@/components/marketing/AudienceLandingPage";
 
 export const metadata: Metadata = {
-  title: "Donation Processing for Government-Affiliated Foundations & Public Programs",
+  title: "Public-Sector Donation & Payment Processing | WGC",
   description: "Payment processing for parks and library foundations, community funds, and other government-affiliated charitable programs — transparent reporting, low-cost ACH, and public-trust-ready accountability.",
   openGraph: {
     images: [{ url: "/og/verticals.png", width: 1200, height: 630 }],
-    title: "Donation Processing for Government-Affiliated Foundations & Public Programs",
+    title: "Public-Sector Donation & Payment Processing | WGC",
     description: "Transparent reporting, low-cost ACH, and public-trust-ready accountability for government-affiliated charitable programs.",
     url: "https://www.wgcpayments.com/for/government",
   },
@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 
 const content: AudienceLandingContent = {
   eyebrow: "For Government & Public Sector",
-  headline: "Public giving that",
-  headlineAccent: "holds up to scrutiny",
+  headline: "Public-sector donation and",
+  headlineAccent: "payment processing",
   intro: "From park and library foundations to disaster-relief and community funds, WGC Payments helps government-affiliated charitable programs accept public donations online — with the transparent reporting public accountability requires.",
   whoWeServeTitle: "Built for public-sector giving programs",
   whoWeServe: [

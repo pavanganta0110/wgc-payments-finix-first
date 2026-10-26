@@ -7,11 +7,11 @@ import { BookOpen, Newspaper, Shield, CreditCard, HeartHandshake, ArrowRight } f
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "WGC Research Center | Church & Nonprofit Payment Guides",
-  description: "In-depth guides on church and 501(c) payment processing: processor comparisons, fee breakdowns, and white-label implementation for nonprofit software.",
+  title: "Nonprofit Payment Processing & Fundraising Guides | WGC",
+  description: "In-depth guides on nonprofit payment processing and fundraising: processor comparisons, fee breakdowns, and white-label implementation for nonprofit software.",
   alternates: { canonical: "/resources" },
   openGraph: {
-    images: [{ url: "/og/resources.png", width: 1200, height: 630 }], title: "WGC Research Center | Church & Nonprofit Payment Guides", description: "In-depth guides on church and 501(c) payment processing: processor comparisons, fee breakdowns, and white-label implementation for nonprofit software.", url: "https://www.wgcpayments.com/resources" },
+    images: [{ url: "/og/resources.png", width: 1200, height: 630 }], title: "Nonprofit Payment Processing & Fundraising Guides | WGC", description: "In-depth guides on nonprofit payment processing and fundraising: processor comparisons, fee breakdowns, and white-label implementation for nonprofit software.", url: "https://www.wgcpayments.com/resources" },
 };
 
 const RESOURCES = [
@@ -68,7 +68,7 @@ export default function ResourcesPage() {
                 <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-wgc-gold-500/90">WGC Knowledge Base</span>
               </div>
               <h1 className="text-4xl sm:text-6xl font-bold tracking-tight leading-[1.05] mb-6 text-wgc-navy-900">
-                Stewardship <span className="text-wgc-gold-500">Resources</span>
+                Nonprofit payment processing <span className="text-wgc-gold-500">&amp; fundraising guides</span>
               </h1>
               <p className="text-xl font-medium leading-relaxed max-w-2xl mx-auto text-wgc-navy-200 tracking-tight opacity-90">
                 Insights, guides, and technical briefings for church and 501(c) organization software partners and ministry leaders.

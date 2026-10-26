@@ -9,12 +9,12 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/how-it-works" },
-  title: "How WGC Works | White-Label Payment Infrastructure",
-  description: "See how WGC handles gateway orchestration, settlement, and compliance behind your brand — from donor donation page to payout, fully managed.",
+  title: "How Nonprofit Payment Processing Works | WGC",
+  description: "See how nonprofit payment processing works with WGC: gateway orchestration, settlement, and compliance behind your brand — from donor donation page to payout, fully managed.",
   openGraph: {
     images: [{ url: "/og/default.png", width: 1200, height: 630 }],
-    title: "How WGC Works | White-Label Payment Infrastructure",
-    description: "See how WGC handles gateway orchestration, settlement, and compliance behind your brand — from donor donation page to payout, fully managed.",
+    title: "How Nonprofit Payment Processing Works | WGC",
+    description: "See how nonprofit payment processing works with WGC: gateway orchestration, settlement, and compliance behind your brand — from donor donation page to payout, fully managed.",
     url: "https://www.wgcpayments.com/how-it-works",
   },
 };
@@ -53,7 +53,7 @@ export default function HowItWorksPage() {
                   <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-wgc-gold-500/90">Platform Architecture</span>
                 </div>
                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05] mb-6 text-slate-50">
-                  Invisible infrastructure.<br /><span className="text-wgc-gold-500">Powerful results.</span>
+                  How nonprofit payment processing <span className="text-wgc-gold-500">works with WGC</span>
                 </h1>
                 <p className="text-lg font-medium leading-relaxed mb-10 text-wgc-navy-500 tracking-tight">
                   WGC sits directly between your software and the banking system, allowing you to build the ideal giving experience while we handle the complexity of money movement.

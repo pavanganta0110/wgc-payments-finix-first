@@ -116,8 +116,8 @@ export default function DemoPage() {
                   Interactive Deployment Environment
                 </div>
                 <h1 className="text-5xl sm:text-6xl font-bold text-wgc-navy-900 tracking-tight mb-8 leading-tight">
-                  Experience the <br />
-                  <span className="text-wgc-gold-500 italic">WGC Infrastructure</span>
+                  See the nonprofit <br />
+                  <span className="text-wgc-gold-500 italic">donation platform in action</span>
                 </h1>
                 <p className="text-wgc-navy-500 text-xl font-medium leading-relaxed tracking-tight opacity-90">
                   See how our white-label giving experience embeds seamlessly into your software, maintaining full brand integrity.

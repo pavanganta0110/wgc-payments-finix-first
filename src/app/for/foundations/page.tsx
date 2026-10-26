@@ -3,11 +3,11 @@ import { Landmark, Repeat, BarChart3, FileText, Users, ShieldCheck } from "lucid
 import AudienceLandingPage, { type AudienceLandingContent } from "@/components/marketing/AudienceLandingPage";
 
 export const metadata: Metadata = {
-  title: "Giving & Grant Reporting Software for Foundations | WGC Payments",
+  title: "Donation Processing & Fund Reporting for Foundations | WGC",
   description: "Recurring giving, multi-fund tracking, and grant-ready reporting in one platform. Payment processing built for private and community foundations — with low-cost ACH and card processing.",
   openGraph: {
     images: [{ url: "/og/verticals.png", width: 1200, height: 630 }],
-    title: "Giving & Grant Reporting Software for Foundations | WGC Payments",
+    title: "Donation Processing & Fund Reporting for Foundations | WGC",
     description: "Recurring giving, multi-fund tracking, and grant-ready reporting in one platform — built for foundations.",
     url: "https://www.wgcpayments.com/for/foundations",
   },
@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 
 const content: AudienceLandingContent = {
   eyebrow: "For Foundations",
-  headline: "Giving and reporting,",
-  headlineAccent: "built for foundations",
+  headline: "Donation processing and fund reporting",
+  headlineAccent: "for foundations",
   intro: "WGC brings donor management, recurring giving, multi-fund tracking, and grant-ready reporting into one platform — so your foundation spends less time on administration and more time on grantmaking and impact.",
   whoWeServeTitle: "Built for foundations of every kind",
   whoWeServe: [

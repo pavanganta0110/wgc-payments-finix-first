@@ -169,7 +169,7 @@ export default function FeaturesPage() {
                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500/90 font-mono">Everything WGC Provides</span>
               </div>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6 !text-white">
-                One platform for payments, supporters, and financial operations
+                Nonprofit fundraising software: donations, donors, and reporting in one platform
               </h1>
               <p className="text-lg sm:text-xl font-medium leading-relaxed text-white/70 max-w-2xl mx-auto tracking-tight">
                 Every feature WGC provides, organized by category — so you can see exactly what&apos;s included before you switch.

@@ -8,12 +8,12 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/contact" },
-  title: "Contact WGC | Talk to Our Payments Team",
-  description: "Get in touch with WGC to discuss embedded payments, partnerships, or onboarding for your church, nonprofit, or other 501(c) organization software platform.",
+  title: "Contact WGC | Nonprofit Payments & Fundraising Platform",
+  description: "Talk to WGC about nonprofit payment processing, embedded payments, partnerships, or onboarding for your nonprofit, church, or other 501(c) organization.",
   openGraph: {
     images: [{ url: "/og/default.png", width: 1200, height: 630 }],
-    title: "Contact WGC | Talk to Our Payments Team",
-    description: "Get in touch with WGC to discuss embedded payments, partnerships, or onboarding for your church, nonprofit, or other 501(c) organization software platform.",
+    title: "Contact WGC | Nonprofit Payments & Fundraising Platform",
+    description: "Talk to WGC about nonprofit payment processing, embedded payments, partnerships, or onboarding for your nonprofit, church, or other 501(c) organization.",
     url: "https://www.wgcpayments.com/contact",
   },
 };
@@ -43,7 +43,7 @@ export default function ContactPage() {
                 <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-wgc-gold-500/90 font-mono">Establish a Partnership</span>
               </div>
               <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight mb-6 text-wgc-navy-900">
-                Let&apos;s <span className="text-wgc-gold-500">talk.</span>
+                Talk to WGC about <span className="text-wgc-gold-500">nonprofit payments.</span>
               </h1>
               <p className="text-xl font-medium leading-relaxed max-w-2xl mx-auto text-wgc-navy-500 tracking-tight">
                 See how WGC can serve your software and the churches and other 501(c) organizations you support with a standard of excellence.
