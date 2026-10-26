@@ -47,10 +47,21 @@ export async function handleWgcSubscriptionWebhookEvent(eventType: string, data:
   const idempotencyKey = buildIdempotencyKey(subscription.organizationId, "WGC_PLATFORM_SUBSCRIPTION", finixTransferId || billingPeriod);
 
   const existingCharge = await prisma.billingCharge.findUnique({ where: { idempotencyKey } });
-  if (existingCharge) return true; // already processed — duplicate/out-of-order webhook
 
   const church = await prisma.church.findUnique({ where: { id: subscription.organizationId }, select: { name: true, primaryContactEmail: true } });
   const billingAccount = await prisma.wgcBillingAccount.findUnique({ where: { organizationId: subscription.organizationId } });
+
+  if (existingCharge) {
+    // Duplicate/out-of-order webhook: state was already applied, so skip it.
+    // But the charge row is written BEFORE the receipt is sent, so a prior
+    // delivery that recorded the charge and then failed to email would
+    // otherwise never be retried. sendIdempotentBillingEmail is keyed on the
+    // charge, so this is a no-op when the receipt already went out.
+    if (existingCharge.status === "SUCCEEDED" && succeeded) {
+      await sendReceiptForCharge({ subscription, church, billingAccount, finixTransferId, idempotencyKey, amountCents });
+    }
+    return true;
+  }
 
   await prisma.billingCharge.create({
     data: {
@@ -84,17 +95,7 @@ export async function handleWgcSubscriptionWebhookEvent(eventType: string, data:
       entityType: "BillingCharge",
       metadata: { finixTransferId, amountCents },
     });
-    if (church?.primaryContactEmail) {
-      await sendPaymentReceiptEmail({
-        organizationId: subscription.organizationId,
-        organizationName: church.name,
-        recipientEmail: church.primaryContactEmail,
-        chargeId: finixTransferId || idempotencyKey,
-        amountCents,
-        chargedAt: new Date(),
-        maskedBillingMethod: billingAccount?.maskedBillingDetails || "On file",
-      });
-    }
+    await sendReceiptForCharge({ subscription, church, billingAccount, finixTransferId, idempotencyKey, amountCents });
   } else {
     // Configurable grace period — see WGC_BILLING_GRACE_PERIOD_DAYS.
     // Default 14 days; a real admin-configurable value belongs in the
@@ -127,4 +128,37 @@ export async function handleWgcSubscriptionWebhookEvent(eventType: string, data:
   }
 
   return true;
+}
+
+/**
+ * Emails the monthly-subscription receipt. Never throws: the charge is already
+ * recorded, so an email problem must not fail the webhook, and it is retried
+ * on the next delivery for the same charge (see the existingCharge branch).
+ */
+async function sendReceiptForCharge(params: {
+  subscription: { organizationId: string };
+  church: { name: string; primaryContactEmail: string | null } | null;
+  billingAccount: { maskedBillingDetails: string | null } | null;
+  finixTransferId: string | undefined;
+  idempotencyKey: string;
+  amountCents: number;
+}) {
+  const { subscription, church, billingAccount, finixTransferId, idempotencyKey, amountCents } = params;
+  if (!church?.primaryContactEmail) {
+    console.error(`[wgc-billing] No primaryContactEmail for organization ${subscription.organizationId}; subscription receipt not sent (charge ${finixTransferId || idempotencyKey}).`);
+    return;
+  }
+  try {
+    await sendPaymentReceiptEmail({
+      organizationId: subscription.organizationId,
+      organizationName: church.name,
+      recipientEmail: church.primaryContactEmail,
+      chargeId: finixTransferId || idempotencyKey,
+      amountCents,
+      chargedAt: new Date(),
+      maskedBillingMethod: billingAccount?.maskedBillingDetails || "On file",
+    });
+  } catch (err) {
+    console.error(`[wgc-billing] Subscription receipt email failed for organization ${subscription.organizationId}:`, err);
+  }
 }

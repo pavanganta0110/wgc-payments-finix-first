@@ -232,6 +232,7 @@ export async function sendPaymentReceiptEmail(params: {
       <p><strong>Amount:</strong> ${formatCents(params.amountCents)}<br/>
       <strong>Date:</strong> ${params.chargedAt.toLocaleDateString()}<br/>
       <strong>Billing method:</strong> ${params.maskedBillingMethod}</p>
+      <p>Thank you for being a part of WGC Payments. We're grateful to serve ${params.organizationName} and the work you do in your community.</p>
       ${SUPPORT_LINK}
     `,
   });

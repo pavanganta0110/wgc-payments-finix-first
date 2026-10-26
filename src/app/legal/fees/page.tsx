@@ -47,6 +47,7 @@ export default function FeesPage() {
                 <h3 className="text-xl font-bold text-wgc-navy-900 mb-2">Card Donations</h3>
                 <p className="text-3xl font-black text-wgc-navy-900 tracking-tight mb-2">up to 2.3%<span className="text-lg text-slate-400 font-medium ml-1">+ $0.25</span></p>
                 <p className="text-sm text-slate-500">per transaction</p>
+                <p className="text-sm font-semibold text-wgc-navy-900 mt-3">+ 0.1% additional for recurring donations</p>
                 <p className="text-[11px] text-slate-400 mt-3 border-t border-slate-200/50 pt-2 font-medium">American Express (AMEX) cards are processed at 3.5% + $0.25</p>
               </div>
 
@@ -57,6 +58,7 @@ export default function FeesPage() {
                 <h3 className="text-xl font-bold text-wgc-navy-900 mb-2">ACH / eCheck Donations</h3>
                 <p className="text-3xl font-black text-wgc-navy-900 tracking-tight mb-2">$0.25</p>
                 <p className="text-sm text-slate-500">flat per transfer</p>
+                <p className="text-sm font-semibold text-wgc-navy-900 mt-3">+ 0.1% additional for recurring donations</p>
               </div>
             </div>
 
@@ -69,6 +71,10 @@ export default function FeesPage() {
                  <p className="text-slate-600 font-medium">$10 per month per active merchant.</p>
                </div>
             </div>
+
+            <p className="text-sm">
+              <a href="#common-fees" className="text-wgc-navy-600 font-bold hover:underline">View Common Fees</a> (disputes, ACH returns, reversals, and other operational fees) below.
+            </p>
 
             <p>
               These rates may vary by church/nonprofit/501(c) organization/client agreement, transaction type, payment method, processing configuration, and volume. As volume and processing efficiency increase, pricing may be reduced. Fees are not increased without prior notice or agreement.
@@ -88,7 +94,7 @@ export default function FeesPage() {
             
             <hr className="my-10 border-slate-100" />
             
-            <div className="bg-slate-50 rounded-xl p-6 text-sm text-slate-500">
+            <div id="common-fees" className="bg-slate-50 rounded-xl p-6 text-sm text-slate-500 scroll-mt-24">
               <h4 className="font-bold text-slate-700 mb-2">Common Operational Fees (Standard)</h4>
               <ul className="space-y-2">
                 <li className="flex items-center gap-2"><RotateCcw className="w-4 h-4 text-slate-400" /> <strong>Disputes / Chargebacks:</strong> $15.00 per instance</li>
