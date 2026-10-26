@@ -11,11 +11,11 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/pricing" },
-  title: "Nonprofit Payment Processing Pricing | $0 Processing Cost | WGC",
+  title: "Nonprofit Payment Processing Fees & Pricing | $10/Month | WGC",
   description: "$0 processing cost to your organization when supporters cover the fee. A simple $10/month platform fee includes supporter management, recurring giving, reporting, settlements, refunds, statements, and team accounts.",
   openGraph: {
     images: [{ url: "/og/pricing.png", width: 1200, height: 630 }],
-    title: "Nonprofit Payment Processing Pricing | $0 Processing Cost | WGC",
+    title: "Nonprofit Payment Processing Fees & Pricing | $10/Month | WGC",
     description: "$0 processing cost to your organization when supporters cover the fee. The $10/month platform fee includes the full WGC dashboard.",
     url: "https://www.wgcpayments.com/pricing",
   },
@@ -72,7 +72,7 @@ export default function PricingPage() {
                   <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-navy-950 font-mono">Mission Focused Pricing</span>
                 </div>
                 <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05] mb-8 text-wgc-navy-950">
-                  Nonprofit payment processing with <span className="text-wgc-gold-600 italic">$0</span> processing cost to your organization.
+                  Nonprofit Payment Processing Pricing: <span className="text-wgc-gold-600 italic">$0</span> When Donors Cover Fees
                 </h1>
                 <p className="text-lg sm:text-xl font-medium leading-relaxed mb-4 text-wgc-navy-500 max-w-2xl tracking-tight opacity-80">
                   By default supporters have the opportunity to cover the fees so more of every gift goes straight to your mission at no cost to your organization. Prefer your organization to absorb the fee instead? We show that rate too, clearly, below.
