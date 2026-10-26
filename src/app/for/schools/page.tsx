@@ -3,11 +3,11 @@ import { GraduationCap, Repeat, ShieldCheck, LayoutDashboard, Users, Award } fro
 import AudienceLandingPage, { type AudienceLandingContent } from "@/components/marketing/AudienceLandingPage";
 
 export const metadata: Metadata = {
-  title: "School Fundraising & Tuition Assistance Payment Software | WGC Payments",
+  title: "School Fundraising & Tuition Payment Processing | WGC",
   description: "Accept annual fund gifts, tuition assistance donations, and capital campaign pledges online. Payment processing built for private, religious, and nonprofit schools — with low-cost ACH and card processing.",
   openGraph: {
     images: [{ url: "/og/verticals.png", width: 1200, height: 630 }],
-    title: "School Fundraising & Tuition Assistance Payment Software | WGC Payments",
+    title: "School Fundraising & Tuition Payment Processing | WGC",
     description: "Accept annual fund gifts, tuition assistance donations, and capital campaign pledges online — built for private, religious, and nonprofit schools.",
     url: "https://www.wgcpayments.com/for/schools",
   },
@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 
 const content: AudienceLandingContent = {
   eyebrow: "For Schools",
-  headline: "Fundraising that fits",
-  headlineAccent: "your school year",
+  headline: "School fundraising and",
+  headlineAccent: "tuition payment processing",
   intro: "From the annual fund to tuition-assistance drives, capital campaigns, and class-specific fundraisers, WGC Payments gives your school a reliable way to collect gifts online — with low-cost ACH and card processing.",
   whoWeServeTitle: "Built for school communities",
   whoWeServe: [

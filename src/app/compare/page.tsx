@@ -9,11 +9,11 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/compare" },
-  title: "WGC vs. Tithe.ly, Pushpay, Givebutter & More | Platform Comparison",
+  title: "Best Nonprofit Fundraising Platforms Compared (2026) | WGC",
   description: "See how WGC's card rate, ACH rate, and monthly platform fee compare to Tithe.ly, Pushpay, Givebutter, Subsplash, Givelify, Donorbox, Planning Center Giving, Vanco, and Breeze ChMS — and how much more of every gift reaches the people your organization serves.",
   openGraph: {
     images: [{ url: "/og/default.png", width: 1200, height: 630 }],
-    title: "WGC vs. Tithe.ly, Pushpay, Givebutter & More | Platform Comparison",
+    title: "Best Nonprofit Fundraising Platforms Compared (2026) | WGC",
     description: "A side-by-side look at card rates, ACH rates, and monthly platform fees across 9 church and nonprofit giving platforms — and what a lower fee means for the mission.",
     url: "https://www.wgcpayments.com/compare",
   },
@@ -186,7 +186,7 @@ export default function ComparePage() {
                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500/90 font-mono">Platform Comparison</span>
               </div>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6 !text-white">
-                WGC vs. 9 other giving platforms
+                Best nonprofit fundraising platforms compared (2026)
               </h1>
               <p className="text-lg sm:text-xl font-medium leading-relaxed text-white/70 max-w-2xl mx-auto tracking-tight mb-10">
                 Card rate, ACH rate, and monthly platform fee — side by side, with sources, so you can see exactly where WGC stands before you switch.

@@ -87,7 +87,7 @@ export default function SwitchPage() {
                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500/90 font-mono">Nonprofit Platform Migration</span>
               </div>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6 !text-white">
-                Switch to WGC without starting over
+                Switch donation platforms without losing your donors or recurring gifts
               </h1>
               <p className="text-lg sm:text-xl font-medium leading-relaxed text-white/70 max-w-2xl mx-auto tracking-tight mb-10">
                 Bring your donors, giving history, funds, contacts, and organization data with you. WGC helps make moving from your existing fundraising or payment platform easier.

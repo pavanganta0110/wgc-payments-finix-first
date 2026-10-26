@@ -132,7 +132,7 @@ export default function SixMonthsFreePage() {
 
           <div className="hero-content">
             <span className="eyebrow">90 days free</span>
-            <h1>90 Days Free on WGC Payments</h1>
+            <h1>Free donation platform for nonprofits: 90 days on us</h1>
             <p className="lede">Start accepting donations, recurring gifts, and make a bigger mission impact today. Your WGC Platform subscription is completely free for your first 90 days.</p>
             <div className="cta-row">
               <SixMonthsFreeStartButton className="btn-primary btn-wide">

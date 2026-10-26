@@ -60,7 +60,7 @@ export default function DevelopersPage() {
                   <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-wgc-gold-500/90 font-mono">For Software Partners</span>
                 </div>
                 <h1 className="text-5xl sm:text-6xl font-bold text-wgc-navy-900 mb-6 tracking-tight leading-tight">
-                  WGC Platform<br /><span className="text-wgc-gold-500">Architecture</span>
+                  Payments API for <br /><span className="text-wgc-gold-500">nonprofit &amp; fundraising software</span>
                 </h1>
                 <p className="text-xl font-medium leading-relaxed mb-10 text-wgc-navy-500 tracking-tight">
                   Payment infrastructure for nonprofit and 501(c) organization software. Today, we integrate approved software partners through a guided, hands-on process — self-serve API access is on our roadmap.

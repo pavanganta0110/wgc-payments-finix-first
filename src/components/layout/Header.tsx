@@ -18,7 +18,7 @@ const PRODUCT_LINKS = [
 ];
 
 const SOLUTIONS_LINKS = [
-  { name: "Nonprofits", href: "/for/christian-nonprofits" },
+  { name: "Nonprofits", href: "/for/nonprofits" },
   { name: "Churches & Ministries", href: "/for/churches" },
   { name: "Schools & Booster Clubs", href: "/for/schools" },
   { name: "Foundations", href: "/for/foundations" },
@@ -244,7 +244,7 @@ export default function Header() {
               onClick={closeMenu}
               className="w-full flex items-center justify-center px-6 py-4 metallic-gold rounded-xl text-[12px] font-bold text-wgc-navy-950 shadow-lg tracking-wide transition-all active:scale-95"
             >
-              Request Connection
+              Get Started
             </Link>
           </div>
         </div>

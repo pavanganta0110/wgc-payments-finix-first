@@ -29,7 +29,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const competitor = getCompetitor(slug);
   if (!competitor) return {};
 
-  const title = `WGC vs. ${competitor.name} | Church & Nonprofit Giving Platform Comparison`;
+  const title = `${competitor.name} Alternative for Nonprofits: WGC vs. ${competitor.name}`;
   const description = `Compare WGC's card rate, ACH rate, and monthly platform fee against ${competitor.name} — ${competitor.tagline}`;
 
   return {
@@ -92,7 +92,7 @@ export default async function CompetitorComparePage({ params }: { params: Promis
                 </span>
               </div>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6 !text-white">
-                WGC vs. {competitor.name}
+                {competitor.name} alternative for nonprofits: WGC vs. {competitor.name}
               </h1>
               <p className="text-lg sm:text-xl font-medium leading-relaxed text-white/70 max-w-2xl mx-auto tracking-tight mb-10">
                 {competitor.tagline}

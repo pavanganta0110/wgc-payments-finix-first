@@ -7,12 +7,12 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/about" },
-  title: "About WGC | Giving & Payments for Mission-Driven Organizations",
-  description: "Learn why WGC exists — a giving and payment management platform helping nonprofits, churches, foundations, associations, and other mission-driven organizations steward resources better, with infrastructure for the software platforms that serve them too.",
+  title: "About WGC | A Better Payment Processor for Nonprofits",
+  description: "Learn why we built a better payment processor for nonprofits — a giving and payment management platform helping nonprofits, foundations, associations, schools, churches, and other mission-driven organizations steward resources better, with infrastructure for the software platforms that serve them too.",
   openGraph: {
     images: [{ url: "/og/default.png", width: 1200, height: 630 }],
-    title: "About WGC | Giving & Payments for Mission-Driven Organizations",
-    description: "Learn why WGC exists — a giving and payment management platform for mission-driven organizations, with infrastructure for the software platforms that serve them too.",
+    title: "About WGC | A Better Payment Processor for Nonprofits",
+    description: "Learn why we built a better payment processor for nonprofits — a giving and payment management platform for mission-driven organizations, with infrastructure for the software platforms that serve them too.",
     url: "https://www.wgcpayments.com/about",
   },
 };
@@ -60,7 +60,7 @@ export default function AboutPage() {
                 <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-wgc-gold-500/90 font-mono">Our Foundation</span>
               </div>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05] mb-6 text-wgc-navy-900">
-                Why WGC <span className="text-wgc-gold-500">exists</span>
+                Why we built a better payment processor <span className="text-wgc-gold-500">for nonprofits</span>
               </h1>
               <p className="text-xl font-medium leading-relaxed max-w-2xl mx-auto text-wgc-navy-500 tracking-tight">
                 WGC serves mission-driven organizations directly through our platform, and also provides payment infrastructure for the software platforms that serve them.

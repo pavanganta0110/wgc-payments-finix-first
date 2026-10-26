@@ -30,7 +30,7 @@ export default function Footer() {
               <ul role="list" className="space-y-6">
                 <FooterLink href="/">Home</FooterLink>
                 <FooterLink href="/software-partners">Partners</FooterLink>
-                <FooterLink href="/developers">Api Reference</FooterLink>
+                <FooterLink href="/developers">API Reference</FooterLink>
                 <FooterLink href="/how-it-works">How it Works</FooterLink>
                 <FooterLink href="/pricing">Fee Structure</FooterLink>
                 <FooterLink href="/compare">Compare Platforms</FooterLink>
@@ -64,7 +64,7 @@ export default function Footer() {
               <ul role="list" className="space-y-6">
                 <FooterLink href="/about">Our Story</FooterLink>
                 <FooterLink href="/contact">Support</FooterLink>
-                <FooterLink href="/legal/terms">Governance</FooterLink>
+                <FooterLink href="/legal/compliance">Governance</FooterLink>
               </ul>
             </div>
             <div>

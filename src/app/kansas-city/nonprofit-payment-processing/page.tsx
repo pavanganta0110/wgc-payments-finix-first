@@ -8,7 +8,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/kansas-city/nonprofit-payment-processing" },
-  title: "Nonprofit & 501(c) Organization Payment Processing in Kansas City, MO | WGC",
+  title: "Nonprofit Payment Processing in Kansas City, MO | WGC",
   description: "Secure, low-cost nonprofit and 501(c) organization payment processing in Kansas City, MO. Maximize your charitable donations with WGC's white-label infrastructure and 25¢ ACH.",
   openGraph: {
     images: [{ url: "/og/kansas-city.png", width: 1200, height: 630 }],

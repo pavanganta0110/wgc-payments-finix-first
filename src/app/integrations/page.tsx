@@ -98,7 +98,7 @@ export default function IntegrationsPage() {
                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-wgc-gold-500/90 font-mono">Integrations</span>
               </div>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6 !text-white">
-                Connects to the tools you already use
+                Nonprofit software integrations: QuickBooks, Aplos & more
               </h1>
               <p className="text-lg sm:text-xl font-medium leading-relaxed text-white/70 max-w-2xl mx-auto tracking-tight">
                 WGC is built specifically for nonprofits, so your organization doesn&apos;t have to assemble fundraising, donor management, and payment tools yourself.

@@ -10,11 +10,11 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/software-partners" },
-  title: "Payment Infrastructure for Software Platforms | WGC for Partners",
+  title: "White-Label Payment Processing for Nonprofit Software | WGC",
   description: "WGC serves mission-driven organizations directly through our platform, and also provides embedded payment infrastructure — onboarding, payments, and recurring giving — for software companies serving nonprofits, churches, and other 501(c) organizations.",
   openGraph: {
     images: [{ url: "/og/default.png", width: 1200, height: 630 }],
-    title: "Payment Infrastructure for Software Platforms | WGC for Partners",
+    title: "White-Label Payment Processing for Nonprofit Software | WGC",
     description: "WGC serves organizations directly, and also provides embedded payment infrastructure for software platforms serving nonprofits, churches, and other mission-driven organizations.",
     url: "https://www.wgcpayments.com/software-partners",
   },
@@ -79,7 +79,7 @@ export default function SoftwarePartnersPage() {
                   <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-wgc-gold-500/90">For Software Platforms</span>
                 </div>
                 <h1 className="text-5xl sm:text-6xl font-bold tracking-tight leading-[1.05] mb-6 text-wgc-navy-900">
-                  Payment infrastructure for <br /><span className="text-wgc-gold-500">software platforms.</span>
+                  White-label payment processing for <br /><span className="text-wgc-gold-500">nonprofit software.</span>
                 </h1>
                 <p className="text-xl font-medium leading-relaxed mb-6 text-wgc-navy-500 tracking-tight">
                   Integrate giving, recurring payments, ACH, and payouts directly into your platform — fully white-labeled.
