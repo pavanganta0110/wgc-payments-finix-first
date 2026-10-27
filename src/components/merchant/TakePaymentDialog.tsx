@@ -127,7 +127,19 @@ export default function TakePaymentDialog({
     setSubmitting(true);
 
     try {
-      const fraudSessionId = await getFraudSessionId(finixMerchantId);
+      // getFraudSessionId has no internal timeout, and Finix.Auth's callback
+      // never fires for bank/ACH — skip it there, and race it elsewhere so a
+      // stall (e.g. Sift blocked by an ad blocker) becomes a visible error
+      // instead of an endless "Processing…".
+      const fraudSessionId =
+        paymentMethod === "bank"
+          ? ""
+          : await Promise.race([
+              getFraudSessionId(finixMerchantId),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error("Fraud check timed out. Disable ad/tracker blockers for this site and try again.")), 10000),
+              ),
+            ]);
 
       const tokenPromise = new Promise<{ tokenId: string; instrumentType: string }>((resolve, reject) => {
         formInstanceRef.current!.submit((error, response) => {
@@ -139,9 +151,17 @@ export default function TakePaymentDialog({
         });
       });
 
-      const { tokenId } = await tokenPromise;
+      // Same failure mode as the fraud session: if Finix's form never calls
+      // back, the dialog would sit on "Processing…" forever.
+      const { tokenId } = await Promise.race([
+        tokenPromise,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Card tokenization timed out. Please re-enter the card details and try again.")), 20000),
+        ),
+      ]);
 
       const res = await fetch("/api/merchant/transactions/payments/take-payment", {
+        signal: AbortSignal.timeout(60000),
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -173,7 +193,11 @@ export default function TakePaymentDialog({
       setResult({ success: true, transferId: data.transferId, state: data.state });
       setStep("result");
     } catch (err: any) {
-      setResult({ success: false, error: err?.message || "Payment could not be processed" });
+      console.error("[take-payment] failed:", err);
+      setResult({
+        success: false,
+        error: err?.name === "TimeoutError" ? "The payment request timed out. Check the Payments list before retrying." : err?.message || "Payment could not be processed",
+      });
       setStep("result");
     } finally {
       setSubmitting(false);
@@ -197,8 +221,11 @@ export default function TakePaymentDialog({
           </button>
         </div>
 
-        {step === "form" && (
-          <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+        {/* Always mounted (just hidden on other steps): the Finix card form is an
+            iframe mounted once on load, and removing its container on the review
+            step destroyed it, so submit() never called back ("tokenization timed
+            out") and Back showed an empty form. */}
+        <div className={step === "form" ? "px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto" : "hidden"}>
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1.5">Amount ($) *</label>
               <input
@@ -423,8 +450,7 @@ export default function TakePaymentDialog({
             >
               Continue to Review
             </button>
-          </div>
-        )}
+        </div>
 
         {step === "review" && (
           <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
