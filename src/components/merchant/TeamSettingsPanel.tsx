@@ -52,7 +52,8 @@ export default function TeamSettingsPanel({
 }) {
   const [members, setMembers] = useState<Member[]>(initialMembers);
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<(typeof INVITABLE_ROLES)[number]>("fundraiser");
+  // "checkin" is a preset (viewer role + two event permissions), not a role string.
+  const [inviteRole, setInviteRole] = useState<(typeof INVITABLE_ROLES)[number] | "checkin">("fundraiser");
   const [inviting, setInviting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -80,13 +81,13 @@ export default function TeamSettingsPanel({
       const res = await fetch("/api/merchant/settings/team", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, role: inviteRole }),
+        body: JSON.stringify(inviteRole === "checkin" ? { email, preset: "checkin" } : { email, role: inviteRole }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send invitation");
-      setMembers((prev) => [...prev, { ...data.member, isSelf: false, isPrimaryOwner: false, permissionOverrides: {} }]);
+      setMembers((prev) => [...prev, { ...data.member, isSelf: false, isPrimaryOwner: false, permissionOverrides: data.member.permissionOverrides ?? {} }]);
       setInviteEmail("");
-      toast.success(`Invitation sent to ${email} as ${ROLE_LABELS[inviteRole]}`);
+      toast.success(`Invitation sent to ${email} as ${inviteRole === "checkin" ? "Door check-in" : ROLE_LABELS[inviteRole]}`);
     } catch (err: any) {
       toast.error(err.message || "Failed to send invitation");
     } finally {
@@ -210,6 +211,7 @@ export default function TeamSettingsPanel({
             {INVITABLE_ROLES.map((r) => (
               <option key={r} value={r}>{ROLE_LABELS[r]}</option>
             ))}
+            <option value="checkin">Door check-in only</option>
           </select>
           <button
             onClick={invite}
