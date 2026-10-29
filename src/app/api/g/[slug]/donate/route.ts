@@ -24,6 +24,7 @@ import { normalizeEmail } from "@/lib/donors/donorContact";
 import { emitEvent } from "@/lib/events/emitEvent";
 import { withLedgerRow } from "@/lib/ledger/loadLedger";
 import { raisePossibleMatchForNewDonor } from "@/lib/donors/resolveOrCreateDonorWithMatchReview";
+import { cleanSalutation } from "@/lib/donors/salutation";
 import { applyOrgAddressRequirement } from "@/lib/givingLinks/addressRequirement";
 import { resolveEmbedCorsOrigin, embedCorsHeaders, embedPreflightResponse } from "@/lib/giving/embedCors";
 import { assertNonprofitApproved } from "@/lib/onboarding/nonprofitVerificationGuard";
@@ -294,6 +295,12 @@ async function handleDonate(req: Request, slug: string) {
       [donor?.firstName, donor?.lastName].filter(Boolean).join(" ").trim() ||
       donor?.name?.trim() ||
       (isWallet ? walletBillingContact?.name?.trim() : undefined);
+    // Salutation is only read when the link shows the field, and only enforced
+    // here (not just client-side) when the link marks it required.
+    const salutation = fieldSettings.salutation !== "HIDDEN" ? cleanSalutation(donor?.salutation) : null;
+    if (fieldSettings.salutation === "REQUIRED" && !salutation) {
+      return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Salutation is required", retryable: true }, { status: 400 });
+    }
     if (fieldSettings.firstName === "REQUIRED" || fieldSettings.lastName === "REQUIRED" || fieldSettings.email === "REQUIRED") {
       if (!fullName) {
         return NextResponse.json({ success: false, code: "VALIDATION_ERROR", message: "Name is required", retryable: true }, { status: 400 });
@@ -417,6 +424,7 @@ async function handleDonate(req: Request, slug: string) {
         email: donor.email,
         phone: donor.phone || null,
         companyName: fieldSettings.companyName !== "HIDDEN" ? donor.companyName?.trim() || null : null,
+        salutation,
       });
       try {
         if (donorRecord.created) await emitEvent({ type: "donor.created", churchId: church.id, data: { donorId: donorRecord.id } });
@@ -553,6 +561,7 @@ async function handleDonate(req: Request, slug: string) {
         email: donor.email,
         phone: donor.phone || null,
         companyName: fieldSettings.companyName !== "HIDDEN" ? donor.companyName?.trim() || null : null,
+        salutation,
       });
       try {
         if (donorRecord.created) await emitEvent({ type: "donor.created", churchId: church.id, data: { donorId: donorRecord.id } });
