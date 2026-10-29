@@ -65,6 +65,8 @@ export interface NavAccess {
   /** Mirrors the take-payment API: every role except VIEWER. */
   canTakePayment: boolean;
   canViewFunds: boolean;
+  /** False for an organization that is billed through a partner: it has no WGC plan to show. */
+  canViewBillingPlan: boolean;
 }
 
 /** Shared by the desktop and mobile sidebars. */
@@ -167,7 +169,7 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   { name: "Email Logs", href: "/merchant/email-logs", icon: Mail, section: "Back Office" },
-  { name: "Billing Plan", href: "/merchant/subscription", icon: CreditCard, organizationOnly: true, section: "Organization" },
+  { name: "Billing Plan", href: "/merchant/subscription", icon: CreditCard, organizationOnly: true, section: "Organization", access: "canViewBillingPlan" },
   { name: "Compliance", href: "/merchant/compliance", icon: ShieldCheck, organizationOnly: true, section: "Organization" },
   { name: "Team", href: "/merchant/settings/team", icon: Users, organizationOnly: true, section: "Organization" },
   { name: "Settings", href: "/merchant/settings", icon: Settings, organizationOnly: true, section: "Organization" },
