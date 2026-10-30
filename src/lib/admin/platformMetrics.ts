@@ -110,7 +110,7 @@ export const SUCCESSFUL_CHARGE_WHERE = Prisma.sql`
  * churchId — it must never count toward platform volume. Those rows are
  * reported separately via `unattributed`, never silently dropped.
  */
-const ATTRIBUTED_WHERE = Prisma.sql`
+export const ATTRIBUTED_WHERE = Prisma.sql`
   EXISTS (SELECT 1 FROM "Church" c_attr WHERE c_attr."id" = ft."churchId")
 `;
 
@@ -124,7 +124,7 @@ export function inRange(column: Prisma.Sql, from: Date | null, to: Date): Prisma
  * Method comes from the payment-instrument snapshot; when that hasn't
  * synced yet, falls back to the WGC Payment row's own method.
  */
-const METHOD_SQL = Prisma.sql`
+export const METHOD_SQL = Prisma.sql`
   CASE
     WHEN UPPER(COALESCE(pi."paymentMethodType", p."paymentMethodType", '')) = 'BANK_ACCOUNT' THEN 'ACH'
     WHEN COALESCE(pi."paymentMethodType", p."paymentMethodType") IS NULL THEN 'OTHER'
@@ -132,7 +132,7 @@ const METHOD_SQL = Prisma.sql`
   END
 `;
 
-const JOINS = Prisma.sql`
+export const JOINS = Prisma.sql`
   LEFT JOIN "FinixPaymentInstrumentSnapshot" pi ON pi."finixPaymentInstrumentId" = ft."finixPaymentInstrumentId"
   LEFT JOIN LATERAL (
     SELECT p0."paymentMethodType" FROM "Payment" p0 WHERE p0."finixTransferId" = ft."finixTransferId" LIMIT 1
