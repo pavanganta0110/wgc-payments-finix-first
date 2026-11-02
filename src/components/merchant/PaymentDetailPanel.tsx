@@ -12,6 +12,7 @@ import {
 import ViewAllDetailsLink from "@/components/merchant/ViewAllDetailsLink";
 import IssueRefundButton from "@/components/merchant/IssueRefundButton";
 import CreateReceiptButton from "@/components/merchant/CreateReceiptButton";
+import PaymentReceiptActions from "@/components/merchant/PaymentReceiptActions";
 import GoodsServicesCorrectionPanel from "@/components/merchant/GoodsServicesCorrectionPanel";
 import StateBadge from "@/components/merchant/StateBadge";
 import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
@@ -603,6 +604,11 @@ export default async function PaymentDetailPanel({
           </div>
         ) : (
           <p className="text-sm text-slate-500">No past receipt created or sent at this time.</p>
+        )}
+        {payment && (
+          <div className="mt-3 pt-3 border-t border-slate-100">
+            <PaymentReceiptActions transferId={transfer.finixTransferId} />
+          </div>
         )}
       </Section>
 

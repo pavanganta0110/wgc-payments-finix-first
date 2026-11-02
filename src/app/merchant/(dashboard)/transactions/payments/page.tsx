@@ -7,6 +7,7 @@ import PaymentsFilterBar from "@/components/merchant/PaymentsFilterBar";
 import PaymentsHeaderActions from "@/components/merchant/PaymentsHeaderActions";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import ClickableTableRow from "@/components/merchant/ClickableTableRow";
+import { Printer } from "lucide-react";
 import PaymentDetailPanel from "@/components/merchant/PaymentDetailPanel";
 import StateBadge from "@/components/merchant/StateBadge";
 import { resolveDateRange } from "@/lib/dateRangePresets";
@@ -254,6 +255,7 @@ export default async function PaymentsListPage({
                 <th className="px-6 py-3">Instrument Type</th>
                 <th className="px-6 py-3">Fund</th>
                 <th className="px-6 py-3">Source</th>
+                <th className="px-6 py-3">Receipt</th>
               </tr>
             </thead>
             <tbody>
@@ -313,6 +315,22 @@ export default async function PaymentsListPage({
                       {payment
                         ? SOURCE_LABELS[classifySource(payment)].replace(/ \(.*\)$/, "")
                         : "—"}
+                    </td>
+                    <td className="px-6 py-3">
+                      {payment ? (
+                        <a
+                          href={`/api/merchant/transactions/payments/${t.finixTransferId}/receipt-view`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="View / print receipt"
+                          aria-label="View or print receipt"
+                          className="inline-flex text-slate-400 hover:text-blue-600"
+                        >
+                          <Printer className="w-4 h-4" />
+                        </a>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                   </ClickableTableRow>
                 );

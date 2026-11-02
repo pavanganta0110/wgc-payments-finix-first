@@ -10,6 +10,7 @@ import { formatCents } from "@/lib/format";
 import { validateGoodsServicesInput, computeRecordedContributionAmountCents } from "@/lib/giving/goodsServices";
 import { DEFAULT_NO_GOODS_SERVICES_TEXT, DEFAULT_GOODS_SERVICES_TEMPLATE } from "@/lib/settings/acknowledgmentDefaults";
 import type { FinixPaymentFormInstance } from "@/lib/finix/fraudSession";
+import PaymentReceiptActions from "@/components/merchant/PaymentReceiptActions";
 
 const APPLICATION_ID = process.env.NEXT_PUBLIC_FINIX_APPLICATION_ID || "";
 
@@ -518,6 +519,7 @@ export default function TakePaymentDialog({
                 {result.transferId && (
                   <p className="text-xs text-slate-400 font-mono">{result.transferId}</p>
                 )}
+                {result.transferId && <PaymentReceiptActions transferId={result.transferId} defaultEmail={email.trim()} />}
                 <div className="flex gap-2 justify-center pt-2">
                   <button
                     onClick={onClose}
