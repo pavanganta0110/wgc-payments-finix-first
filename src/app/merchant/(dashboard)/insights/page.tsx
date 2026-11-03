@@ -21,6 +21,7 @@ import {
   getDepositsInsights,
   getExternalDonationsInsights,
   getExternalDonationsTotal,
+  getPayerFeeBreakdown,
   PAYMENT_DIMENSIONS,
   type PaymentDimensionKey,
 } from "@/lib/reports/insightsData";
@@ -235,16 +236,35 @@ async function PaymentsTab({
   trend: string;
   scopedUserId?: string;
 }) {
-  const [{ summary, byMethod, byMethodCount, byFailureCode, hasData }, moneySources, external] = await Promise.all([
+  const [{ summary, byMethod, byMethodCount, byFailureCode, hasData }, moneySources, external, feeBreakdown] = await Promise.all([
     getPaymentsInsights(churchId, dateFilter, trend, scopedUserId),
     getWhereMoneyCameFrom(churchId, dateFilter, scopedUserId),
     getExternalDonationsTotal(churchId, dateFilter, scopedUserId),
+    getPayerFeeBreakdown(churchId, dateFilter, scopedUserId),
   ]);
   const wgcVolumeCents = moneySources.totalCents;
 
   return (
     <>
       <SummaryCards items={summary} />
+
+      {/* Only when someone actually covered a processing fee: what was charged vs what the organization receives. */}
+      {feeBreakdown.feesCoveredCents > 0 && (
+        <>
+          <SummaryCards
+            items={[
+              { label: "Total Charged", value: formatCents(feeBreakdown.chargedCents) },
+              { label: "Processing Fees Covered", value: formatCents(feeBreakdown.feesCoveredCents) },
+              { label: "Amount to Organization", value: formatCents(feeBreakdown.amountToOrganizationCents) },
+            ]}
+          />
+          <p className="-mt-3 text-xs text-slate-500">
+            Total Transaction Volume is what was charged. When a payer covers the processing fee they pay it on top of their
+            payment, so the amount your organization receives is lower than the total charged. Where the fee was not covered,
+            processing fees are deducted from your deposit instead.
+          </p>
+        </>
+      )}
 
       <SummaryCards
         items={[
