@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getTerminatedOrganizationIds } from "@/lib/billing/terminatedBilling";
 import { resolvePriorMonthRange, getSmsUsageForPeriod } from "@/lib/giving/smsUsage";
 
 /**
@@ -22,8 +23,10 @@ export interface SmsOverageDetectionResult {
 export async function detectSmsOverages(now: Date = new Date()): Promise<SmsOverageDetectionResult> {
   const { start, end, billingPeriod } = resolvePriorMonthRange(now);
 
+  // A terminated organization is not flagged for overage: its add-on is canceled on termination.
+  const terminatedIds = await getTerminatedOrganizationIds();
   const activeSubscriptions = await prisma.smsAddonSubscription.findMany({
-    where: { status: "ACTIVE" },
+    where: { status: "ACTIVE", organizationId: { notIn: terminatedIds } },
     select: { id: true, organizationId: true, includedTexts: true, overageRateCents: true, createdAt: true },
   });
 

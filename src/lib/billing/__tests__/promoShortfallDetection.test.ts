@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockPrisma: any = {
   promotionEntitlement: { findMany: vi.fn() },
+  church: { findMany: vi.fn().mockResolvedValue([]) },
   promoShortfallCharge: { findUnique: vi.fn(), create: vi.fn() },
 };
 vi.mock("@/lib/prisma", () => ({ prisma: mockPrisma }));
@@ -37,6 +38,7 @@ describe("detectPromoShortfalls", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPrisma.church.findMany.mockResolvedValue([]);
     mockPrisma.promoShortfallCharge.findUnique.mockResolvedValue(null);
     mockPrisma.promoShortfallCharge.create.mockResolvedValue({ id: "shortfall-1" });
   });
@@ -114,5 +116,13 @@ describe("detectPromoShortfalls", () => {
 
     expect(result.alreadyFlagged).toBe(1);
     expect(result.newlyFlagged).toBe(0);
+  });
+
+  it("never checks a terminated organization", async () => {
+    mockPrisma.church.findMany.mockResolvedValue([{ id: "gone-1" }]);
+    mockPrisma.promotionEntitlement.findMany.mockResolvedValue([]);
+    const { detectPromoShortfalls } = await load();
+    await detectPromoShortfalls(NOW);
+    expect(mockPrisma.promotionEntitlement.findMany.mock.calls[0][0].where).toEqual({ status: "ACTIVE", organizationId: { notIn: ["gone-1"] } });
   });
 });

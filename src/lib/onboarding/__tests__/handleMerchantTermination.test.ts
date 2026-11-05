@@ -6,6 +6,12 @@ const mockPrisma = {
 };
 vi.mock("@/lib/prisma", () => ({ prisma: mockPrisma }));
 
+const mockStopBilling = vi.fn().mockResolvedValue({ wgcSubscription: "canceled", smsAddon: "none" });
+vi.mock("@/lib/billing/terminatedBilling", () => ({
+  stopBillingForTerminatedOrganization: (...a: unknown[]) => mockStopBilling(...a),
+  describeStopBilling: () => "The organization's WGC subscription was canceled.",
+}));
+
 const mockSendWgcAdminEmail = vi.fn().mockResolvedValue(undefined);
 vi.mock("@/lib/email", () => ({ sendWgcAdminEmail: (...a: unknown[]) => mockSendWgcAdminEmail(...a) }));
 
@@ -96,5 +102,20 @@ describe("handleMerchantTermination", () => {
 
     const call = mockPrisma.church.update.mock.calls[0][0];
     expect(call.data.terminatedAt).toBeInstanceOf(Date);
+  });
+
+  it("stops the organization's billing when it is terminated, and tells admin", async () => {
+    const { handleMerchantTermination } = await import("../handleMerchantTermination");
+    await handleMerchantTermination({ church: { id: "church-1", status: "ACTIVE" }, onboardingApplication: onboardingApplication(), finixMerchantId: "MU123", terminationDetails: null });
+    expect(mockStopBilling).toHaveBeenCalledWith("church-1");
+    expect(mockSendWgcAdminEmail.mock.calls[0]![0].actionNeeded).toContain("WGC subscription was canceled");
+  });
+
+  it("cancels billing again for an organization terminated earlier (resync or redelivery), without re-alerting admin", async () => {
+    const { handleMerchantTermination } = await import("../handleMerchantTermination");
+    const result = await handleMerchantTermination({ church: { id: "church-1", status: "TERMINATED" }, onboardingApplication: onboardingApplication({ onboardingStatus: "TERMINATED" }), finixMerchantId: "MU123", terminationDetails: null });
+    expect(result.applied).toBe(false);
+    expect(mockStopBilling).toHaveBeenCalledWith("church-1");
+    expect(mockSendWgcAdminEmail).not.toHaveBeenCalled();
   });
 });

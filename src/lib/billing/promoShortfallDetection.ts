@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getTerminatedOrganizationIds } from "@/lib/billing/terminatedBilling";
 import { aggregateTransfers } from "@/lib/reports/dashboardAggregates";
 
 /**
@@ -36,8 +37,10 @@ export function resolvePriorMonthRange(now: Date): { start: Date; end: Date; bil
 export async function detectPromoShortfalls(now: Date = new Date()): Promise<PromoShortfallDetectionResult> {
   const { start, end, billingPeriod } = resolvePriorMonthRange(now);
 
+  // A terminated organization is not flagged for a shortfall: it no longer processes.
+  const terminatedIds = await getTerminatedOrganizationIds();
   const activeEntitlements = await prisma.promotionEntitlement.findMany({
-    where: { status: "ACTIVE" },
+    where: { status: "ACTIVE", organizationId: { notIn: terminatedIds } },
     select: { id: true, organizationId: true, startsAt: true, normalMonthlyAmountCents: true },
   });
 
