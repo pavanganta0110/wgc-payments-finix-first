@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sendWgcAdminEmail } from "@/lib/email";
+import { describeStopBilling, stopBillingForTerminatedOrganization } from "@/lib/billing/terminatedBilling";
 
 export interface FinixTerminationDetails {
   reason?: string | null;
@@ -32,16 +33,24 @@ export async function handleMerchantTermination(params: HandleMerchantTerminatio
   const { church, onboardingApplication, finixMerchantId, terminationDetails } = params;
 
   const alreadyTerminated = church?.status === "TERMINATED" || onboardingApplication?.onboardingStatus === "TERMINATED";
-  if (alreadyTerminated) return { applied: false };
+  if (alreadyTerminated) {
+    // An organization terminated before billing was stopped on termination still has live
+    // subscriptions: a repeat call (redelivered webhook, admin resync) cancels them. No-op once canceled.
+    if (church?.status === "TERMINATED") await stopBillingForTerminatedOrganization(church.id);
+    return { applied: false };
+  }
 
   const terminationReason = terminationDetails?.description || terminationDetails?.reason || null;
   const terminatedAt = terminationDetails?.terminated_at ? new Date(terminationDetails.terminated_at) : new Date();
 
+  let billingNote = "";
   if (church) {
     await prisma.church.update({
       where: { id: church.id },
       data: { status: "TERMINATED", terminatedAt, terminationReason },
     });
+    // A terminated organization must not keep being charged its WGC subscription.
+    billingNote = describeStopBilling(await stopBillingForTerminatedOrganization(church.id));
   }
 
   if (onboardingApplication) {
@@ -57,7 +66,7 @@ export async function handleMerchantTermination(params: HandleMerchantTerminatio
       finixMerchantId,
       newStatus: "TERMINATED",
       whatHappened: `Finix terminated this merchant's account.${terminationReason ? ` Reason: ${terminationReason}` : ""}`,
-      actionNeeded: "Confirm the organization's records reflect the closed account. No dashboard-access email is sent for a termination.",
+      actionNeeded: `Confirm the organization's records reflect the closed account. No dashboard-access email is sent for a termination.${billingNote ? ` ${billingNote}` : ""}`,
       adminDashboardLink: "https://www.wgcpayments.com/admin/merchant-applications",
       onboardingApplicationId: onboardingApplication.id,
     });
