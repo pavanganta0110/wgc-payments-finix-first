@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { headers, cookies } from "next/headers";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
+import { assignDefaultMerchantFeeProfile } from "@/lib/finix/assignMerchantFeeProfile";
 import { finixClient } from "@/lib/finix/client";
 import { sendWgcEmail, sendWgcAdminOnboardingNotification } from "@/lib/email";
 import { consumePromotionLeadForSignup } from "@/lib/billing/promotionAttribution";
@@ -441,6 +442,10 @@ export async function POST(req: Request) {
         errorDetail: humanizeErrorDetail(finixErrorStr)
       }, { status: 400 });
     }
+
+    // 4b. Put the new merchant on WGC's own default pricing (carries the
+    // per-payout fee). Outside any DB transaction; never fails onboarding.
+    await assignDefaultMerchantFeeProfile(finixMerchant);
 
     // 5. Update Status
     await prisma.onboardingApplication.update({
