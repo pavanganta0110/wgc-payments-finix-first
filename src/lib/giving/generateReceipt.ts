@@ -232,7 +232,7 @@ export async function sendDonationReceipt(
   lines.push(`<p>Thank you for your gift of <strong>${formatCents(paymentAmountCents)}</strong> to <strong>${orgName}</strong>.</p>`);
   if (settings.showFund && payment.fundName) lines.push(`<p>Fund/Campaign: ${payment.fundName}</p>`);
   const coveredFeeCents = coveredFeeForReceipt(settings.showDonorCoveredFee, payment.feeCoveredCents);
-  if (coveredFeeCents > 0) lines.push(`<p>You generously covered ${formatCents(coveredFeeCents)} in transaction costs.</p>`);
+  if (coveredFeeCents > 0) lines.push(`<p>You generously covered ${formatCents(coveredFeeCents)} in processing and platform fees.</p>`);
   if (settings.showDonationReference) lines.push(`<p>Receipt Number: ${receiptNumber}</p>`);
   lines.push(`<p>${settings.thankYouMessage}</p>`);
   lines.push(`<p>${acknowledgmentText}</p>`);
