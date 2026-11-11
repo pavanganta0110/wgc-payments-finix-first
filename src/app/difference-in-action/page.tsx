@@ -27,7 +27,7 @@ const GALLERY = [
   { src: "students-garden-v2.jpg", alt: "Two Difference Makers students outside in front of a native milkweed garden" },
   { src: "planning-v2.jpg", alt: "Students planning a Difference Makers project together at a table" },
   { src: "zinnias-v2.jpg", alt: "Students arranging freshly cut zinnias at a community event" },
-  { src: "banner-v2.jpg", alt: "A volunteer standing beside the Difference Makers program banner" },
+  { src: "kenya-greenhouse-v2.jpg", alt: "A child holding a large armful of freshly harvested greens in a greenhouse" },
 ];
 
 function GiveButton({ className = "" }: { className?: string }) {
@@ -106,8 +106,8 @@ export default async function DifferenceInActionPage() {
           </div>
 
           <div className="mt-10 grid items-center gap-6 rounded-2xl bg-[#EEF6EC] p-5 sm:p-8 md:grid-cols-2">
-            <div className="relative aspect-square overflow-hidden rounded-xl">
-              <Image src={`${IMG}/kenya-greenhouse-v2.jpg`} alt="A child holding a large armful of freshly harvested greens in a greenhouse" fill sizes="(min-width: 768px) 40vw, 100vw" className="object-cover" />
+            <div className="relative aspect-[4/5] overflow-hidden rounded-xl">
+              <Image src={`${IMG}/banner-v2.jpg`} alt="A volunteer standing beside the Difference Makers program banner" fill sizes="(min-width: 768px) 40vw, 100vw" className="object-cover" />
             </div>
             <div>
               <h2 className="text-2xl font-bold text-[#1B7F2A]">Growing food, growing futures</h2>
