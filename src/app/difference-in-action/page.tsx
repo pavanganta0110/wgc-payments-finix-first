@@ -1,7 +1,9 @@
 import Image from "next/image";
+import Script from "next/script";
 import type { Metadata } from "next";
 
-const GIVING_URL = "/g/OTBGXJkW4Jvh";
+const GIVING_SLUG = "OTBGXJkW4Jvh";
+const GIVING_URL = `/g/${GIVING_SLUG}`;
 const PHONE_DISPLAY = "402-363-8963";
 const PHONE_TEL = "+14023638963";
 const IMG = "/images/difference-in-action";
@@ -27,7 +29,7 @@ const GALLERY = [
 function GiveButton({ className = "" }: { className?: string }) {
   return (
     <a
-      href={GIVING_URL}
+      href="#give"
       className={`inline-flex items-center justify-center rounded-full bg-[#1B7F2A] px-8 py-3.5 text-base font-bold text-white shadow-sm transition-colors hover:bg-[#15691f] focus:outline-none focus-visible:ring-4 focus-visible:ring-[#1B7F2A]/30 ${className}`}
     >
       Give now
@@ -100,6 +102,19 @@ export default function DifferenceInActionPage() {
               </div>
             </div>
           </div>
+        </section>
+
+        <section id="give" className="mx-auto max-w-2xl scroll-mt-20 px-4 py-12 sm:px-6">
+          <h2 className="text-center text-2xl font-bold text-[#1F6FB5]">Give to Difference in Action</h2>
+          <div className="mt-6" data-wgc-giving data-wgc-slug={GIVING_SLUG} data-wgc-mode="inline" />
+          <p className="mt-4 text-center text-sm text-slate-500">
+            Trouble with the form?{" "}
+            <a href={GIVING_URL} className="font-medium text-[#1F6FB5] underline">
+              Give on our secure giving page
+            </a>
+            .
+          </p>
+          <Script src="/embed/wgc-giving.js" strategy="afterInteractive" />
         </section>
 
         <section className="bg-slate-50">
