@@ -1,5 +1,6 @@
 import Image from "next/image";
-import Script from "next/script";
+import GivingLinkForm from "@/components/giving/GivingLinkForm";
+import { loadPublicGivingPageData } from "@/lib/givingLinks/loadPublicGivingPageData";
 import type { Metadata } from "next";
 
 const GIVING_SLUG = "OTBGXJkW4Jvh";
@@ -7,6 +8,9 @@ const GIVING_URL = `/g/${GIVING_SLUG}`;
 const PHONE_DISPLAY = "402-363-8963";
 const PHONE_TEL = "+14023638963";
 const IMG = "/images/difference-in-action";
+
+// The form reads live giving-link data, so this page must render per request.
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Difference in Action | Support Difference Makers",
@@ -37,7 +41,20 @@ function GiveButton({ className = "" }: { className?: string }) {
   );
 }
 
-export default function DifferenceInActionPage() {
+async function loadGivingData() {
+  try {
+    const data = await loadPublicGivingPageData(GIVING_SLUG);
+    // Merchandise checkout isn't used here; anything unusual falls back to the hosted page.
+    if (!data.ok || data.link.merchandiseEnabled || !data.church.finixMerchantId) return null;
+    return data;
+  } catch (err) {
+    console.error("[difference-in-action] could not load giving form:", err);
+    return null;
+  }
+}
+
+export default async function DifferenceInActionPage() {
+  const data = await loadGivingData();
   return (
     <div className="min-h-screen bg-white font-sans text-slate-800">
       <header className="border-b border-slate-200 bg-white">
@@ -106,15 +123,60 @@ export default function DifferenceInActionPage() {
 
         <section id="give" className="mx-auto max-w-2xl scroll-mt-20 px-4 py-12 sm:px-6">
           <h2 className="text-center text-2xl font-bold text-[#1F6FB5]">Give to Difference in Action</h2>
-          <div className="mt-6" data-wgc-giving data-wgc-slug={GIVING_SLUG} data-wgc-mode="inline" />
-          <p className="mt-4 text-center text-sm text-slate-500">
-            Trouble with the form?{" "}
-            <a href={GIVING_URL} className="font-medium text-[#1F6FB5] underline">
-              Give on our secure giving page
-            </a>
-            .
-          </p>
-          <Script src="/embed/wgc-giving.js" strategy="afterInteractive" />
+          {data ? (
+            <div
+              className="mt-6 rounded-2xl border bg-white p-6 shadow-sm"
+              style={{ borderColor: data.light.borderColor, backgroundColor: data.light.headerBackground }}
+            >
+              <GivingLinkForm
+                slug={GIVING_SLUG}
+                finixMerchantId={data.church.finixMerchantId!}
+                churchName={data.church.name}
+                light={data.light}
+                amountType={data.link.amountType as "FIXED" | "VARIABLE" | "FIXED_QUANTITY"}
+                fixedAmountCents={data.link.fixedAmountCents}
+                minAmountCents={data.link.minAmountCents}
+                maxAmountCents={data.link.maxAmountCents}
+                suggestedAmountsCents={data.suggestedAmountsCents}
+                allowCustomAmount={data.link.allowCustomAmount}
+                quantityItemLabel={data.link.quantityItemLabel}
+                recurringEnabled={data.link.recurringEnabled}
+                allowedFrequencies={data.allowedFrequencies}
+                defaultDonationType={data.link.defaultDonationType}
+                defaultRecurringAmountCents={data.link.defaultRecurringAmountCents}
+                allowedPaymentMethods={data.allowedPaymentMethods}
+                feeCoverEnabled={data.link.feeCoverEnabled}
+                feeCoverDefaultOn={data.link.feeCoverDefaultOn}
+                donorFieldSettings={data.donorFieldSettings}
+                collectMailingAddress={data.link.collectMailingAddress}
+                pricing={data.pricing}
+                thankYouMessage={data.branding.thankYouMessage}
+                thankYouVideoUrl={data.branding.thankYouVideoUrl}
+                googlePayGatewayMerchantId={data.googlePayGatewayMerchantId}
+                googlePayMerchantId={data.googlePayMerchantId}
+                googlePayEnvironment={data.googlePayEnvironment}
+                serverAvailability={data.serverAvailability}
+                fundSelectionEnabled={data.fundSelectionEnabled}
+                assignedFunds={data.assignedFunds}
+              />
+            </div>
+          ) : (
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 text-center">
+              <p className="text-slate-700">Give securely through our giving page.</p>
+              <a href={GIVING_URL} className="mt-4 inline-flex rounded-full bg-[#1B7F2A] px-8 py-3 font-bold text-white hover:bg-[#15691f]">
+                Give now
+              </a>
+            </div>
+          )}
+          {data && (
+            <p className="mt-4 text-center text-sm text-slate-500">
+              Trouble with the form?{" "}
+              <a href={GIVING_URL} className="font-medium text-[#1F6FB5] underline">
+                Give on our secure giving page
+              </a>
+              .
+            </p>
+          )}
         </section>
 
         <section className="bg-slate-50">
