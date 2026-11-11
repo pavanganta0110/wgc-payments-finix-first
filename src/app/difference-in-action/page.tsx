@@ -167,7 +167,7 @@ export default async function DifferenceInActionPage() {
             <div>
               <h2 className="text-2xl font-bold text-[#1B7F2A]">Growing food, growing futures</h2>
               <p className="mt-3 leading-relaxed text-slate-700">
-                From local classrooms and gardens to communities around the world, we help people grow, understand and share good food.
+                From local classrooms, main streets, gardens, farms, and ranches to communities around the world, we help people grow, understand and share good food and educational opportunities that bring everyone who eats to the table. There is a reason culture is in the word agriCULTURE. Food is culture. Food is the center of life. Food brings people together. Food is the joy of life. Help us share that joy and hope with others.
               </p>
               <div className="mt-6">
                 <GiveButton />
