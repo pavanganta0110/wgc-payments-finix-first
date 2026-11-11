@@ -78,9 +78,6 @@ export default async function DifferenceInActionPage() {
               <p className="mt-5 text-lg leading-relaxed text-slate-700">
                 Implementing community impact programs focused on lifelong agricultural education, food security, environmental conservation, entrepreneurship, and global/local humanitarian issues, that inspire better understanding and tangible outcomes that make a positive impact for the land, water, and all creatures great and small.
               </p>
-              <div className="mt-7">
-                <GiveButton />
-              </div>
             </div>
             <div className="overflow-hidden rounded-2xl shadow-lg">
               <Image
@@ -91,32 +88,6 @@ export default async function DifferenceInActionPage() {
                 className="h-auto w-full"
                 priority
               />
-            </div>
-          </div>
-        </section>
-
-        <section className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
-          <h2 className="text-2xl font-bold text-[#1F6FB5]">Our programs in action</h2>
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
-            {GALLERY.map((p) => (
-              <div key={p.src} className="relative aspect-[3/4] overflow-hidden rounded-xl bg-slate-100">
-                <Image src={`${IMG}/${p.src}`} alt={p.alt} fill sizes="(min-width: 768px) 25vw, 50vw" className="object-cover" />
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-10 grid items-center gap-6 rounded-2xl bg-[#EEF6EC] p-5 sm:p-8 md:grid-cols-2">
-            <div className="relative aspect-[4/5] overflow-hidden rounded-xl">
-              <Image src={`${IMG}/banner-v2.jpg`} alt="A volunteer standing beside the Difference Makers program banner" fill sizes="(min-width: 768px) 40vw, 100vw" className="object-cover" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-[#1B7F2A]">Growing food, growing futures</h2>
-              <p className="mt-3 leading-relaxed text-slate-700">
-                From local classrooms and gardens to communities around the world, we help people grow, understand and share good food.
-              </p>
-              <div className="mt-6">
-                <GiveButton />
-              </div>
             </div>
           </div>
         </section>
@@ -177,6 +148,32 @@ export default async function DifferenceInActionPage() {
               .
             </p>
           )}
+        </section>
+
+        <section className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
+          <h2 className="text-2xl font-bold text-[#1F6FB5]">Our programs in action</h2>
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
+            {GALLERY.map((p) => (
+              <div key={p.src} className="relative aspect-[3/4] overflow-hidden rounded-xl bg-slate-100">
+                <Image src={`${IMG}/${p.src}`} alt={p.alt} fill sizes="(min-width: 768px) 25vw, 50vw" className="object-cover" />
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-10 grid items-center gap-6 rounded-2xl bg-[#EEF6EC] p-5 sm:p-8 md:grid-cols-2">
+            <div className="relative aspect-[4/5] overflow-hidden rounded-xl">
+              <Image src={`${IMG}/banner-v2.jpg`} alt="A volunteer standing beside the Difference Makers program banner" fill sizes="(min-width: 768px) 40vw, 100vw" className="object-cover" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-[#1B7F2A]">Growing food, growing futures</h2>
+              <p className="mt-3 leading-relaxed text-slate-700">
+                From local classrooms and gardens to communities around the world, we help people grow, understand and share good food.
+              </p>
+              <div className="mt-6">
+                <GiveButton />
+              </div>
+            </div>
+          </div>
         </section>
 
         <section className="bg-slate-50">
