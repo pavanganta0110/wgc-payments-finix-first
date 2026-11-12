@@ -24,6 +24,7 @@ const DONOR_FIELD_LABELS: Record<string, string> = {
   donorNote: "Donor Note",
   anonymousDonation: "Anonymous Donation",
   companyName: "Company/Organization Name",
+  customQuestion: "Your Own Question",
 };
 
 export default async function GivingLinkOverviewTab({

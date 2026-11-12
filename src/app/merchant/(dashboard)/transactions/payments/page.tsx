@@ -168,9 +168,11 @@ export default async function PaymentsListPage({
   const payments = transferIds.length
     ? await prisma.payment.findMany({
         where: { churchId, finixTransferId: { in: transferIds } },
-        select: { id: true, givingLinkId: true, finixTransferId: true, fundName: true },
+        select: { id: true, givingLinkId: true, finixTransferId: true, fundName: true, customQuestion: true, customAnswer: true },
       })
     : [];
+  // The answer to an org's own giving-page question ("How did you hear about us?"); only shown once someone has answered.
+  const showAnswerCol = payments.some((p) => Boolean(p.customAnswer));
   const paymentByTransfer = new Map(payments.filter((p) => p.finixTransferId).map((p) => [p.finixTransferId as string, p]));
 
   const rows = transfers
@@ -249,6 +251,7 @@ export default async function PaymentsListPage({
                 <th className="px-6 py-3">ID</th>
                 <th className="px-6 py-3">Created</th>
                 <th className="px-6 py-3">Donor</th>
+                {showAnswerCol && <th className="px-6 py-3">Donor answer</th>}
                 <th className="px-6 py-3 text-right">Amount</th>
                 <th className="px-6 py-3">State</th>
                 <th className="px-6 py-3">Payment Instrument</th>
@@ -280,6 +283,16 @@ export default async function PaymentsListPage({
                     <td className="px-6 py-3 text-slate-700">
                       {formatPersonName(donor?.name, instrument?.accountHolderName)}
                     </td>
+                    {showAnswerCol && (
+                      <td className="px-6 py-3 text-slate-600 max-w-[240px] break-words">
+                        {payment?.customAnswer ? (
+                          <>
+                            <span className="block text-xs text-slate-400">{payment.customQuestion}</span>
+                            {payment.customAnswer}
+                          </>
+                        ) : "—"}
+                      </td>
+                    )}
                     <td className="px-6 py-3 text-right font-semibold text-slate-900">
                       {formatCents(t.amountCents ?? 0)}
                       {refund.refundStatus !== "NONE" && refund.refundStatus !== "PENDING" && (
