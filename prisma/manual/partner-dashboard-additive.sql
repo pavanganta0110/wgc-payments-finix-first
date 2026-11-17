@@ -212,3 +212,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS "PartnerUser_mfaChallengeHash_key" ON "Partner
 ALTER TABLE "PartnerApiKey" ADD COLUMN IF NOT EXISTS "errorCount" INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE "PartnerApiKey" ADD COLUMN IF NOT EXISTS "lastErrorAt" TIMESTAMP(3);
 ALTER TABLE "Partner" ADD COLUMN IF NOT EXISTS "embeddedMenuJson" JSONB;
+
+-- Partner agents, agent attribution, status-email recipients and partner user roles.
+ALTER TABLE "Partner" ADD COLUMN IF NOT EXISTS "statusEmailRecipients" TEXT[] DEFAULT ARRAY[]::TEXT[];
+ALTER TABLE "PartnerUser" ADD COLUMN IF NOT EXISTS "role" TEXT NOT NULL DEFAULT 'ADMIN';
+ALTER TABLE "OnboardingApplication" ADD COLUMN IF NOT EXISTS "partnerAgentId" TEXT;
+ALTER TABLE "Church" ADD COLUMN IF NOT EXISTS "partnerAgentId" TEXT;
+CREATE TABLE IF NOT EXISTS "PartnerAgent" (
+  "id" TEXT NOT NULL,
+  "partnerId" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "email" TEXT NOT NULL,
+  "code" TEXT NOT NULL,
+  "disabledAt" TIMESTAMP(3),
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "PartnerAgent_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "PartnerAgent_code_key" ON "PartnerAgent"("code");
+CREATE INDEX IF NOT EXISTS "PartnerAgent_partnerId_idx" ON "PartnerAgent"("partnerId");
+DO $$ BEGIN
+  ALTER TABLE "PartnerAgent" ADD CONSTRAINT "PartnerAgent_partnerId_fkey" FOREIGN KEY ("partnerId") REFERENCES "Partner"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE "Church" ADD CONSTRAINT "Church_partnerAgentId_fkey" FOREIGN KEY ("partnerAgentId") REFERENCES "PartnerAgent"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

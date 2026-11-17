@@ -17,6 +17,7 @@ interface PartnerRow {
   status: string;
   contactEmail: string | null;
   suppressMerchantEmails: boolean;
+  statusEmailRecipients: string[];
   onboardingCode: string;
   pricePerMerchantCents: number | null;
   cardBrand: string | null;
@@ -282,6 +283,16 @@ function PartnerCard({ partner, onChanged, report }: { partner: PartnerRow; onCh
         </span>
       </label>
 
+      <StatusRecipientsField
+        key={partner.statusEmailRecipients.join(",")}
+        initial={partner.statusEmailRecipients}
+        onSave={async (list) => {
+          const { ok, data } = await call(`/api/admin/partners/${partner.id}`, "PATCH", { statusEmailRecipients: list });
+          report(ok, data, "Saved.");
+          await onChanged();
+        }}
+      />
+
       <div>
         <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Partner staff</h4>
         {partner.users.length === 0 ? (
@@ -346,5 +357,29 @@ function PartnerCard({ partner, onChanged, report }: { partner: PartnerRow; onCh
         )}
       </div>
     </section>
+  );
+}
+
+
+/** Extra inboxes that get a copy of each organization's boarding and underwriting status emails (the referring agent is added automatically). */
+function StatusRecipientsField({ initial, onSave }: { initial: string[]; onSave: (list: string[]) => Promise<void> }) {
+  const [text, setText] = useState(initial.join(", "));
+  return (
+    <div>
+      <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1" htmlFor="status-recipients">
+        Copy status emails to
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <input id="status-recipients" placeholder="team@partner.com, other@partner.com" value={text} onChange={(e) => setText(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm w-96 max-w-full" />
+        <button
+          type="button"
+          className="rounded-lg bg-[#010409] text-white text-sm font-semibold px-4 py-2"
+          onClick={() => onSave(text.split(/[,;\s]+/).filter(Boolean))}
+        >
+          Save
+        </button>
+      </div>
+      <p className="text-xs text-slate-500 mt-1">Up to 5 addresses. Each gets a copy of the submitted, more information needed, approved and not approved emails for this partner&apos;s organizations, plus the agent who referred the organization.</p>
+    </div>
   );
 }

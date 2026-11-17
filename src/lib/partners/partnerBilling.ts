@@ -18,6 +18,8 @@ export async function attachChurchToPartner(params: {
   churchId: string;
   partnerId: string;
   partnerReference: string | null;
+  /** The agent who referred the application, if any. */
+  partnerAgentId?: string | null;
   onboardingApplicationId: string;
   approvedAt?: Date;
 }): Promise<void> {
@@ -31,12 +33,12 @@ export async function attachChurchToPartner(params: {
 
     if (church.partnerId !== params.partnerId) {
       try {
-        await prisma.church.update({ where: { id: params.churchId }, data: { partnerId: params.partnerId, partnerReference: params.partnerReference } });
+        await prisma.church.update({ where: { id: params.churchId }, data: { partnerId: params.partnerId, partnerReference: params.partnerReference, partnerAgentId: params.partnerAgentId ?? null } });
       } catch (err) {
         // The partner already uses that reference for another organization: link without it.
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
           console.error(`attachChurchToPartner: reference "${params.partnerReference}" already used by partner ${params.partnerId}; linked without it.`);
-          await prisma.church.update({ where: { id: params.churchId }, data: { partnerId: params.partnerId, partnerReference: null } });
+          await prisma.church.update({ where: { id: params.churchId }, data: { partnerId: params.partnerId, partnerReference: null, partnerAgentId: params.partnerAgentId ?? null } });
         } else {
           throw err;
         }

@@ -110,12 +110,20 @@ export async function clearPartnerSessionCookie() {
   cookieStore.delete(PARTNER_SESSION_COOKIE_NAME);
 }
 
+export type PartnerRole = "ADMIN" | "REPORTS";
+
+export function normalizePartnerRole(value: unknown): PartnerRole {
+  return value === "REPORTS" ? "REPORTS" : "ADMIN";
+}
+
 export interface PartnerSession {
   partnerUserId: string;
   partnerId: string;
   partnerName: string;
   email: string;
   name: string | null;
+  /** ADMIN: everything. REPORTS: organizations, agents and report downloads only. A WGC admin's read-only view counts as ADMIN. */
+  role: PartnerRole;
   /** True for a WGC admin looking at the dashboard: reads work, every change is refused. */
   readOnly?: boolean;
 }
@@ -135,7 +143,7 @@ export async function getPartnerSession(): Promise<PartnerSession | null> {
     if (!admin || admin.userId !== payload.viewAsAdminUserId || admin.role !== "wgc_super_admin") return null;
     const partner = await prisma.partner.findUnique({ where: { id: payload.partnerId }, select: { name: true } });
     if (!partner) return null;
-    return { partnerUserId: payload.partnerUserId, partnerId: payload.partnerId, partnerName: partner.name, email: admin.email, name: admin.name, readOnly: true };
+    return { partnerUserId: payload.partnerUserId, partnerId: payload.partnerId, partnerName: partner.name, email: admin.email, name: admin.name, role: "ADMIN", readOnly: true };
   }
 
   const user = await prisma.partnerUser.findUnique({
@@ -147,6 +155,7 @@ export async function getPartnerSession(): Promise<PartnerSession | null> {
       name: true,
       disabledAt: true,
       authVersion: true,
+      role: true,
       partner: { select: { name: true, status: true } },
     },
   });
@@ -155,7 +164,7 @@ export async function getPartnerSession(): Promise<PartnerSession | null> {
   if (user.authVersion !== payload.authVersion) return null;
   if (user.partner.status !== "ACTIVE") return null;
 
-  return { partnerUserId: user.id, partnerId: user.partnerId, partnerName: user.partner.name, email: user.email, name: user.name };
+  return { partnerUserId: user.id, partnerId: user.partnerId, partnerName: user.partner.name, email: user.email, name: user.name, role: normalizePartnerRole(user.role) };
 }
 
 export async function requirePartnerSession(): Promise<PartnerSession> {
@@ -167,6 +176,23 @@ export async function requirePartnerSession(): Promise<PartnerSession> {
 /** For everything that changes something: refuses an admin's read-only view. */
 export async function requirePartnerWriteSession(): Promise<PartnerSession> {
   const session = await requirePartnerSession();
+  if (session.readOnly) throw new ForbiddenError("This is a read-only view of the partner's dashboard. Changes are turned off.");
+  return session;
+}
+
+/**
+ * For the parts of the dashboard a reports-only person must not see or use (API keys, billing card,
+ * webhook, menu, team). A WGC admin's read-only view is allowed to look.
+ */
+export async function requirePartnerAdminSession(): Promise<PartnerSession> {
+  const session = await requirePartnerSession();
+  if (session.role !== "ADMIN") throw new ForbiddenError("Your role does not include this part of the partner dashboard.");
+  return session;
+}
+
+/** Admin role and not a read-only view: for anything in those parts that changes something. */
+export async function requirePartnerAdminWriteSession(): Promise<PartnerSession> {
+  const session = await requirePartnerAdminSession();
   if (session.readOnly) throw new ForbiddenError("This is a read-only view of the partner's dashboard. Changes are turned off.");
   return session;
 }

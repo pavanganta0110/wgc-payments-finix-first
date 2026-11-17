@@ -7,8 +7,8 @@ const prismaMock = vi.hoisted(() => ({
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 vi.mock("@/lib/audit", () => ({ createAuditLog: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/auth/merchantAuthRateLimit", () => ({ checkMerchantAuthRateLimit: () => true }));
-const requirePartnerSession = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/partners/partnerSession", () => ({ requirePartnerSession, requirePartnerWriteSession: requirePartnerSession }));
+const requirePartnerAdminSession = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/partners/partnerSession", () => ({ requirePartnerAdminSession, requirePartnerAdminWriteSession: requirePartnerAdminSession }));
 const accounts = vi.hoisted(() => ({ createPartnerInvite: vi.fn() }));
 vi.mock("@/lib/partners/partnerAccounts", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/partners/partnerAccounts")>()), createPartnerInvite: accounts.createPartnerInvite }));
 const sendInvite = vi.hoisted(() => vi.fn());
@@ -25,7 +25,7 @@ const del = (userId: string) => DELETE(new Request("https://wgc.test/x", { metho
 
 beforeEach(() => {
   vi.clearAllMocks();
-  requirePartnerSession.mockResolvedValue(session);
+  requirePartnerAdminSession.mockResolvedValue(session);
   prismaMock.partner.findUnique.mockResolvedValue({ name: "Clear Vision" });
   accounts.createPartnerInvite.mockResolvedValue({ rawToken: "tok", userId: "u2", expiresAt: new Date() });
   sendInvite.mockResolvedValue(true);
@@ -46,7 +46,7 @@ describe("GET /api/partner/team", () => {
   });
 
   it("needs a sign-in", async () => {
-    requirePartnerSession.mockRejectedValue(new UnauthorizedError());
+    requirePartnerAdminSession.mockRejectedValue(new UnauthorizedError());
     expect((await GET()).status).toBe(401);
   });
 });
@@ -55,7 +55,7 @@ describe("POST /api/partner/team", () => {
   it("invites someone to the signed-in partner's own account", async () => {
     const res = await post({ email: " New@Example.test ", name: "New Person" });
     expect(res.status).toBe(201);
-    expect(accounts.createPartnerInvite).toHaveBeenCalledWith({ partnerId: "p1", email: "new@example.test", name: "New Person" });
+    expect(accounts.createPartnerInvite).toHaveBeenCalledWith({ partnerId: "p1", email: "new@example.test", name: "New Person", role: "ADMIN" });
     expect(sendInvite).toHaveBeenCalledWith({ partnerName: "Clear Vision", email: "new@example.test", rawToken: "tok" });
   });
 

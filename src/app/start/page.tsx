@@ -1,5 +1,6 @@
 import StartOnboardingForm, { type StartPrefill } from "./StartOnboardingForm";
 import { looksLikeOnboardingCode } from "@/lib/partners/onboardingCode";
+import { looksLikeAgentCode } from "@/lib/partners/agents";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -19,6 +20,8 @@ export default async function StartPage({ searchParams }: { searchParams: Promis
   const params = await searchParams;
   const code = first(params.partner, 60);
   const partnerCode = looksLikeOnboardingCode(code) ? code : null;
+  const agent = first(params.agent, 60);
+  const agentCode = partnerCode && looksLikeAgentCode(agent) ? agent : null;
 
   const prefill: StartPrefill = {
     organizationName: first(params.org, 200),
@@ -33,6 +36,7 @@ export default async function StartPage({ searchParams }: { searchParams: Promis
       embed={Boolean(partnerCode) && first(params.embed, 2) === "1"}
       partnerCode={partnerCode}
       partnerReference={first(params.ref, 120) ?? null}
+      agentCode={agentCode}
       prefill={prefill}
     />
   );

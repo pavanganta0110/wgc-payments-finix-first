@@ -6,8 +6,8 @@ const finix = vi.hoisted(() => ({ createBuyerIdentity: vi.fn(), createPaymentIns
 vi.mock("@/lib/finix/client", () => ({ finixClient: finix }));
 vi.mock("@/lib/audit", () => ({ createAuditLog: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ "x-forwarded-for": "1.2.3.4", "user-agent": "test" }) }));
-const requirePartnerSession = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/partners/partnerSession", () => ({ requirePartnerSession, requirePartnerWriteSession: requirePartnerSession }));
+const requirePartnerAdminSession = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/partners/partnerSession", () => ({ requirePartnerAdminSession, requirePartnerAdminWriteSession: requirePartnerAdminSession }));
 
 import { POST } from "../card/route";
 import { UnauthorizedError } from "@/lib/auth/errors";
@@ -17,7 +17,7 @@ const goodBody = { financeInstrumentToken: "TKN_1", authorizationAccepted: true 
 
 beforeEach(() => {
   vi.clearAllMocks();
-  requirePartnerSession.mockResolvedValue({ partnerId: "p1", partnerUserId: "u1", email: "d@example.test" });
+  requirePartnerAdminSession.mockResolvedValue({ partnerId: "p1", partnerUserId: "u1", email: "d@example.test" });
   finix.createBuyerIdentity.mockResolvedValue({ id: "ID_1" });
   finix.createPaymentInstrument.mockResolvedValue({ id: "PI_1", brand: "VISA", last_four: "4242", expiration_month: 12, expiration_year: 2030 });
   prismaMock.partner.update.mockResolvedValue({});
@@ -26,7 +26,7 @@ beforeEach(() => {
 
 describe("POST /api/partner/billing/card", () => {
   it("needs a partner sign-in", async () => {
-    requirePartnerSession.mockRejectedValue(new UnauthorizedError());
+    requirePartnerAdminSession.mockRejectedValue(new UnauthorizedError());
     expect((await post(goodBody)).status).toBe(401);
     expect(finix.createBuyerIdentity).not.toHaveBeenCalled();
   });

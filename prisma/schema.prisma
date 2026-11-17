@@ -115,6 +115,8 @@ model OnboardingApplication {
   // it never changes how Finix reviews the application. See model Partner.
   partnerId                         String?
   partnerReference                  String?
+  /// The partner's agent who referred this application (PartnerAgent), from the agent's own link.
+  partnerAgentId                    String?
   associatedOwners                  AssociatedOwner[]
   documents                         MerchantDocument[]
   internalDocuments                 OnboardingInternalDocument[]
@@ -325,6 +327,9 @@ model Church {
   partnerId                     String?
   partnerReference              String?
   partner                       Partner?  @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  /// The partner's agent who referred this organization; reports group by it. Null = no agent.
+  partnerAgentId                String?
+  partnerAgent                  PartnerAgent? @relation(fields: [partnerAgentId], references: [id], onDelete: SetNull)
   // Auto-release cadence for this merchant's Settlement Queue (see
   // /admin/merchants/[churchId]/settlements — SettlementQueuePanel).
   // Weekday numbers matching JS Date.getDay() (0=Sunday..6=Saturday); e.g.
@@ -526,6 +531,9 @@ model Partner {
   /// dashboard-access messages for applications of this partner: the partner
   /// shows the status inside its own screens. Off by default.
   suppressMerchantEmails Boolean @default(false)
+  /// Extra inboxes (for example a partner's support or case inbox) that get a copy of the
+  /// organization's boarding and underwriting status emails. Set by a WGC admin.
+  statusEmailRecipients String[] @default([])
   /// Which sidebar items the partner's organizations see inside the partner's own frame:
   /// { allowed: string[], known: string[] } (item links). Null = everything shows. Items WGC adds
   /// later are not in `known`, so they stay hidden until the partner ticks them (src/lib/partners/embeddedMenu.ts).
@@ -553,6 +561,27 @@ model Partner {
   apiKeys          PartnerApiKey[]
   webhookEndpoints PartnerWebhookEndpoint[]
   billableApprovals PartnerBillableApproval[]
+  agents           PartnerAgent[]
+}
+
+/// A person who refers organizations to a partner (a reseller's sales agent). The agent's own
+/// Get Started link carries `code`, which tags the application; reports and status emails
+/// follow it. An agent does not sign in.
+model PartnerAgent {
+  id        String   @id @default(cuid())
+  partnerId String
+  name      String
+  /// Gets a copy of the status emails for the organizations they referred.
+  email     String
+  /// In the agent's link (?agent=). A label only; never grants access.
+  code      String   @unique
+  disabledAt DateTime?
+  createdAt DateTime @default(now())
+
+  partner  Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  churches Church[]
+
+  @@index([partnerId])
 }
 
 model PartnerUser {
@@ -571,6 +600,9 @@ model PartnerUser {
   // Bumped on a password change or disable; a session carries the value from
   // sign-in and is rejected once it no longer matches.
   authVersion Int       @default(1)
+  /// ADMIN: everything. REPORTS: organizations, agents and report downloads only; no API keys,
+  /// billing card, webhook, menu or team.
+  role        String    @default("ADMIN")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

@@ -21,7 +21,7 @@ describe("attachChurchToPartner", () => {
   it("links the organization to the partner with its reference and records one billable approval", async () => {
     prismaMock.church.findUnique.mockResolvedValue({ partnerId: null, partnerReference: null });
     await attachChurchToPartner(params);
-    expect(prismaMock.church.update).toHaveBeenCalledWith({ where: { id: "c1" }, data: { partnerId: "p1", partnerReference: "loc_1" } });
+    expect(prismaMock.church.update).toHaveBeenCalledWith({ where: { id: "c1" }, data: { partnerId: "p1", partnerReference: "loc_1", partnerAgentId: null } });
     const upsert = prismaMock.partnerBillableApproval.upsert.mock.calls[0][0];
     expect(upsert.where).toEqual({ churchId: "c1" });
     expect(upsert.create).toMatchObject({ partnerId: "p1", churchId: "c1", onboardingApplicationId: "app1" });
@@ -49,7 +49,7 @@ describe("attachChurchToPartner", () => {
       .mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5" }))
       .mockResolvedValueOnce({});
     await attachChurchToPartner(params);
-    expect(prismaMock.church.update).toHaveBeenLastCalledWith({ where: { id: "c1" }, data: { partnerId: "p1", partnerReference: null } });
+    expect(prismaMock.church.update).toHaveBeenLastCalledWith({ where: { id: "c1" }, data: { partnerId: "p1", partnerReference: null, partnerAgentId: null } });
     expect(prismaMock.partnerBillableApproval.upsert).toHaveBeenCalled();
   });
 

@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { isAuthError } from "@/lib/auth/errors";
-import { requirePartnerSession, requirePartnerWriteSession } from "@/lib/partners/partnerSession";
+import { requirePartnerAdminSession, requirePartnerAdminWriteSession } from "@/lib/partners/partnerSession";
 import { generatePartnerApiKey, hashPartnerApiKey, partnerKeyEnvironment, partnerKeyPrefixFor, MAX_ACTIVE_PARTNER_KEYS } from "@/lib/partners/partnerApiKeys";
 
 export async function GET() {
   try {
-    const session = await requirePartnerSession();
+    const session = await requirePartnerAdminSession();
     const keys = await prisma.partnerApiKey.findMany({
       where: { partnerId: session.partnerId },
       orderBy: { createdAt: "desc" },
@@ -22,7 +22,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const session = await requirePartnerWriteSession();
+    const session = await requirePartnerAdminWriteSession();
     const body = await req.json().catch(() => ({}));
     const name = typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
     if (!name) return NextResponse.json({ error: "Give the key a name, for example the system that will use it." }, { status: 400 });

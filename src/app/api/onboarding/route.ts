@@ -6,6 +6,8 @@ import { finixClient } from "@/lib/finix/client";
 import { sendWgcEmail, sendWgcAdminOnboardingNotification } from "@/lib/email";
 import { consumePromotionLeadForSignup } from "@/lib/billing/promotionAttribution";
 import { resolvePartnerByOnboardingCode } from "@/lib/partners/onboardingCode";
+import { resolveAgentIdForPartner } from "@/lib/partners/agents";
+import { loadStatusEmailRouting, type StatusEmailRouting } from "@/lib/partners/statusEmailCopies";
 import { notifyPartnerOfOnboardingStage } from "@/lib/partners/onboardingEvents";
 
 function extractFinixErrorMessage(err: any): string {
@@ -89,13 +91,14 @@ export async function POST(req: Request) {
       legal,
       recaptchaToken,
       // A software partner's Get Started link (see src/lib/partners/onboardingCode.ts)
-      partnerCode, partnerReference
+      partnerCode, partnerReference, agentCode
     } = body;
 
     // Only a label. A missing or unknown code never blocks the application.
     const partner = await resolvePartnerByOnboardingCode(partnerCode);
+    const partnerAgentId = partner ? await resolveAgentIdForPartner(partner.id, agentCode) : null;
     const partnerTag = partner
-      ? { partnerId: partner.id, partnerReference: typeof partnerReference === "string" && partnerReference.trim() ? partnerReference.trim().slice(0, 120) : null }
+      ? { partnerId: partner.id, partnerReference: typeof partnerReference === "string" && partnerReference.trim() ? partnerReference.trim().slice(0, 120) : null, partnerAgentId }
       : {};
 
     const reqHeaders = await headers();
@@ -476,9 +479,17 @@ export async function POST(req: Request) {
     });
 
     // A partner that shows the status inside its own screens can ask WGC not to email the organization.
-    const holdMerchantEmail = Boolean(partner?.suppressMerchantEmails);
+    // The partner's own inboxes and the referring agent still get it. Fails open.
+    let routing: StatusEmailRouting = { suppressMerchant: Boolean(partner?.suppressMerchantEmails), copies: [] };
+    try {
+      routing = await loadStatusEmailRouting(application.id, contactEmail);
+    } catch {
+      // organization only
+    }
+    const submittedRecipients = routing.suppressMerchant ? routing.copies : contactEmail ? [contactEmail] : [];
+    const submittedCc = routing.suppressMerchant ? [] : routing.copies;
 
-    if (!existingLog && contactEmail && !holdMerchantEmail) {
+    if (!existingLog && submittedRecipients.length > 0) {
       try {
         const safeBusinessName = legalBusinessName || "your organization";
         const onboardingSubmittedBodyHtml = `
@@ -488,7 +499,8 @@ export async function POST(req: Request) {
           `;
 
         await sendWgcEmail({
-          to: contactEmail,
+          to: submittedRecipients[0],
+          cc: [...submittedRecipients.slice(1), ...submittedCc],
           subject: "WGC Payments Onboarding Submitted",
           title: "Your onboarding has been submitted",
           badgeText: "UNDER REVIEW",
@@ -500,7 +512,7 @@ export async function POST(req: Request) {
           data: {
             onboardingApplicationId: application.id,
             type: "ONBOARDING_SUBMITTED",
-            to: contactEmail,
+            to: [...submittedRecipients, ...submittedCc].join(", "),
             subject: "WGC Payments onboarding submitted",
             status: "SENT",
             sentAt: new Date(),

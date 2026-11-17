@@ -35,6 +35,7 @@ export async function provisionChurchAndBillingGate(app: {
   /** Set when the application came through a software partner (see model Partner). */
   partnerId?: string | null;
   partnerReference?: string | null;
+  partnerAgentId?: string | null;
 }) {
   const provisioned = await provisionChurchAccount(
     {
@@ -59,6 +60,7 @@ export async function provisionChurchAndBillingGate(app: {
       churchId: provisioned.church.id,
       partnerId: app.partnerId,
       partnerReference: app.partnerReference ?? null,
+      partnerAgentId: app.partnerAgentId ?? null,
       onboardingApplicationId: app.id,
     });
     return provisioned;
@@ -136,6 +138,7 @@ export async function provisionChurchAndBillingGateOrAlert(app: {
   finixApplicationId: string | null;
   partnerId?: string | null;
   partnerReference?: string | null;
+  partnerAgentId?: string | null;
 }) {
   try {
     return await provisionChurchAndBillingGate(app);

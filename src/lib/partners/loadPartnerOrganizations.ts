@@ -4,6 +4,8 @@ export interface PartnerOrganizationRow {
   id: string;
   name: string;
   reference: string | null;
+  agentId: string | null;
+  agentName: string | null;
   status: string;
   createdAt: Date;
   giftCount: number;
@@ -19,7 +21,7 @@ export interface PartnerOrganizationRow {
 export async function loadPartnerOrganizations(partnerId: string): Promise<PartnerOrganizationRow[]> {
   const churches = await prisma.church.findMany({
     where: { partnerId },
-    select: { id: true, name: true, partnerReference: true, status: true, createdAt: true },
+    select: { id: true, name: true, partnerReference: true, status: true, createdAt: true, partnerAgent: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" },
   });
   if (churches.length === 0) return [];
@@ -39,6 +41,8 @@ export async function loadPartnerOrganizations(partnerId: string): Promise<Partn
       id: c.id,
       name: c.name,
       reference: c.partnerReference,
+      agentId: c.partnerAgent?.id ?? null,
+      agentName: c.partnerAgent?.name ?? null,
       status: c.status,
       createdAt: c.createdAt,
       giftCount: t?._count._all ?? 0,

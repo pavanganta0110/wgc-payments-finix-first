@@ -20,6 +20,7 @@ export async function GET() {
       status: true,
       contactEmail: true,
       suppressMerchantEmails: true,
+      statusEmailRecipients: true,
       onboardingCode: true,
       pricePerMerchantCents: true,
       cardBrand: true,

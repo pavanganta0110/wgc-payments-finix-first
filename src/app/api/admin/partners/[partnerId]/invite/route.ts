@@ -28,7 +28,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ partner
 
   let invite;
   try {
-    invite = await createPartnerInvite({ partnerId, email, name });
+    invite = await createPartnerInvite({ partnerId, email, name, role: body.role === "REPORTS" ? "REPORTS" : "ADMIN" });
   } catch (err) {
     if (err instanceof PartnerAccountError) {
       return NextResponse.json({ error: err.message }, { status: err.code === "email_in_use" ? 409 : 400 });

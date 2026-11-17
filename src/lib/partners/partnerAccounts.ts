@@ -36,6 +36,8 @@ export async function createPartnerInvite(params: {
   partnerId: string;
   email: string;
   name?: string | null;
+  /** ADMIN (default) or REPORTS. */
+  role?: "ADMIN" | "REPORTS";
 }): Promise<{ rawToken: string; userId: string; expiresAt: Date }> {
   const email = params.email.trim().toLowerCase();
   const partner = await prisma.partner.findUnique({ where: { id: params.partnerId }, select: { id: true } });
@@ -52,6 +54,7 @@ export async function createPartnerInvite(params: {
   const expiresAt = new Date(Date.now() + PARTNER_INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
   const data = {
     name: params.name?.trim() || null,
+    role: params.role === "REPORTS" ? "REPORTS" : "ADMIN",
     setPasswordTokenHash: hashPartnerToken(rawToken),
     setPasswordTokenExpiresAt: expiresAt,
   };

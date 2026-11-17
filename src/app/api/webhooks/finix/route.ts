@@ -12,7 +12,7 @@ import { parseVerificationOutcomes } from "@/lib/finix/parseVerificationOutcomes
 import { parseFinixDate } from "@/lib/finix/parseFinixDate";
 import { mapFinixDisputeStateToWgcStatus } from "@/lib/finix/statusMapping";
 import { provisionChurchAndBillingGateOrAlert } from "@/lib/billing/provisionChurchAndBillingGate";
-import { partnerSuppressesMerchantEmails } from "@/lib/partners/onboardingCode";
+import { loadStatusEmailRouting, type StatusEmailRouting } from "@/lib/partners/statusEmailCopies";
 import { notifyPartnerOfOnboardingStage } from "@/lib/partners/onboardingEvents";
 import { onboardingStage } from "@/lib/partners/onboardingStages";
 import { syncPaymentInstrument } from "@/lib/finix/sync/syncPaymentInstruments";
@@ -79,13 +79,17 @@ export async function sendWebhookEmail(
   bodyHtml: string
 ) {
   // A partner that shows onboarding status inside its own screens can ask WGC not to
-  // email the organization. Fails open: if the check itself fails, the email still goes.
+  // email the organization. The partner's own inboxes and the referring agent still get
+  // the email. Fails open: if the lookup itself fails, the organization still gets it.
+  let routing: StatusEmailRouting = { suppressMerchant: false, copies: [] };
   try {
-    const owner = await prisma.onboardingApplication.findUnique({ where: { id: applicationId }, select: { partnerId: true } });
-    if (await partnerSuppressesMerchantEmails(owner?.partnerId)) return;
+    routing = await loadStatusEmailRouting(applicationId, to);
   } catch {
-    // fall through and send
+    // fall through and send to the organization only
   }
+  const recipients = routing.suppressMerchant ? routing.copies : [to];
+  const cc = routing.suppressMerchant ? [] : routing.copies;
+  if (recipients.length === 0) return;
 
   // Finix redelivers webhooks (retries, or two events landing close
   // together), and the old check-then-send-then-log sequence had a real
@@ -113,7 +117,7 @@ export async function sendWebhookEmail(
       data: {
         onboardingApplicationId: applicationId,
         type: type,
-        to: to,
+        to: [...recipients, ...cc].join(", "),
         subject: subject,
         status: "PENDING",
         bodyHtml,
@@ -127,7 +131,7 @@ export async function sendWebhookEmail(
   }
 
   try {
-    const response = await sendWgcEmail({ to, subject, title, badgeText, badgeColor, bodyHtml });
+    const response = await sendWgcEmail({ to: recipients[0], subject, title, badgeText, badgeColor, bodyHtml, cc: [...recipients.slice(1), ...cc] });
     const error = response.success ? null : response.error;
     const data = response.data;
 
@@ -1911,6 +1915,7 @@ export async function POST(req: Request) {
             finixApplicationId: app.finixApplicationId,
             partnerId: app.partnerId,
             partnerReference: app.partnerReference,
+            partnerAgentId: app.partnerAgentId,
           });
         } else if (onboardingState === "UPDATE_REQUESTED") {
           // Work out what Finix is actually asking for on EVERY delivery of

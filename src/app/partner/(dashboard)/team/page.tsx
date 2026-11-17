@@ -1,8 +1,10 @@
+import { requirePartnerAdminPage } from "@/lib/partners/requirePartnerAdminPage";
 import PartnerTeamPanel from "@/components/partner/PartnerTeamPanel";
 
 export const metadata = { title: "Team | Partner dashboard" };
 
-export default function PartnerTeamPage() {
+export default async function PartnerTeamPage() {
+  await requirePartnerAdminPage();
   return (
     <div className="space-y-6">
       <div>

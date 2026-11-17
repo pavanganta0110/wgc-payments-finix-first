@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
+import { isValidAgentEmail } from "@/lib/partners/agents";
 import { requirePartnerAdmin } from "@/lib/partners/requirePartnerAdmin";
 
 const MAX_PRICE_CENTS = 1_000_000; // $10,000 per merchant per month: a typo guard, not a business rule
 
 /**
  * Partner settings WGC controls: whether WGC emails the partner's organizations about
- * onboarding, and the price the partner pays per approved merchant per month (null stops
+ * onboarding, which extra inboxes get a copy of those status emails, and the price the partner pays per approved merchant per month (null stops
  * billing). A price change applies from the next invoice; an invoice already issued never changes.
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ partnerId: string }> }) {
@@ -16,11 +17,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ partne
   const { partnerId } = await params;
 
   const body = await req.json().catch(() => ({}));
-  const data: { suppressMerchantEmails?: boolean; pricePerMerchantCents?: number | null } = {};
+  const data: { suppressMerchantEmails?: boolean; pricePerMerchantCents?: number | null; statusEmailRecipients?: string[] } = {};
 
   if ("suppressMerchantEmails" in body) {
     if (typeof body.suppressMerchantEmails !== "boolean") return NextResponse.json({ error: "suppressMerchantEmails must be true or false." }, { status: 400 });
     data.suppressMerchantEmails = body.suppressMerchantEmails;
+  }
+  if ("statusEmailRecipients" in body) {
+    const list = body.statusEmailRecipients;
+    if (!Array.isArray(list) || list.length > 5 || !list.every((e) => isValidAgentEmail(typeof e === "string" ? e.trim() : e))) {
+      return NextResponse.json({ error: "Give up to 5 valid email addresses." }, { status: 400 });
+    }
+    data.statusEmailRecipients = [...new Set(list.map((e: string) => e.trim().toLowerCase()))];
   }
   if ("pricePerMerchantCents" in body) {
     const price = body.pricePerMerchantCents;

@@ -1,8 +1,10 @@
+import { requirePartnerAdminPage } from "@/lib/partners/requirePartnerAdminPage";
 import PartnerWebhookPanel from "@/components/partner/PartnerWebhookPanel";
 
 export const metadata = { title: "Webhook | Partner dashboard" };
 
-export default function PartnerWebhookPage() {
+export default async function PartnerWebhookPage() {
+  await requirePartnerAdminPage();
   return (
     <div className="space-y-6">
       <div>

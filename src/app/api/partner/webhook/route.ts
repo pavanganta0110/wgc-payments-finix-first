@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { isAuthError } from "@/lib/auth/errors";
-import { requirePartnerSession, requirePartnerWriteSession } from "@/lib/partners/partnerSession";
+import { requirePartnerAdminSession, requirePartnerAdminWriteSession } from "@/lib/partners/partnerSession";
 import { PARTNER_DEFAULT_EVENTS, PARTNER_ONBOARDING_EVENTS } from "@/lib/partners/partnerWebhooks";
 import { WGC_EVENT_TYPES, isWgcEventType } from "@/lib/events/types";
 
@@ -17,7 +17,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** The webhook, how it has been doing, and the latest deliveries. Never includes the secret. */
 export async function GET() {
   try {
-    const session = await requirePartnerSession();
+    const session = await requirePartnerAdminSession();
     const endpoint = await prisma.partnerWebhookEndpoint.findUnique({
       where: { partnerId: session.partnerId },
       select: {
@@ -80,7 +80,7 @@ export async function GET() {
  */
 export async function PUT(req: Request) {
   try {
-    const session = await requirePartnerWriteSession();
+    const session = await requirePartnerAdminWriteSession();
     const body = await req.json().catch(() => ({}));
 
     const existing = await prisma.partnerWebhookEndpoint.findUnique({ where: { partnerId: session.partnerId }, select: { id: true } });

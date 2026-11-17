@@ -49,7 +49,7 @@ describe("provisionChurchAndBillingGate", () => {
     expect(prismaMock.church.update).not.toHaveBeenCalled(); // billingSetupStatus stays empty: never gated
     expect(createBillingActivationToken).not.toHaveBeenCalled();
     expect(sendSubscriptionActivationEmail).not.toHaveBeenCalled();
-    expect(attachChurchToPartner).toHaveBeenCalledWith({ churchId: "c1", partnerId: "p1", partnerReference: "loc_1", onboardingApplicationId: "app1" });
+    expect(attachChurchToPartner).toHaveBeenCalledWith({ churchId: "c1", partnerId: "p1", partnerReference: "loc_1", partnerAgentId: null, onboardingApplicationId: "app1" });
   });
 
   it("holds back the dashboard-access email only when the partner asked for it", async () => {

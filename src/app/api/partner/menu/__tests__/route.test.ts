@@ -4,7 +4,7 @@ const prismaMock = vi.hoisted(() => ({ partner: { findUnique: vi.fn(), update: v
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 vi.mock("@/lib/audit", () => ({ createAuditLog: vi.fn() }));
 const sessionFn = vi.hoisted(() => vi.fn(async () => ({ partnerId: "p1", partnerUserId: "u1", email: "d@x.test" })));
-vi.mock("@/lib/partners/partnerSession", () => ({ requirePartnerSession: sessionFn, requirePartnerWriteSession: sessionFn }));
+vi.mock("@/lib/partners/partnerSession", () => ({ requirePartnerAdminSession: sessionFn, requirePartnerAdminWriteSession: sessionFn }));
 
 import { GET, PUT } from "../route";
 

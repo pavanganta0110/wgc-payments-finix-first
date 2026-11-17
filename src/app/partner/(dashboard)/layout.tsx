@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BookOpen, Building2, CreditCard, KeyRound, ListChecks, Users, Webhook } from "lucide-react";
+import { BookOpen, Building2, CreditCard, FileDown, UserRound, KeyRound, ListChecks, Users, Webhook } from "lucide-react";
 import { getPartnerSession } from "@/lib/partners/partnerSession";
 import { partnerKeyEnvironment } from "@/lib/partners/partnerApiKeys";
 import PartnerSignOutButton from "@/components/partner/PartnerSignOutButton";
@@ -9,19 +9,22 @@ import PartnerViewBanner from "@/components/partner/PartnerViewBanner";
 export const dynamic = "force-dynamic";
 
 const NAV_ITEMS = [
-  { name: "Organizations", href: "/partner/organizations", icon: Building2 },
-  { name: "API Key", href: "/partner/api-keys", icon: KeyRound },
-  { name: "Webhook", href: "/partner/webhook", icon: Webhook },
-  { name: "Menu", href: "/partner/menu", icon: ListChecks },
-  { name: "Billing", href: "/partner/billing", icon: CreditCard },
-  { name: "Team", href: "/partner/team", icon: Users },
-  { name: "Docs", href: "/partner/docs", icon: BookOpen },
+  { name: "Organizations", href: "/partner/organizations", icon: Building2, adminOnly: false },
+  { name: "Agents", href: "/partner/agents", icon: UserRound, adminOnly: false },
+  { name: "Reports", href: "/partner/reports", icon: FileDown, adminOnly: false },
+  { name: "API Key", href: "/partner/api-keys", icon: KeyRound, adminOnly: true },
+  { name: "Webhook", href: "/partner/webhook", icon: Webhook, adminOnly: true },
+  { name: "Menu", href: "/partner/menu", icon: ListChecks, adminOnly: true },
+  { name: "Billing", href: "/partner/billing", icon: CreditCard, adminOnly: true },
+  { name: "Team", href: "/partner/team", icon: Users, adminOnly: true },
+  { name: "Docs", href: "/partner/docs", icon: BookOpen, adminOnly: true },
 ];
 
 export default async function PartnerDashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getPartnerSession();
   if (!session) redirect("/partner/login");
   const live = partnerKeyEnvironment() === "live";
+  const navItems = NAV_ITEMS.filter((item) => !item.adminOnly || session.role === "ADMIN");
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">
@@ -44,7 +47,7 @@ export default async function PartnerDashboardLayout({ children }: { children: R
       </div>
       {/* The side menu below is hidden on narrow screens; this strip takes its place. */}
       <nav aria-label="Partner menu" className="md:hidden flex gap-1 overflow-x-auto px-3 py-2 bg-white border-b border-slate-100">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           return (
             <Link key={item.href} href={item.href} className="flex shrink-0 items-center gap-2 py-2 px-3 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50">
@@ -57,7 +60,7 @@ export default async function PartnerDashboardLayout({ children }: { children: R
       <div className="flex-grow flex">
         <aside className="shrink-0 w-56 bg-white border-r border-slate-100 py-6 px-3 hidden md:block">
           <nav className="space-y-1">
-            {NAV_ITEMS.map((item) => {
+            {navItems.map((item) => {
               const Icon = item.icon;
               return (
                 <Link

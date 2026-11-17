@@ -52,12 +52,14 @@ export interface StartPartnerContext {
   /** The partner's Get Started code and the partner's own id for this organization. */
   partnerCode?: string | null;
   partnerReference?: string | null;
+  /** The referring agent's code (?agent=), only meaningful together with a partner code. */
+  agentCode?: string | null;
   prefill?: StartPrefill;
   /** Where to go after submitting, instead of the success page (the partner's own status page). */
   afterSubmitPath?: string | null;
 }
 
-export default function StartOnboardingPage({ embed = false, partnerCode = null, partnerReference = null, prefill = {}, afterSubmitPath = null }: StartPartnerContext = {}) {
+export default function StartOnboardingPage({ embed = false, partnerCode = null, partnerReference = null, agentCode = null, prefill = {}, afterSubmitPath = null }: StartPartnerContext = {}) {
   const router = useRouter();
   const successPath = (applicationId: string) => afterSubmitPath ?? `/onboarding/success?applicationId=${applicationId}${embed ? "&embed=1" : ""}`;
   const [step, setStep] = useState(1);
@@ -304,7 +306,7 @@ export default function StartOnboardingPage({ embed = false, partnerCode = null,
           ownershipPercentage: Number(o.ownershipPercentage),
         })) : [],
         legal,
-        ...(partnerCode ? { partnerCode, partnerReference } : {}),
+        ...(partnerCode ? { partnerCode, partnerReference, ...(agentCode ? { agentCode } : {}) } : {}),
       };
 
       const res = await fetch("/api/onboarding", {
