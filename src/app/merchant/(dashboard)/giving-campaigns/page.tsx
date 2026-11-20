@@ -10,7 +10,8 @@ import CampaignSeriesControls from "@/components/merchant/CampaignSeriesControls
 export default async function GivingCampaignsPage() {
   const session = await getSession();
   const permissions = getDonorPermissions(session?.role);
-  if (!session?.churchId || !permissions.canView) {
+  // Email campaigns go to the whole donor list: organization-level roles only.
+  if (!session?.churchId || !permissions.canView || session.role === "fundraiser" || session.role === "viewer") {
     redirect("/merchant/dashboard");
   }
   const churchId = session.churchId;
