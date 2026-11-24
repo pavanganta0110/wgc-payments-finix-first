@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { CreditCard, Send, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { formatCents } from "@/lib/format";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
 
 const FREQUENCIES = [
   { value: "WEEKLY", label: "Weekly" },
@@ -267,7 +268,7 @@ function ExistingPaymentMethodFlow({ onBack, onDone }: { onBack: () => void; onD
                           onChange={() => setSelectedInstrumentId(m.finixPaymentInstrumentId)}
                         />
                         <div className="text-sm">
-                          <p className="font-semibold text-slate-800">{m.cardBrand || (m.bankLast4 ? "Bank Account" : "Unknown")} •••• {m.cardLast4 || m.bankLast4}</p>
+                          <p className="font-semibold text-slate-800"><InstrumentInline cardBrand={m.cardBrand} paymentMethodType={m.bankLast4 ? "BANK_ACCOUNT" : "PAYMENT_CARD"} last4={m.cardLast4 || m.bankLast4} /></p>
                           <p className="text-xs text-slate-400">
                             {m.accountHolderName} {m.cardExpirationMonth ? `· Exp ${m.cardExpirationMonth}/${m.cardExpirationYear}` : ""}
                             {expired && " · Expired"} {m.enabled === false && " · Disabled"}
@@ -335,7 +336,7 @@ function ExistingPaymentMethodFlow({ onBack, onDone }: { onBack: () => void; onD
             <div className="flex justify-between"><span className="text-slate-500">Frequency</span><span className="font-semibold text-slate-800">{FREQUENCIES.find((f) => f.value === frequency)?.label}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Start Date</span><span className="font-semibold text-slate-800">{new Date(startDate).toLocaleDateString("en-US")}</span></div>
             {endDate && <div className="flex justify-between"><span className="text-slate-500">End Date</span><span className="font-semibold text-slate-800">{new Date(endDate).toLocaleDateString("en-US")}</span></div>}
-            <div className="flex justify-between"><span className="text-slate-500">Payment Method</span><span className="font-semibold text-slate-800">{selectedMethod.cardBrand || "Bank"} •••• {selectedMethod.cardLast4 || selectedMethod.bankLast4}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Payment Method</span><span className="font-semibold text-slate-800"><InstrumentInline cardBrand={selectedMethod.cardBrand} paymentMethodType={selectedMethod.bankLast4 ? "BANK_ACCOUNT" : "PAYMENT_CARD"} last4={selectedMethod.cardLast4 || selectedMethod.bankLast4} /></span></div>
           </div>
           <label className="flex items-start gap-2 text-sm text-slate-700 bg-slate-50 rounded-xl p-3">
             <input type="checkbox" checked={consentConfirmed} onChange={(e) => setConsentConfirmed(e.target.checked)} className="mt-0.5" />

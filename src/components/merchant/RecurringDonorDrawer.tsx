@@ -10,6 +10,7 @@ import { formatDateCDT, formatCalendarDateUTC } from "@/lib/formatDateTimeCDT";
 import { frequencyLabel } from "@/lib/subscriptions/subscriptionStatus";
 import { loadSubscriptionCandidates } from "@/lib/subscriptions/subscriptionAggregates";
 import { prisma } from "@/lib/prisma";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
 
 export default async function RecurringDonorDrawer({ donorId, churchId }: { donorId: string; churchId: string }) {
   const donor = await prisma.donor.findFirst({ where: { id: donorId, churchId } });
@@ -104,8 +105,8 @@ export default async function RecurringDonorDrawer({ donorId, churchId }: { dono
       <Section title="Payment Methods">
         {subscriptions[0]?.paymentMethod ? (
           <Row
-            label={subscriptions[0].paymentMethod.brand || (subscriptions[0].paymentMethod.type === "BANK_ACCOUNT" ? "Bank Account" : "Card")}
-            value={`•••• ${subscriptions[0].paymentMethod.last4 || "—"}`}
+            label={subscriptions[0].paymentMethod.type === "BANK_ACCOUNT" ? "Bank Account" : "Card"}
+            value={<InstrumentInline cardBrand={subscriptions[0].paymentMethod.brand} paymentMethodType={subscriptions[0].paymentMethod.type} last4={subscriptions[0].paymentMethod.last4} />}
           />
         ) : (
           <p className="text-sm text-slate-500">No payment method on file.</p>

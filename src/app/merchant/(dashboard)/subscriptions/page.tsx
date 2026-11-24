@@ -17,6 +17,7 @@ import { loadSubscriptionsList, type SubscriptionsSortKey } from "@/lib/subscrip
 import { loadSubscriptionsAnalytics } from "@/lib/subscriptions/subscriptionsAnalytics";
 import { frequencyLabel } from "@/lib/subscriptions/subscriptionStatus";
 import { reconcileStaleActiveSubscriptions } from "@/lib/subscriptions/subscriptionReconciliation";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
 
 const PAGE_SIZE = 25;
 
@@ -217,7 +218,7 @@ export default async function SubscriptionsPage({
                       <td className="px-6 py-3 text-right text-slate-600">{formatCents(s.monthlyValueCents)}</td>
                       <td className="px-6 py-3"><StateBadge state={s.displayStatus} /></td>
                       <td className="px-6 py-3 text-slate-600 whitespace-nowrap">{s.nextBillingDate ? formatCalendarDateUTC(s.nextBillingDate) : "—"}</td>
-                      <td className="px-6 py-3 text-slate-600">{s.paymentMethod ? `${s.paymentMethod.brand || "Bank"} ••••${s.paymentMethod.last4 || ""}` : "—"}</td>
+                      <td className="px-6 py-3 text-slate-600">{s.paymentMethod ? <InstrumentInline cardBrand={s.paymentMethod.brand} paymentMethodType={s.paymentMethod.type} last4={s.paymentMethod.last4} /> : "—"}</td>
                       <td className="px-6 py-3 text-right text-slate-600">{s.failedAttempts > 0 ? <span className="text-red-600 font-semibold">{s.failedAttempts}</span> : "0"}</td>
                       <td className="px-6 py-3 text-right font-semibold text-slate-900">{formatCents(s.lifetimeCollectedCents)}</td>
                     </ClickableTableRow>

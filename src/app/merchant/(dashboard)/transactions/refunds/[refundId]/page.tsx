@@ -9,6 +9,10 @@ import { formatDateTimeCDT } from "@/lib/formatDateTimeCDT";
 import { loadRefundDetail } from "@/lib/finix/refundDetail";
 import { titleCase, Row, FlowStep } from "@/components/merchant/RefundDetailPrimitives";
 import DonorNameLink from "@/components/merchant/DonorNameLink";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
+import { cardBinFromRaw } from "@/lib/finix/cardDisplay";
+import PaymentInstrumentPanel from "@/components/merchant/PaymentInstrumentPanel";
+import { buildInstrumentPanelProps } from "@/lib/finix/cardDisplay";
 
 export default async function RefundFullDetailPage({
   params,
@@ -77,8 +81,12 @@ export default async function RefundFullDetailPage({
               {" · "}
               Payment Instrument:{" "}
               <span className="font-semibold text-slate-900">
-                {instrument?.cardBrand || (instrument?.bankLast4 ? "Bank" : "")}{" "}
-                ••••{instrument?.cardLast4 || instrument?.bankLast4 || "----"}
+                <InstrumentInline
+                cardBrand={instrument?.cardBrand}
+                paymentMethodType={instrument?.paymentMethodType}
+                last4={instrument?.cardLast4 || instrument?.bankLast4}
+                bin={cardBinFromRaw(instrument?.rawJsonRedacted)}
+              />
               </span>
             </p>
           </div>
@@ -142,23 +150,7 @@ export default async function RefundFullDetailPage({
           </div>
 
           {/* Payment Instrument */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-            <h3 className="text-sm font-bold text-slate-900 mb-4">Payment Instrument</h3>
-            <Row label="Brand" value={instrument?.cardBrand || (instrument?.bankLast4 ? "Bank Account" : "—")} />
-            <Row
-              label="Masked Number"
-              value={instrument ? `•••• ${instrument.cardLast4 || instrument.bankLast4 || "----"}` : "—"}
-            />
-            <Row label="Holder Name" value={instrument?.accountHolderName || "—"} />
-            {instrument?.cardExpirationMonth && instrument?.cardExpirationYear && (
-              <Row label="Expiration" value={`${instrument.cardExpirationMonth}/${instrument.cardExpirationYear}`} />
-            )}
-            <Row label="State" value={titleCase(instrument?.state)} />
-            <Row label="Type" value={instrument?.bankLast4 ? "Bank Account" : instrument ? "Card" : "—"} />
-            <Row label="Address" value={instrument?.addressCountry || "—"} />
-            <Row label="CVV Verification" value={titleCase(instrument?.securityCodeVerification)} />
-            <Row label="Address Verification" value={titleCase(instrument?.addressVerification)} />
-          </div>
+          {instrument && <PaymentInstrumentPanel {...buildInstrumentPanelProps(instrument, formatDateTimeCDT(instrument.createdAtFinix))} />}
 
           {/* Related Resources */}
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">

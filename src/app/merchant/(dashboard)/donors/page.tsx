@@ -44,6 +44,8 @@ import {
 import { getDonorPermissions } from "@/lib/donors/donorPermissions";
 import { DONOR_SOURCE_BADGE_LABELS } from "@/lib/donors/donorSources";
 import { PinButton } from "@/components/merchant/PaymentDetailActions";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
+import { cardBinFromRaw } from "@/lib/finix/cardDisplay";
 
 const PAGE_SIZE = 25;
 
@@ -655,13 +657,16 @@ export default async function DonorsPage({
                         )}
                         {visibleCols.has("paymentMethods") && (
                           <td className="px-6 py-3 text-slate-600">
-                            {primaryInstrument
-                              ? `${primaryInstrument.cardBrand || (primaryInstrument.bankLast4 ? "Bank" : "—")} •••• ${
-                                  primaryInstrument.cardLast4 ||
-                                  primaryInstrument.bankLast4 ||
-                                  ""
-                                }`
-                              : "—"}
+                            {primaryInstrument ? (
+                              <InstrumentInline
+                                cardBrand={primaryInstrument.cardBrand}
+                                paymentMethodType={primaryInstrument.paymentMethodType}
+                                last4={primaryInstrument.cardLast4 || primaryInstrument.bankLast4}
+                                bin={cardBinFromRaw(primaryInstrument.rawJsonRedacted)}
+                              />
+                            ) : (
+                              "—"
+                            )}
                           </td>
                         )}
                         {visibleCols.has("failedPayments") && (

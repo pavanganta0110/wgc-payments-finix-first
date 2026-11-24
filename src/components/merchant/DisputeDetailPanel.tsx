@@ -16,6 +16,8 @@ import { resolveDisputeDisplayStatus } from "@/lib/finix/disputeStatus";
 import DisputeDeadlineBanner from "@/components/merchant/DisputeDeadlineBanner";
 import DisputeFinancialImpactCard from "@/components/merchant/DisputeFinancialImpactCard";
 import DonorNameLink from "@/components/merchant/DonorNameLink";
+import PaymentInstrumentPanel from "@/components/merchant/PaymentInstrumentPanel";
+import { buildInstrumentPanelProps } from "@/lib/finix/cardDisplay";
 
 export default async function DisputeDetailPanel({
   disputeId,
@@ -109,16 +111,7 @@ export default async function DisputeDetailPanel({
 
       {instrument && (
         <Section title="Payment Instrument">
-          <Row label="Type" value={instrument.cardBrand || (instrument.bankLast4 ? "Bank Account" : instrument.instrumentType || "—")} />
-          <Row
-            label="Masked Number"
-            value={
-              instrument.cardLast4 || instrument.bankLast4
-                ? `••••${instrument.cardLast4 || instrument.bankLast4}`
-                : "—"
-            }
-          />
-          <Row label="Account Holder Name" value={instrument.accountHolderName || "—"} />
+          <PaymentInstrumentPanel embedded {...buildInstrumentPanelProps(instrument, formatDateTime(instrument.createdAtFinix))} />
         </Section>
       )}
 

@@ -9,6 +9,8 @@ import { formatPersonName } from "@/lib/formatPersonName";
 import { resolveDateRange } from "@/lib/dateRangePresets";
 import { loadGivingLinkAttempts, describeInstrumentType } from "@/lib/givingLinks/attempts";
 import { describeFailureCode } from "@/lib/finix/cardDeclineReasons";
+import { PaymentInstrumentCell } from "@/components/merchant/PaymentInstrumentDisplay";
+import { cardBinFromRaw } from "@/lib/finix/cardDisplay";
 
 function StackedDateTime({ date }: { date: Date | null | undefined }) {
   if (!date) return <span className="text-slate-400">—</span>;
@@ -125,13 +127,13 @@ export default async function DonationAttemptsTable({
                         {transfer?.failureCode ? describeFailureCode(transfer.failureCode) : "—"}
                       </td>
                       <td className="px-6 py-3">
-                        <p className="text-slate-700">
-                          {instrument?.cardBrand || (instrument?.bankLast4 ? "Bank" : "—")} ••••
-                          {instrument?.cardLast4 || instrument?.bankLast4 || "----"}
-                        </p>
-                        {instrument?.accountHolderName && (
-                          <p className="text-xs text-slate-400">{instrument.accountHolderName}</p>
-                        )}
+                        <PaymentInstrumentCell
+                          cardBrand={instrument?.cardBrand}
+                          paymentMethodType={instrument?.paymentMethodType}
+                          last4={instrument?.cardLast4 || instrument?.bankLast4}
+                          bin={cardBinFromRaw(instrument?.rawJsonRedacted)}
+                          holderName={instrument?.accountHolderName}
+                        />
                       </td>
                       <td className="px-6 py-3 text-slate-700">{describeInstrumentType(payment.paymentMethodType)}</td>
                       <td className="px-6 py-3">

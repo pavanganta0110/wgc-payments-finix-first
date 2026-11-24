@@ -16,6 +16,9 @@ import { getSubscriptionPermissions } from "@/lib/subscriptions/subscriptionPerm
 import SubscriptionActions from "@/components/merchant/SubscriptionActions";
 import SubscriptionDonorMatcher from "@/components/merchant/SubscriptionDonorMatcher";
 import { needsReconciliation, reconcileSubscription } from "@/lib/subscriptions/subscriptionReconciliation";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
+import CardBrandLogo from "@/components/merchant/CardBrandLogo";
+import { normalizeCardBrand } from "@/lib/finix/cardDisplay";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -141,7 +144,7 @@ export default async function SubscriptionDetailPage({
           </div>
           <div>
             <p className="text-xs text-slate-500">Payment Method</p>
-            <p className="text-sm font-semibold text-slate-700">{s.paymentMethod ? `${s.paymentMethod.brand || "Bank"} ••••${s.paymentMethod.last4 || ""}` : "—"}</p>
+            <p className="text-sm font-semibold text-slate-700">{s.paymentMethod ? <InstrumentInline cardBrand={s.paymentMethod.brand} paymentMethodType={s.paymentMethod.type} last4={s.paymentMethod.last4} /> : "—"}</p>
           </div>
           <div>
             <p className="text-xs text-slate-500">Lifetime Collected</p>
@@ -221,7 +224,7 @@ function OverviewTab({ s }: { s: Sub }) {
         </Card>
         <Card title="Payment Method">
           {s.paymentMethod ? (
-            <p className="text-sm text-slate-700">{s.paymentMethod.brand || "Bank Account"} •••• {s.paymentMethod.last4 || "—"}</p>
+            <p className="text-sm text-slate-700"><InstrumentInline cardBrand={s.paymentMethod.brand} paymentMethodType={s.paymentMethod.type} last4={s.paymentMethod.last4} size={22} /></p>
           ) : (
             <p className="text-sm text-slate-500">No payment method on file.</p>
           )}
@@ -310,7 +313,7 @@ function PaymentMethodTab({ s }: { s: Sub }) {
       {s.paymentMethod ? (
         <div className="space-y-1.5 text-sm max-w-md">
           <div className="flex justify-between"><span className="text-slate-500">Type</span><span className="font-semibold text-slate-800">{s.paymentMethod.type === "BANK_ACCOUNT" ? "Bank Account" : "Card"}</span></div>
-          <div className="flex justify-between"><span className="text-slate-500">Brand</span><span className="font-semibold text-slate-800">{s.paymentMethod.brand || "—"}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500">Brand</span><span className="font-semibold text-slate-800">{s.paymentMethod.type !== "BANK_ACCOUNT" && s.paymentMethod.brand ? <CardBrandLogo brand={normalizeCardBrand(s.paymentMethod.brand)} height={20} label={s.paymentMethod.brand} /> : s.paymentMethod.brand || "—"}</span></div>
           <div className="flex justify-between"><span className="text-slate-500">Masked Number</span><span className="font-semibold text-slate-800">•••• {s.paymentMethod.last4 || "—"}</span></div>
           <div className="flex justify-between"><span className="text-slate-500">Account/Cardholder Name</span><span className="font-semibold text-slate-800">{s.paymentMethod.accountHolderName || "—"}</span></div>
           <div className="flex justify-between"><span className="text-slate-500">Expiration</span><span className="font-semibold text-slate-800">{s.paymentMethod.expirationMonth ? `${s.paymentMethod.expirationMonth}/${s.paymentMethod.expirationYear}` : "—"}</span></div>

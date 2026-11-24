@@ -18,16 +18,14 @@ import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundSta
 import { formatPersonName } from "@/lib/formatPersonName";
 import { formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
 import {
-  titleCaseFromSnake as titleCaseFromSnakeBase,
-  instrumentStateLabel,
   sourceLabel,
   settlementStateLabel,
 } from "@/lib/finix/displayFormatters";
 import { mapFeeType } from "@/lib/fees/feeTypeLabels";
 
-const titleCaseFromSnake = (value: string | null | undefined) => titleCaseFromSnakeBase(value, "Fee");
-
 import { checkRefundEligibility } from "@/lib/payments/refundEligibility";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
+import { cardBinFromRaw } from "@/lib/finix/cardDisplay";
 
 export default async function PaymentFullDetailPage({
   params,
@@ -231,8 +229,12 @@ export default async function PaymentFullDetailPage({
               {" · "}
               Payment Instrument:{" "}
               <span className="font-semibold text-slate-900">
-                {instrument?.cardBrand || (instrument?.bankLast4 ? "Bank" : "")}{" "}
-                ••••{instrument?.cardLast4 || instrument?.bankLast4 || "----"}
+                <InstrumentInline
+                cardBrand={instrument?.cardBrand}
+                paymentMethodType={instrument?.paymentMethodType}
+                last4={instrument?.cardLast4 || instrument?.bankLast4}
+                bin={cardBinFromRaw(instrument?.rawJsonRedacted)}
+              />
               </span>
             </p>
           </div>

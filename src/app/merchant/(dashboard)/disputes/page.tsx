@@ -26,6 +26,8 @@ import {
   DISPUTE_DISPLAY_STATUS_LABELS,
 } from "@/lib/finix/disputeStatus";
 import { PinButton } from "@/components/merchant/PaymentDetailActions";
+import CardBrandLogo from "@/components/merchant/CardBrandLogo";
+import { cardBinFromRaw, maskedCardNumber, normalizeCardBrand } from "@/lib/finix/cardDisplay";
 
 function StackedDateTime({ date }: { date: Date | null | undefined }) {
   if (!date) return <span className="text-slate-400">—</span>;
@@ -259,11 +261,15 @@ export default async function DisputesPage({
                       )}
                       {visibleCols.has("paymentMethod") && (
                         <td className="px-6 py-3 text-slate-600">
-                          {instrument?.cardBrand || (instrument?.bankLast4 ? "Bank Account" : "—")}
+                          {instrument?.cardLast4 ? (
+                            <CardBrandLogo brand={normalizeCardBrand(instrument.cardBrand)} height={20} label={instrument.cardBrand ?? undefined} />
+                          ) : (
+                            instrument?.bankLast4 ? "Bank Account" : "—"
+                          )}
                         </td>
                       )}
                       {visibleCols.has("lastFour") && (
-                        <td className="px-6 py-3 text-slate-600">{instrument?.cardLast4 || instrument?.bankLast4 || "—"}</td>
+                        <td className="px-6 py-3 text-slate-600 tabular-nums">{instrument?.cardLast4 ? maskedCardNumber(cardBinFromRaw(instrument.rawJsonRedacted), instrument.cardLast4) : instrument?.bankLast4 || "—"}</td>
                       )}
                       {visibleCols.has("settlement") && (
                         <td className="px-6 py-3">

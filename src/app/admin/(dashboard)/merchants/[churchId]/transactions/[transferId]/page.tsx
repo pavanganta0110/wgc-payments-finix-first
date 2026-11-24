@@ -11,6 +11,8 @@ import { formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
 import { sourceLabel } from "@/lib/finix/displayFormatters";
 import PaymentInstrumentPanel from "@/components/merchant/PaymentInstrumentPanel";
 import { buildInstrumentPanelProps } from "@/lib/finix/cardDisplay";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
+import { cardBinFromRaw } from "@/lib/finix/cardDisplay";
 
 // Admin mirror of the merchant's own per-transaction "Donation Breakdown"
 // card (src/app/merchant/(dashboard)/transactions/payments/[transferId]/page.tsx)
@@ -92,8 +94,12 @@ export default async function AdminTransactionDetailPage({
             {" · "}
             Payment Instrument:{" "}
             <span className="font-semibold text-slate-900">
-              {instrument?.cardBrand || (instrument?.bankLast4 ? "Bank" : "")} ••••
-              {instrument?.cardLast4 || instrument?.bankLast4 || "----"}
+              <InstrumentInline
+                cardBrand={instrument?.cardBrand}
+                paymentMethodType={instrument?.paymentMethodType}
+                last4={instrument?.cardLast4 || instrument?.bankLast4}
+                bin={cardBinFromRaw(instrument?.rawJsonRedacted)}
+              />
             </span>
           </p>
         </div>

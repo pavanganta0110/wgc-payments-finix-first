@@ -22,6 +22,8 @@ import { computeReconciliation } from "@/lib/finix/settlementReconciliation";
 import { getSettlementPermissions } from "@/lib/finix/settlementPermissions";
 import SettlementReconciliationPanel from "@/components/merchant/SettlementReconciliationPanel";
 import SettlementAuditHistory from "@/components/merchant/SettlementAuditHistory";
+import CardBrandLogo from "@/components/merchant/CardBrandLogo";
+import { cardBinFromRaw, maskedCardNumber, normalizeCardBrand } from "@/lib/finix/cardDisplay";
 
 export default async function SettlementFullDetailPage({
   params,
@@ -204,9 +206,13 @@ export default async function SettlementFullDetailPage({
                           <td className="py-2 pr-4 text-right font-semibold text-slate-900">{formatCents(net)}</td>
                           <td className="py-2 pr-4"><StateBadge state={transfer?.state || payment.status} /></td>
                           <td className="py-2 pr-4 text-slate-600">
-                            {instrument?.cardBrand || (instrument?.bankLast4 ? "Bank Account" : "—")}
+                            {instrument?.cardLast4 ? (
+                              <CardBrandLogo brand={normalizeCardBrand(instrument.cardBrand)} height={20} label={instrument.cardBrand ?? undefined} />
+                            ) : (
+                              instrument?.bankLast4 ? "Bank Account" : "—"
+                            )}
                           </td>
-                          <td className="py-2 text-slate-600">{instrument?.cardLast4 || instrument?.bankLast4 || "—"}</td>
+                          <td className="py-2 text-slate-600 tabular-nums">{instrument?.cardLast4 ? maskedCardNumber(cardBinFromRaw(instrument.rawJsonRedacted), instrument.cardLast4) : instrument?.bankLast4 || "—"}</td>
                         </tr>
                       );
                     })}

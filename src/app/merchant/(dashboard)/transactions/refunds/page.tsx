@@ -18,6 +18,8 @@ import { parseVisibleColumns } from "@/lib/refundColumns";
 import RefundRowActions from "@/components/merchant/RefundRowActions";
 import { computeRefundStatus } from "@/lib/finix/refundStatus";
 import { PinButton } from "@/components/merchant/PaymentDetailActions";
+import { PaymentInstrumentCell } from "@/components/merchant/PaymentInstrumentDisplay";
+import { cardBinFromRaw } from "@/lib/finix/cardDisplay";
 
 function StackedDateTime({ date }: { date: Date | null | undefined }) {
   if (!date) return <span className="text-slate-400">—</span>;
@@ -262,13 +264,13 @@ export default async function RefundsPage({
                       )}
                       {visibleCols.has("instrument") && (
                         <td className="px-6 py-3">
-                          <p className="text-slate-700">
-                            {instrument?.cardBrand || (instrument?.bankLast4 ? "Bank" : "—")}{" "}
-                            ••••{instrument?.cardLast4 || instrument?.bankLast4 || "----"}
-                          </p>
-                          {instrument?.accountHolderName && (
-                            <p className="text-xs text-slate-400">{instrument.accountHolderName}</p>
-                          )}
+                          <PaymentInstrumentCell
+                            cardBrand={instrument?.cardBrand}
+                            paymentMethodType={instrument?.paymentMethodType}
+                            last4={instrument?.cardLast4 || instrument?.bankLast4}
+                            bin={cardBinFromRaw(instrument?.rawJsonRedacted)}
+                            holderName={instrument?.accountHolderName}
+                          />
                         </td>
                       )}
                       {visibleCols.has("instrumentType") && (

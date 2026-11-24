@@ -11,7 +11,7 @@ import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import StateBadge from "@/components/merchant/StateBadge";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
-import { titleCaseFromSnake as titleCase, instrumentStateLabel } from "@/lib/finix/displayFormatters";
+import { titleCaseFromSnake as titleCase } from "@/lib/finix/displayFormatters";
 import { Row } from "@/components/merchant/detail/DetailDrawerPrimitives";
 import { TransactionTimeline } from "@/components/merchant/detail/TransactionTimeline";
 import { RelatedResources } from "@/components/merchant/detail/RelatedResources";
@@ -25,6 +25,10 @@ import DisputeFinancialImpactCard from "@/components/merchant/DisputeFinancialIm
 import DisputeAuditHistory from "@/components/merchant/DisputeAuditHistory";
 import DisputeInternalNote from "@/components/merchant/DisputeInternalNote";
 import DonorNameLink from "@/components/merchant/DonorNameLink";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
+import { cardBinFromRaw } from "@/lib/finix/cardDisplay";
+import PaymentInstrumentPanel from "@/components/merchant/PaymentInstrumentPanel";
+import { buildInstrumentPanelProps } from "@/lib/finix/cardDisplay";
 
 export default async function DisputeFullDetailPage({
   params,
@@ -171,13 +175,17 @@ export default async function DisputeFullDetailPage({
               <Row label="Payment Date" value={formatDateTime(transfer.createdAtFinix)} />
               <Row label="Payment Status" value={titleCase(transfer.state)} />
               {transfer.statementDescriptor && <Row label="Statement Descriptor" value={transfer.statementDescriptor} />}
-              {(instrument?.cardLast4 || instrument?.bankLast4) && (
-                <Row label="Card / Bank Last Four" value={instrument.cardLast4 || instrument.bankLast4 || "—"} />
-              )}
               {instrument && (
                 <Row
                   label="Payment Method"
-                  value={instrument.cardBrand || (instrument.bankLast4 ? "Bank Account" : instrument.instrumentType || "—")}
+                  value={
+                    <InstrumentInline
+                      cardBrand={instrument.cardBrand}
+                      paymentMethodType={instrument.paymentMethodType}
+                      last4={instrument.cardLast4 || instrument.bankLast4}
+                      bin={cardBinFromRaw(instrument.rawJsonRedacted)}
+                    />
+                  }
                 />
               )}
               {payment?.givingPageId && <Row label="Linked Giving Page" value={payment.givingPageId} />}
@@ -195,18 +203,7 @@ export default async function DisputeFullDetailPage({
           </div>
 
           {/* Payment Instrument */}
-          {instrument && (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-              <h3 className="text-sm font-bold text-slate-900 mb-4">Payment Instrument</h3>
-              <Row label="State" value={instrumentStateLabel(instrument.state)} />
-              <Row label="Type" value={instrument.cardBrand || (instrument.bankLast4 ? "Bank Account" : instrument.instrumentType || "—")} />
-              <Row
-                label="Masked Number"
-                value={instrument.cardLast4 || instrument.bankLast4 ? `••••${instrument.cardLast4 || instrument.bankLast4}` : "—"}
-              />
-              <Row label="Account Holder Name" value={instrument.accountHolderName || "—"} />
-            </div>
-          )}
+          {instrument && <PaymentInstrumentPanel {...buildInstrumentPanelProps(instrument, formatDateTime(instrument.createdAtFinix))} />}
 
           {/* Settlement Information */}
           {settlement && (

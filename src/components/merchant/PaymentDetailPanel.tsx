@@ -20,11 +20,13 @@ import { buildInstrumentPanelProps } from "@/lib/finix/cardDisplay";
 import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
-import { titleCaseFromSnake as titleCaseFromSnakeBase, instrumentStateLabel, sourceLabel } from "@/lib/finix/displayFormatters";
+import { titleCaseFromSnake as titleCaseFromSnakeBase, sourceLabel } from "@/lib/finix/displayFormatters";
 
 const titleCaseFromSnake = (value: string | null | undefined) => titleCaseFromSnakeBase(value, "Fee");
 
 import { checkRefundEligibility } from "@/lib/payments/refundEligibility";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
+import { cardBinFromRaw } from "@/lib/finix/cardDisplay";
 
 export default async function PaymentDetailPanel({
   transferId,
@@ -268,9 +270,12 @@ export default async function PaymentDetailPanel({
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Payment Instrument</span>
             <span className="font-semibold text-slate-700">
-              {instrument?.cardLast4 || instrument?.bankLast4
-                ? `••••${instrument.cardLast4 || instrument.bankLast4}`
-                : "—"}
+              <InstrumentInline
+                cardBrand={instrument?.cardBrand}
+                paymentMethodType={instrument?.paymentMethodType}
+                last4={instrument?.cardLast4 || instrument?.bankLast4}
+                bin={cardBinFromRaw(instrument?.rawJsonRedacted)}
+              />
             </span>
           </div>
           {paymentSettlement && (

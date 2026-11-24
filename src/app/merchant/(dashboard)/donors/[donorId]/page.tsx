@@ -39,6 +39,9 @@ import DonorStatementsPanel from "@/components/merchant/DonorStatementsPanel";
 import SendGivingLinkButton from "@/components/merchant/SendGivingLinkButton";
 import DonationTrendChart from "@/components/merchant/DonationTrendChart";
 import Pagination from "@/components/merchant/Pagination";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
+import CardBrandLogo from "@/components/merchant/CardBrandLogo";
+import { cardBinFromRaw, maskedCardNumber, normalizeCardBrand } from "@/lib/finix/cardDisplay";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -391,10 +394,15 @@ async function OverviewTab({
         )}
         {primaryInstrument && (
           <Card title="Primary Payment Method">
-            <Row
-              label={primaryInstrument.cardBrand || (primaryInstrument.bankLast4 ? "Bank Account" : "Unknown")}
-              value={`•••• ${primaryInstrument.cardLast4 || primaryInstrument.bankLast4 || "—"}`}
-            />
+            <div className="py-1 text-sm text-slate-700">
+              <InstrumentInline
+                cardBrand={primaryInstrument.cardBrand}
+                paymentMethodType={primaryInstrument.paymentMethodType}
+                last4={primaryInstrument.cardLast4 || primaryInstrument.bankLast4}
+                bin={cardBinFromRaw(primaryInstrument.rawJsonRedacted)}
+                size={22}
+              />
+            </div>
           </Card>
         )}
         <Card title="Internal Notes">
@@ -597,8 +605,8 @@ async function PaymentMethodsTab({ instruments }: { instruments: any[]; instrume
               {instruments.map((i) => (
                 <tr key={i.id} className="border-t border-slate-50">
                   <td className="py-2 pr-4 text-slate-600">{i.cardLast4 ? "Card" : i.bankLast4 ? "Bank Account" : titleCase(i.instrumentType)}</td>
-                  <td className="py-2 pr-4 text-slate-600">{i.cardBrand || "—"}</td>
-                  <td className="py-2 pr-4 text-slate-600">•••• {i.cardLast4 || i.bankLast4 || "—"}</td>
+                  <td className="py-2 pr-4 text-slate-600">{i.cardLast4 ? <CardBrandLogo brand={normalizeCardBrand(i.cardBrand)} height={20} label={i.cardBrand ?? undefined} /> : i.cardBrand || "—"}</td>
+                  <td className="py-2 pr-4 text-slate-600 tabular-nums">{i.cardLast4 ? maskedCardNumber(cardBinFromRaw(i.rawJsonRedacted), i.cardLast4) : i.bankLast4 ? `•••• ${i.bankLast4}` : "—"}</td>
                   <td className="py-2 pr-4 text-slate-600">{i.accountHolderName || "—"}</td>
                   <td className="py-2 pr-4 text-slate-600">{i.cardExpirationMonth ? `${i.cardExpirationMonth}/${i.cardExpirationYear}` : "—"}</td>
                   <td className="py-2 pr-4"><StateBadge state={i.enabled === false ? "DISABLED" : i.state} /></td>

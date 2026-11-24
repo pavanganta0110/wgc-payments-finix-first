@@ -12,6 +12,8 @@ import { titleCaseFromSnake as titleCase } from "@/lib/finix/displayFormatters";
 import { loadDonorDetail } from "@/lib/donors/donorDetail";
 import { DONOR_DISPLAY_STATUS_LABELS } from "@/lib/donors/donorStatus";
 import DonorNotesList from "@/components/merchant/DonorNotesList";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
+import { cardBinFromRaw } from "@/lib/finix/cardDisplay";
 
 export default async function DonorDetailPanel({
   donorId,
@@ -127,8 +129,15 @@ export default async function DonorDetailPanel({
       {primaryInstrument && (
         <Section title="Payment Methods">
           <Row
-            label={primaryInstrument.cardBrand || (primaryInstrument.bankLast4 ? "Bank Account" : "Unknown")}
-            value={`•••• ${primaryInstrument.cardLast4 || primaryInstrument.bankLast4 || "—"}`}
+            label={primaryInstrument.bankLast4 && !primaryInstrument.cardLast4 ? "Bank Account" : "Card"}
+            value={
+              <InstrumentInline
+                cardBrand={primaryInstrument.cardBrand}
+                paymentMethodType={primaryInstrument.paymentMethodType}
+                last4={primaryInstrument.cardLast4 || primaryInstrument.bankLast4}
+                bin={cardBinFromRaw(primaryInstrument.rawJsonRedacted)}
+              />
+            }
           />
           {instruments.length > 1 && <p className="text-xs text-slate-400 mt-1">+{instruments.length - 1} more</p>}
         </Section>

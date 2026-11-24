@@ -17,6 +17,9 @@ import { resolveViewScope } from "@/lib/auth/viewScope";
 import { resolveScopedDonorIds, resolveScopedUserId } from "@/lib/auth/scopes";
 import { isAuthError } from "@/lib/auth/errors";
 import { reconcileStaleActiveSubscriptions } from "@/lib/subscriptions/subscriptionReconciliation";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
+import CardBrandLogo from "@/components/merchant/CardBrandLogo";
+import { cardBinFromRaw, maskedCardNumber, normalizeCardBrand } from "@/lib/finix/cardDisplay";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -250,7 +253,12 @@ function OverviewTab({ subscriptions, donor }: { subscriptions: Awaited<ReturnTy
         <Card title="Primary Payment Method">
           {subscriptions[0]?.paymentMethod ? (
             <p className="text-sm text-slate-700">
-              {subscriptions[0].paymentMethod.brand || "Bank Account"} •••• {subscriptions[0].paymentMethod.last4 || "—"}
+              <InstrumentInline
+                cardBrand={subscriptions[0].paymentMethod.brand}
+                paymentMethodType={subscriptions[0].paymentMethod.brand ? "PAYMENT_CARD" : "BANK_ACCOUNT"}
+                last4={subscriptions[0].paymentMethod.last4}
+                size={22}
+              />
             </p>
           ) : (
             <p className="text-sm text-slate-500">No payment method on file.</p>
@@ -442,8 +450,8 @@ async function PaymentMethodsTab({ donorId, churchId }: { donorId: string; churc
               {instruments.map((i) => (
                 <tr key={i.id} className="border-t border-slate-50">
                   <td className="py-2 pr-4 text-slate-600">{i.cardLast4 ? "Card" : i.bankLast4 ? "Bank Account" : "Unknown"}</td>
-                  <td className="py-2 pr-4 text-slate-600">{i.cardBrand || "—"}</td>
-                  <td className="py-2 pr-4 text-slate-600">•••• {i.cardLast4 || i.bankLast4 || "—"}</td>
+                  <td className="py-2 pr-4 text-slate-600">{i.cardLast4 ? <CardBrandLogo brand={normalizeCardBrand(i.cardBrand)} height={20} label={i.cardBrand ?? undefined} /> : i.cardBrand || "—"}</td>
+                  <td className="py-2 pr-4 text-slate-600 tabular-nums">{i.cardLast4 ? maskedCardNumber(cardBinFromRaw(i.rawJsonRedacted), i.cardLast4) : i.bankLast4 ? `•••• ${i.bankLast4}` : "—"}</td>
                   <td className="py-2 pr-4 text-slate-600">{i.cardExpirationMonth ? `${i.cardExpirationMonth}/${i.cardExpirationYear}` : "—"}</td>
                   <td className="py-2 pr-4"><StateBadge state={i.enabled === false ? "DISABLED" : i.state} /></td>
                   <td className="py-2 text-slate-600">{subCountByInstrument.get(i.finixPaymentInstrumentId) || 0}</td>

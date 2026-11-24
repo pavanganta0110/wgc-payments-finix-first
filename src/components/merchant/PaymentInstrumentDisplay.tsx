@@ -77,6 +77,38 @@ export function PaymentInstrumentCell({
   );
 }
 
+/**
+ * One line for a card or bank account: the network logo, then "first six ····· last four" (the bank
+ * icon and the last four for a bank account). Used in headers, rows and table cells that show an instrument.
+ */
+export function InstrumentInline({
+  cardBrand,
+  paymentMethodType,
+  last4,
+  bin,
+  size = 18,
+}: {
+  cardBrand?: string | null;
+  paymentMethodType?: string | null;
+  last4?: string | null;
+  bin?: string | null;
+  size?: number;
+}) {
+  if (!last4) return <span className="text-slate-400">—</span>;
+  const isBank = (paymentMethodType || "").toUpperCase() === "BANK_ACCOUNT" || (!cardBrand && !bin && !paymentMethodType);
+  const brand = normalizeCardBrand(cardBrand);
+  return (
+    <span className="inline-flex items-center gap-2 align-middle">
+      {isBank ? (
+        <Landmark className="h-4 w-4 text-slate-400" />
+      ) : (
+        <CardBrandLogo brand={brand} height={size} label={brand === "other" && cardBrand ? titleCaseFromSnake(cardBrand) : undefined} />
+      )}
+      <span className="whitespace-nowrap font-semibold tabular-nums">{isBank ? `\u00B7\u00B7\u00B7\u00B7${last4}` : maskedCardNumber(bin, last4)}</span>
+    </span>
+  );
+}
+
 /** "Card" / "Debit" two-line display — the "Instrument Type" column. */
 export function InstrumentTypeCell({
   paymentMethodType,

@@ -12,6 +12,7 @@ import { loadSubscriptionCandidates } from "@/lib/subscriptions/subscriptionAggr
 import { getSession } from "@/lib/auth/session";
 import { getSubscriptionPermissions } from "@/lib/subscriptions/subscriptionPermissions";
 import SubscriptionActions from "@/components/merchant/SubscriptionActions";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
 
 export default async function SubscriptionDrawer({ subscriptionId, churchId }: { subscriptionId: string; churchId: string }) {
   const [s, session] = await Promise.all([loadSubscriptionCandidates(churchId, { id: subscriptionId }).then((rows) => rows[0]), getSession()]);
@@ -117,7 +118,7 @@ export default async function SubscriptionDrawer({ subscriptionId, churchId }: {
 
       <Section title="Payment Method">
         {s.paymentMethod ? (
-          <Row label={s.paymentMethod.brand || "Bank Account"} value={`•••• ${s.paymentMethod.last4 || "—"}`} />
+          <Row label={s.paymentMethod.type === "BANK_ACCOUNT" ? "Bank Account" : "Card"} value={<InstrumentInline cardBrand={s.paymentMethod.brand} paymentMethodType={s.paymentMethod.type} last4={s.paymentMethod.last4} />} />
         ) : (
           <p className="text-sm text-slate-500">No payment method on file.</p>
         )}

@@ -7,6 +7,9 @@ import { formatPersonName } from "@/lib/formatPersonName";
 import { resolveAuthorizationEffectiveStatus, isAuthorizationCaptured } from "@/lib/finix/authorizationStatus";
 import { CheckCircle2, Circle, XCircle } from "lucide-react";
 import DonorNameLink from "@/components/merchant/DonorNameLink";
+import PaymentInstrumentPanel from "@/components/merchant/PaymentInstrumentPanel";
+import { buildInstrumentPanelProps } from "@/lib/finix/cardDisplay";
+import { formatDateTimeCDT } from "@/lib/formatDateTimeCDT";
 
 function formatDateTime(date: Date | null | undefined) {
   if (!date) return "—";
@@ -136,21 +139,12 @@ export default async function AuthorizationDetailPanel({
       </div>
 
       {/* Payment instrument */}
-      <div className="px-5 py-4 border-b border-slate-100">
-        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Payment Instrument</h4>
-        <div className="space-y-0.5">
-          <Row
-            label="Type"
-            value={instrument ? (instrument.cardBrand || (instrument.bankLast4 ? "Bank Account" : "—")) : "—"}
-          />
-          <Row label="Last Four" value={instrument?.cardLast4 || instrument?.bankLast4 || "—"} />
-          {instrument?.cardExpirationMonth && instrument?.cardExpirationYear && (
-            <Row label="Card Expires" value={`${instrument.cardExpirationMonth}/${instrument.cardExpirationYear}`} />
-          )}
-          <Row label="CVV Verification" value={titleCase(auth.cvvVerification ?? instrument?.securityCodeVerification)} />
-          <Row label="Address Verification" value={titleCase(auth.addressVerification ?? instrument?.addressVerification)} />
+      {instrument && (
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Payment Instrument</h4>
+          <PaymentInstrumentPanel embedded {...buildInstrumentPanelProps({ ...instrument, securityCodeVerification: auth.cvvVerification ?? instrument.securityCodeVerification, addressVerification: auth.addressVerification ?? instrument.addressVerification }, formatDateTimeCDT(instrument.createdAtFinix))} />
         </div>
-      </div>
+      )}
 
       {/* Transaction flow */}
       <div className="px-5 py-4 border-b border-slate-100">

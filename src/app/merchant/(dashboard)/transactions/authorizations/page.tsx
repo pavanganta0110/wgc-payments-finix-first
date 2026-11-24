@@ -14,6 +14,8 @@ import { formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
 import { getAuthorizationPermissions } from "@/lib/finix/authorizationPermissions";
 import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { isAuthError } from "@/lib/auth/errors";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
+import { cardBinFromRaw } from "@/lib/finix/cardDisplay";
 
 const STATES = ["CAPTURED", "SUCCEEDED", "VOIDED", "EXPIRED", "PENDING", "FAILED"];
 
@@ -217,9 +219,16 @@ export default async function AuthorizationsListPage({
                         )}
                       </td>
                       <td className="px-6 py-3 text-slate-600">
-                        {instrument
-                          ? `${instrument.cardBrand || "Bank"} •••• ${instrument.cardLast4 || instrument.bankLast4 || "----"}`
-                          : "—"}
+                        {instrument ? (
+                          <InstrumentInline
+                            cardBrand={instrument.cardBrand}
+                            paymentMethodType={instrument.paymentMethodType}
+                            last4={instrument.cardLast4 || instrument.bankLast4}
+                            bin={cardBinFromRaw(instrument.rawJsonRedacted)}
+                          />
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-6 py-3 text-slate-600">
                         {instrument?.paymentMethodType === "BANK_ACCOUNT" || instrument?.bankLast4

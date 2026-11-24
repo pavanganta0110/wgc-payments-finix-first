@@ -14,6 +14,7 @@ import ActivationForm from "@/components/billing/ActivationForm";
 import SmsAddonCard from "@/components/billing/SmsAddonCard";
 import { createBillingActivationToken } from "@/lib/billing/billingActivation";
 import { redirect } from "next/navigation";
+import { InstrumentInline } from "@/components/merchant/PaymentInstrumentDisplay";
 
 function titleCase(s: string | null | undefined) {
   if (!s) return "—";
@@ -159,11 +160,15 @@ export default async function SubscriptionPage() {
               <Row
                 label="Billing Method"
                 value={
-                  billingAccount.cardBrand
-                    ? `${billingAccount.cardBrand} ••••${billingAccount.cardLast4 ?? ""}`
-                    : billingAccount.bankLast4
-                      ? `Bank •••• ${billingAccount.bankLast4}`
-                      : titleCase(billingAccount.billingMethodType)
+                  billingAccount.cardBrand || billingAccount.bankLast4 ? (
+                    <InstrumentInline
+                      cardBrand={billingAccount.cardBrand}
+                      paymentMethodType={billingAccount.cardBrand ? "PAYMENT_CARD" : "BANK_ACCOUNT"}
+                      last4={billingAccount.cardBrand ? billingAccount.cardLast4 : billingAccount.bankLast4}
+                    />
+                  ) : (
+                    titleCase(billingAccount.billingMethodType)
+                  )
                 }
               />
             )}
@@ -285,7 +290,7 @@ export default async function SubscriptionPage() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
       <p className="text-xs text-slate-500 mb-1">{label}</p>
