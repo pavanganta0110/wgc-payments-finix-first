@@ -6856,3 +6856,19 @@ model EmbedLoginToken {
   @@index([churchId, userId])
   @@index([expiresAt])
 }
+
+/// Email passcode for staff opening an organization's dashboard inside a partner's frame.
+/// Only the hash is stored; a code works once, expires, and is invalidated after too many wrong guesses.
+model PartnerEmbedPasscode {
+  id        String    @id @default(cuid())
+  userId    String
+  churchId  String
+  codeHash  String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}

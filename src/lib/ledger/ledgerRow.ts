@@ -25,6 +25,13 @@ export interface LedgerDonor {
   country: string | null;
 }
 
+/** The team member a gift is credited to: the owner of the giving link it came through, or who recorded an offline gift. Null when that can't be proven. */
+export interface LedgerFundraiser {
+  id: string;
+  email: string;
+  name: string | null;
+}
+
 export interface LedgerRow {
   /** Stable id: the Payment id for WGC gifts, the ExternalDonation id for external ones. */
   id: string;
@@ -39,6 +46,8 @@ export interface LedgerRow {
   status: string;
   designation: { fundId: string | null; fundName: string | null };
   donor: LedgerDonor | null;
+  /** Never guessed: null for a gift with no proven owner, not the organization's owner. */
+  fundraiser: LedgerFundraiser | null;
   /** The gift before any fee cover. */
   giftCents: number;
   /** What the donor added to cover fees. */
@@ -104,6 +113,7 @@ export interface LedgerPaymentSource {
   goodsServicesFairMarketValueCents: number | null;
   givingLinkId: string | null;
   receiptNumber: string | null;
+  attributedUserId: string | null;
 }
 
 export interface LedgerExternalSource {
@@ -125,10 +135,13 @@ export interface LedgerExternalSource {
   finixSettlementId: string | null;
   voidedAt: Date | null;
   receiptNumber: string | null;
+  receivedByUserId: string | null;
 }
 
 export interface LedgerLookups {
   donors: Map<string, LedgerDonorSource>;
+  /** Team members by user id, for crediting a gift to a fundraiser. */
+  fundraisers: Map<string, LedgerFundraiser>;
   /** Successful refund cents per original Payment id (failed/canceled refunds already excluded). */
   refundedCentsByPaymentId: Map<string, number>;
   /** State of the first dispute per Payment id. */
@@ -188,6 +201,7 @@ export function buildPaymentLedgerRow(payment: LedgerPaymentSource, lookups: Led
     status: payment.status,
     designation: { fundId: payment.fundId, fundName: payment.fundName },
     donor: toLedgerDonor(payment.donorId ? lookups.donors.get(payment.donorId) : null),
+    fundraiser: payment.attributedUserId ? lookups.fundraisers.get(payment.attributedUserId) ?? null : null,
     giftCents: payment.donationAmountCents ?? payment.amountCents,
     feeCoveredCents,
     feeCoveredElected: payment.donorCoversFee ?? feeCoveredCents > 0,
@@ -222,6 +236,7 @@ export function buildExternalLedgerRow(donation: LedgerExternalSource, lookups: 
     status: donation.status,
     designation: { fundId: donation.fundId, fundName: donation.fundName },
     donor: toLedgerDonor(donation.donorId ? lookups.donors.get(donation.donorId) : null),
+    fundraiser: donation.receivedByUserId ? lookups.fundraisers.get(donation.receivedByUserId) ?? null : null,
     giftCents: donation.donationAmountCents,
     feeCoveredCents: donation.supplementalFeeCents,
     feeCoveredElected: donation.supplementalFeeCents > 0,

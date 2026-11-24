@@ -25,6 +25,7 @@ const donor = {
 function lookups(overrides: Partial<LedgerLookups> = {}): LedgerLookups {
   return {
     donors: new Map([["donor1", donor]]),
+    fundraisers: new Map([["user1", { id: "user1", email: "fran@campus.test", name: "Fran Fundraiser" }]]),
     refundedCentsByPaymentId: new Map(),
     disputeStateByPaymentId: new Map(),
     transfersByFinixTransferId: new Map(),
@@ -55,6 +56,7 @@ function payment(overrides: Partial<LedgerPaymentSource> = {}): LedgerPaymentSou
     goodsServicesFairMarketValueCents: null,
     givingLinkId: "link1",
     receiptNumber: "R-1",
+    attributedUserId: "user1",
     ...overrides,
   };
 }
@@ -79,6 +81,7 @@ function external(overrides: Partial<LedgerExternalSource> = {}): LedgerExternal
     finixSettlementId: null,
     voidedAt: null,
     receiptNumber: null,
+    receivedByUserId: null,
     ...overrides,
   };
 }
@@ -197,5 +200,20 @@ describe("buildExternalLedgerRow", () => {
     expect(row.voided).toBe(true);
     expect(row.payoutId).toBe("ST_2");
     expect(row.processingFeeCents).toBe(120);
+  });
+});
+
+describe("fundraiser on the ledger row", () => {
+  it("credits a WGC gift to the user the gift is attributed to", () => {
+    expect(buildPaymentLedgerRow(payment(), lookups()).fundraiser).toEqual({ id: "user1", email: "fran@campus.test", name: "Fran Fundraiser" });
+  });
+
+  it("is null when the gift has no proven owner or the user is not in the organization", () => {
+    expect(buildPaymentLedgerRow(payment({ attributedUserId: null }), lookups()).fundraiser).toBeNull();
+    expect(buildPaymentLedgerRow(payment({ attributedUserId: "other-org-user" }), lookups()).fundraiser).toBeNull();
+  });
+
+  it("credits an offline gift to who recorded it", () => {
+    expect(buildExternalLedgerRow(external({ receivedByUserId: "user1" }), lookups()).fundraiser?.email).toBe("fran@campus.test");
   });
 });
