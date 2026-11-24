@@ -12,6 +12,8 @@ import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import StateBadge from "@/components/merchant/StateBadge";
 import IssueRefundButton from "@/components/merchant/IssueRefundButton";
 import CreateReceiptButton from "@/components/merchant/CreateReceiptButton";
+import PaymentInstrumentPanel from "@/components/merchant/PaymentInstrumentPanel";
+import { buildInstrumentPanelProps } from "@/lib/finix/cardDisplay";
 import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
@@ -540,33 +542,7 @@ export default async function PaymentFullDetailPage({
             <Row label="Phone" value={contactPhone || "—"} />
           </div>
 
-          {instrument && (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-              <h3 className="text-sm font-bold text-slate-900 mb-4">Payment Instrument</h3>
-              <Row label="State" value={instrumentStateLabel(instrument.state)} />
-              <Row label="Type" value={instrument.bankLast4 ? "Bank Account" : "Card"} />
-              {instrument.cardBrand && <Row label="Brand" value={instrument.cardBrand} />}
-              <Row label="Account Holder Name" value={instrument.accountHolderName || "—"} />
-              <Row
-                label="Masked Number"
-                value={instrument.cardLast4 || instrument.bankLast4 ? `••••${instrument.cardLast4 || instrument.bankLast4}` : "—"}
-              />
-              {instrument.cardExpirationMonth && instrument.cardExpirationYear && (
-                <Row label="Expiration" value={`${instrument.cardExpirationMonth}/${instrument.cardExpirationYear}`} />
-              )}
-              {instrument.bankAccountType && <Row label="Account Type" value={instrument.bankAccountType} />}
-              {instrument.securityCodeVerification && (
-                <Row label="CVV Verification" value={titleCaseFromSnake(instrument.securityCodeVerification)} />
-              )}
-              {instrument.addressVerification && (
-                <Row label="Address Verification" value={titleCaseFromSnake(instrument.addressVerification)} />
-              )}
-              {instrument.issuerCountry && <Row label="Issuer Country" value={instrument.issuerCountry} />}
-              {instrument.addressCountry && <Row label="Address Country" value={instrument.addressCountry} />}
-              {instrument.disabledMessage && <Row label="Disabled Reason" value={instrument.disabledMessage} />}
-              <Row label="Created" value={formatDateTime(instrument.createdAtFinix)} />
-            </div>
-          )}
+          {instrument && <PaymentInstrumentPanel {...buildInstrumentPanelProps(instrument, formatDateTime(instrument.createdAtFinix))} />}
 
           {settlement && (
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">

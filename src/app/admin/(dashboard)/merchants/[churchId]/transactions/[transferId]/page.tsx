@@ -9,6 +9,8 @@ import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
 import { sourceLabel } from "@/lib/finix/displayFormatters";
+import PaymentInstrumentPanel from "@/components/merchant/PaymentInstrumentPanel";
+import { buildInstrumentPanelProps } from "@/lib/finix/cardDisplay";
 
 // Admin mirror of the merchant's own per-transaction "Donation Breakdown"
 // card (src/app/merchant/(dashboard)/transactions/payments/[transferId]/page.tsx)
@@ -243,6 +245,8 @@ export default async function AdminTransactionDetailPage({
             )}
           </div>
         </div>
+
+        {instrument && <PaymentInstrumentPanel {...buildInstrumentPanelProps(instrument, formatDateTime(instrument.createdAtFinix))} />}
       </div>
     </div>
   );
