@@ -15,6 +15,8 @@ import CreateReceiptButton from "@/components/merchant/CreateReceiptButton";
 import PaymentReceiptActions from "@/components/merchant/PaymentReceiptActions";
 import GoodsServicesCorrectionPanel from "@/components/merchant/GoodsServicesCorrectionPanel";
 import StateBadge from "@/components/merchant/StateBadge";
+import PaymentInstrumentPanel from "@/components/merchant/PaymentInstrumentPanel";
+import { buildInstrumentPanelProps } from "@/lib/finix/cardDisplay";
 import { computeRefundStatus, resolveDisplayStatus } from "@/lib/finix/refundStatus";
 import { formatPersonName } from "@/lib/formatPersonName";
 import { formatDateTimeCDT as formatDateTime } from "@/lib/formatDateTimeCDT";
@@ -458,39 +460,7 @@ export default async function PaymentDetailPanel({
 
       {instrument && (
         <Section title="Payment Instrument">
-          <Row label="State" value={instrumentStateLabel(instrument.state)} />
-          <Row label="Type" value={instrument.bankLast4 ? "Bank Account" : "Card"} />
-          {instrument.cardBrand && <Row label="Brand" value={instrument.cardBrand} />}
-          <Row label="Account Holder Name" value={instrument.accountHolderName || "—"} />
-          <Row
-            label="Masked Number"
-            value={
-              instrument.cardLast4 || instrument.bankLast4
-                ? `••••${instrument.cardLast4 || instrument.bankLast4}`
-                : "—"
-            }
-          />
-          {instrument.cardExpirationMonth && instrument.cardExpirationYear && (
-            <Row
-              label="Expiration"
-              value={`${instrument.cardExpirationMonth}/${instrument.cardExpirationYear}`}
-            />
-          )}
-          {instrument.bankAccountType && (
-            <Row label="Account Type" value={instrument.bankAccountType} />
-          )}
-          {instrument.securityCodeVerification && (
-            <Row label="CVV Verification" value={titleCaseFromSnake(instrument.securityCodeVerification)} />
-          )}
-          {instrument.addressVerification && (
-            <Row label="Address Verification" value={titleCaseFromSnake(instrument.addressVerification)} />
-          )}
-          {instrument.issuerCountry && <Row label="Issuer Country" value={instrument.issuerCountry} />}
-          {instrument.addressCountry && <Row label="Address Country" value={instrument.addressCountry} />}
-          {instrument.disabledMessage && (
-            <Row label="Disabled Reason" value={instrument.disabledMessage} />
-          )}
-          <Row label="Created" value={formatDateTime(instrument.createdAtFinix)} />
+          <PaymentInstrumentPanel embedded {...buildInstrumentPanelProps(instrument, formatDateTime(instrument.createdAtFinix))} />
         </Section>
       )}
 

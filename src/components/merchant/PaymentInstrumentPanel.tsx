@@ -33,13 +33,14 @@ function Row({ row }: { row: InstrumentRow }) {
 }
 
 /** The Payment Instrument card on a payment's detail page: a brand-tinted card graphic, then the checks. */
-export default function PaymentInstrumentPanel(props: InstrumentPanelProps) {
+export default function PaymentInstrumentPanel({ embedded = false, ...props }: InstrumentPanelProps & { embedded?: boolean }) {
   const [open, setOpen] = useState(false);
   const theme = CARD_THEMES[props.brand];
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-      <h3 className="text-sm font-bold text-slate-900 mb-4">Payment Instrument</h3>
+    // embedded: shown inside a side panel section that already has its own title and spacing.
+    <div className={embedded ? "" : "bg-white rounded-2xl border border-slate-100 shadow-sm p-6"}>
+      {!embedded && <h3 className="text-sm font-bold text-slate-900 mb-4">Payment Instrument</h3>}
 
       <div
         className="relative w-full max-w-[380px] aspect-[5/3] rounded-[22px] overflow-hidden p-5 flex flex-col justify-between"
