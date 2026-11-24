@@ -19,6 +19,7 @@ import { reconcilePendingPayments } from "@/lib/finix/sync/paymentReconciliation
 import { resolveFundFilteredTransferIds } from "@/lib/giving/fundAssignment";
 import { getRevenueBySource, buildSourceClassifier, SOURCE_KEYS, SOURCE_LABELS, type RevenueSourceKey } from "@/lib/reporting/revenueBySource";
 import { PaymentInstrumentCell, InstrumentTypeCell } from "@/components/merchant/PaymentInstrumentDisplay";
+import { cardBinFromRaw } from "@/lib/finix/cardDisplay";
 
 const REFUND_DERIVED_STATES = new Set(["REFUNDED", "PARTIALLY_REFUNDED", "REFUND_PENDING"]);
 
@@ -323,6 +324,7 @@ export default async function PaymentsListPage({
                         cardBrand={instrument?.cardBrand}
                         paymentMethodType={instrument?.paymentMethodType}
                         last4={last4Value}
+                        bin={cardBinFromRaw(instrument?.rawJsonRedacted)}
                         holderName={instrument?.accountHolderName}
                       />
                     </td>

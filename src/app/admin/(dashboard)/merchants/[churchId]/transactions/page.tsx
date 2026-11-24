@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { EXCLUDE_NON_DONATION_TRANSFERS } from "@/lib/auth/scopes";
 import { formatPersonName } from "@/lib/formatPersonName";
+import { PaymentInstrumentCell } from "@/components/merchant/PaymentInstrumentDisplay";
+import { cardBinFromRaw } from "@/lib/finix/cardDisplay";
 
 function formatCurrency(cents: number | null | undefined, currency: string = "USD") {
   if (cents == null) return "-";
@@ -180,7 +182,17 @@ export default async function MerchantTransactionsPage({
                         {formatCurrency(t.amountCents, t.currency || "USD")}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {methodLabel}
+                        {instrument?.cardLast4 || instrument?.bankLast4 ? (
+                          <PaymentInstrumentCell
+                            cardBrand={instrument.cardBrand}
+                            paymentMethodType={instrument.paymentMethodType}
+                            last4={instrument.cardLast4 || instrument.bankLast4}
+                            bin={cardBinFromRaw(instrument.rawJsonRedacted)}
+                            holderName={instrument.accountHolderName}
+                          />
+                        ) : (
+                          methodLabel
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                         <Link

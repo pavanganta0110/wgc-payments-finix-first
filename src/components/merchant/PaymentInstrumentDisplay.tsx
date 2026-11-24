@@ -1,4 +1,7 @@
 import { Landmark } from "lucide-react";
+import CardBrandLogo from "@/components/merchant/CardBrandLogo";
+import { maskedCardNumber, normalizeCardBrand } from "@/lib/finix/cardDisplay";
+import { titleCaseFromSnake } from "@/lib/finix/displayFormatters";
 
 /**
  * Plain neutral icon — no card-network branding/color. Just distinguishes
@@ -35,27 +38,40 @@ export function describeCardType(cardType: string | null | undefined): string | 
   return null;
 }
 
-/** Masked number + cardholder name, with the brand/wallet icon — the "Payment Instrument" column. */
+/**
+ * The "Payment Instrument" column: the card network's logo, then "first six ····· last four" and the
+ * cardholder name underneath. A bank account shows a bank icon and the last four; a brand with no
+ * logo shows its name in text.
+ */
 export function PaymentInstrumentCell({
   cardBrand,
   paymentMethodType,
   last4,
+  bin,
   holderName,
 }: {
   cardBrand?: string | null;
   paymentMethodType?: string | null;
   last4?: string | null;
+  /** First 6 to 8 digits, when known. */
+  bin?: string | null;
   holderName?: string | null;
 }) {
   if (!last4) return <span className="text-slate-400">—</span>;
+  const isBank = (paymentMethodType || "").toUpperCase() === "BANK_ACCOUNT";
+  const brand = normalizeCardBrand(cardBrand);
   return (
-    <div className="flex items-center gap-2">
-      <InstrumentIcon paymentMethodType={paymentMethodType} />
-      <div>
-        <p className="text-slate-700">
-          {cardBrand ? `${cardBrand} ` : ""}••••{last4}
-        </p>
-        {holderName && <p className="text-xs text-slate-400">{holderName}</p>}
+    <div className="flex items-center gap-3">
+      <div className="flex w-12 shrink-0 items-center justify-center">
+        {isBank ? (
+          <Landmark className="h-5 w-5 text-slate-400" />
+        ) : (
+          <CardBrandLogo brand={brand} height={28} label={brand === "other" && cardBrand ? titleCaseFromSnake(cardBrand) : undefined} />
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="whitespace-nowrap font-semibold text-slate-800 tabular-nums">{isBank ? `\u00B7\u00B7\u00B7\u00B7${last4}` : maskedCardNumber(bin, last4)}</p>
+        {holderName && <p className="truncate text-xs text-slate-500">{holderName}</p>}
       </div>
     </div>
   );
