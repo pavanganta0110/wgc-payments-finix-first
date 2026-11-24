@@ -62,11 +62,11 @@ export function PaymentInstrumentCell({
   const brand = normalizeCardBrand(cardBrand);
   return (
     <div className="flex items-center gap-3">
-      <div className="flex w-12 shrink-0 items-center justify-center">
+      <div className="flex w-9 shrink-0 items-center justify-center">
         {isBank ? (
           <Landmark className="h-5 w-5 text-slate-400" />
         ) : (
-          <CardBrandLogo brand={brand} height={28} label={brand === "other" && cardBrand ? titleCaseFromSnake(cardBrand) : undefined} />
+          <CardBrandLogo brand={brand} height={20} label={brand === "other" && cardBrand ? titleCaseFromSnake(cardBrand) : undefined} />
         )}
       </div>
       <div className="min-w-0">
