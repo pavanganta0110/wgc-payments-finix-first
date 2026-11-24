@@ -16,6 +16,7 @@ import { requireMerchantSession } from "@/lib/auth/requireMerchantSession";
 import { isAuthError } from "@/lib/auth/errors";
 import { hasPermission } from "@/lib/auth/permissions";
 import { resolveViewScope } from "@/lib/auth/viewScope";
+import { resolveViewAsAuth } from "@/lib/auth/viewAsAccess";
 import ViewScopeSelector from "@/components/merchant/ViewScopeSelector";
 
 export default async function MerchantDashboardLayout({
@@ -115,11 +116,13 @@ export default async function MerchantDashboardLayout({
   }
 
   const isDemoMode = (await cookies()).has("wgc_demo_mode");
+  // While viewing as a teammate, the menu shows what that teammate would see, not the viewer's own.
+  const navAuth = await resolveViewAsAuth(auth);
   const navAccess = {
-    canViewEvents: hasPermission(auth, "canViewEvents"),
-    canViewFundraisingCampaigns: hasPermission(auth, "canViewFundraisingCampaigns"),
-    canTakePayment: auth.role !== "viewer",
-    canViewFunds: hasPermission(auth, "canViewDonors"),
+    canViewEvents: hasPermission(navAuth, "canViewEvents"),
+    canViewFundraisingCampaigns: hasPermission(navAuth, "canViewFundraisingCampaigns"),
+    canTakePayment: navAuth.role !== "viewer",
+    canViewFunds: hasPermission(navAuth, "canViewDonors"),
   };
 
   return (
@@ -128,11 +131,11 @@ export default async function MerchantDashboardLayout({
       <ComplianceBanner status={complianceStatus} />
       {billingGateActive && <BillingGateBanner state={auth.orgAccessState ?? "NO_GATE"} />}
       <div className="flex-grow flex">
-        <Sidebar role={auth.role ?? undefined} access={navAccess} />
+        <Sidebar role={navAuth.role ?? undefined} access={navAccess} />
         <div className="flex-grow flex flex-col min-w-0">
           <div className="flex items-center justify-between px-4 md:px-10 py-6 border-b border-slate-100 bg-white">
             <div className="flex items-center gap-2">
-              <MobileSidebar role={auth.role ?? undefined} access={navAccess} />
+              <MobileSidebar role={navAuth.role ?? undefined} access={navAccess} />
               <Link href="/merchant/dashboard" className="block hover:opacity-80 transition-opacity">
                 <div>
                 <h1 className="text-lg font-bold text-slate-900">

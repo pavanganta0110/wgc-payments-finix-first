@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
+import { redirectIfViewAsLacksSettlementAccess } from "@/lib/auth/viewAsAccess";
 import { formatCents, formatSignedCents } from "@/lib/format";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
 import StateBadge from "@/components/merchant/StateBadge";
@@ -35,6 +36,7 @@ export default async function SettlementFullDetailPage({
   if (session?.role === "wgc_admin") {
     redirect("/merchant/dashboard");
   }
+  await redirectIfViewAsLacksSettlementAccess();
   const churchId = session!.churchId!;
   const { settlementId } = await params;
   const permissions = getSettlementPermissions(session?.role as "wgc_admin" | "church_admin" | undefined);

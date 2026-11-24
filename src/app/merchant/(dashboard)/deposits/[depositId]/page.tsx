@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
+import { redirectIfViewAsLacksSettlementAccess } from "@/lib/auth/viewAsAccess";
 import { getSettlementPermissions } from "@/lib/finix/settlementPermissions";
 import { formatCents } from "@/lib/format";
 import CopyableIdBadge from "@/components/merchant/CopyableIdBadge";
@@ -22,6 +23,7 @@ export default async function DepositFullDetailPage({
   if (!session?.churchId || !getSettlementPermissions(session.role).canView) {
     redirect("/merchant/dashboard");
   }
+  await redirectIfViewAsLacksSettlementAccess();
   const churchId = session.churchId;
   const { depositId } = await params;
 

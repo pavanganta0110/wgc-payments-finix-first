@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
+import { redirectIfViewAsLacksSettlementAccess } from "@/lib/auth/viewAsAccess";
 import { getSettlementPermissions } from "@/lib/finix/settlementPermissions";
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/format";
@@ -50,6 +51,7 @@ export default async function DepositsPage({
   if (!session?.churchId || !getSettlementPermissions(session.role).canView) {
     redirect("/merchant/dashboard");
   }
+  await redirectIfViewAsLacksSettlementAccess();
   const churchId = session.churchId;
   const { state, range, from, to, amount, org, cols, id } = await searchParams;
   const { from: startDate, to: endDate } = resolveDateRange(range, from, to);

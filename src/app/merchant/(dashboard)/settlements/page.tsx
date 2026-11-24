@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowUpDown, Landmark } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
+import { redirectIfViewAsLacksSettlementAccess } from "@/lib/auth/viewAsAccess";
 import { getSettlementPermissions } from "@/lib/finix/settlementPermissions";
 import { formatCents, formatSignedCents } from "@/lib/format";
 import { resolveDateRange } from "@/lib/dateRangePresets";
@@ -58,6 +59,7 @@ export default async function SettlementsPage({
   if (!session?.churchId || !getSettlementPermissions(session.role).canView) {
     redirect("/merchant/dashboard");
   }
+  await redirectIfViewAsLacksSettlementAccess();
   const churchId = session.churchId;
   const sp = await searchParams;
   const { from: startDate, to: endDate } = resolveDateRange(sp.range, sp.from, sp.to);
