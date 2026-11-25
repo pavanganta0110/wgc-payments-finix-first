@@ -67,6 +67,7 @@ export default function RecordExternalDonationForm() {
   const [givingPageLabel, setGivingPageLabel] = useState("");
   const [donationPurpose, setDonationPurpose] = useState("");
   const [internalNote, setInternalNote] = useState("");
+  const [donorThankYouNote, setDonorThankYouNote] = useState("");
 
   // Link to a pledge / fundraising campaign — ties this offline gift back
   // into Pledges and Fundraising Campaigns reporting (ExternalDonation.
@@ -282,6 +283,7 @@ export default function RecordExternalDonationForm() {
         givingPageLabel: givingPageLabel || undefined,
         donationPurpose: donationPurpose || undefined,
         internalNote: internalNote || undefined,
+        donorThankYouNote: donorThankYouNote || undefined,
         pledgeId: selectedPledgeId || undefined,
         fundraisingCampaignId: selectedCampaignId || undefined,
         campaignTeamId: selectedTeamId || undefined,
@@ -589,6 +591,10 @@ export default function RecordExternalDonationForm() {
           <input placeholder="Campaign" value={campaign} onChange={(e) => setCampaign(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
           <input placeholder="Giving page" value={givingPageLabel} onChange={(e) => setGivingPageLabel(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
           <input placeholder="Donation purpose" value={donationPurpose} onChange={(e) => setDonationPurpose(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Personal note to the donor (optional)</label>
+          <textarea placeholder="Shown on the receipt email in place of the standard thank-you line" value={donorThankYouNote} onChange={(e) => setDonorThankYouNote(e.target.value)} maxLength={2000} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" rows={3} />
         </div>
         {!isCash && (
           <textarea placeholder="Internal note (never shown to the donor)" value={internalNote} onChange={(e) => setInternalNote(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" rows={2} />
