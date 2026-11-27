@@ -112,6 +112,7 @@ export default async function EmbedGivingPage({ params }: { params: Promise<{ sl
           serverAvailability={serverAvailability}
           fundSelectionEnabled={fundSelectionEnabled}
           assignedFunds={assignedFunds}
+          successReturnUrl={link.successReturnUrl}
         />
 
         {!branding.hideFooter && (
